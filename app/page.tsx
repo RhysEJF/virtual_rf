@@ -298,7 +298,6 @@ export default function Dashboard(): JSX.Element {
       {/* System Status */}
       <SystemStatus
         activeAgents={activeWorkerCount}
-        todayCost={0}
         skillsLoaded={totalPendingTasks}
       />
     </main>

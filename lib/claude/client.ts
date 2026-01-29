@@ -2,14 +2,20 @@
  * Claude Code CLI wrapper
  *
  * Uses the `claude` CLI instead of the API, leveraging your existing Claude Max subscription.
+ * Tracks costs from each CLI call.
  */
 
 import { spawn } from 'child_process';
+import { logCost } from '../db/logs';
 
 export interface ClaudeResponse {
   text: string;
   success: boolean;
   error?: string;
+  cost?: number; // USD cost of this call
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface ClaudeOptions {
@@ -17,8 +23,25 @@ export interface ClaudeOptions {
   systemPrompt?: string;
   maxTurns?: number;
   allowedTools?: string[];
-  outputFormat?: 'text' | 'json' | 'stream-json';
   timeout?: number; // milliseconds
+  // Cost tracking context
+  outcomeId?: string;
+  workerId?: string;
+  taskId?: string;
+  description?: string; // Description for cost log
+}
+
+interface ClaudeJSONResponse {
+  type: string;
+  subtype: string;
+  is_error: boolean;
+  duration_ms: number;
+  result: string;
+  total_cost_usd: number;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+  };
 }
 
 /**
@@ -30,14 +53,17 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
     systemPrompt,
     maxTurns = 1,
     allowedTools,
-    outputFormat = 'text',
     timeout = 120000, // 2 minutes default
+    outcomeId,
+    workerId,
+    taskId,
+    description,
   } = options;
 
   return new Promise((resolve) => {
     const args: string[] = [
       '-p', prompt, // -p makes it non-interactive (print mode)
-      '--output-format', outputFormat,
+      '--output-format', 'json', // Always use JSON to get cost info
       '--max-turns', maxTurns.toString(),
     ];
 
@@ -84,17 +110,48 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       clearTimeout(timeoutId);
 
       if (code === 0) {
-        console.log('[Claude CLI] Success, response length:', stdout.length);
-        // Log first 200 chars of response for debugging
-        if (stdout.length < 500) {
-          console.log('[Claude CLI] Response:', stdout.trim());
-        } else {
-          console.log('[Claude CLI] Response preview:', stdout.substring(0, 200) + '...');
+        try {
+          // Parse JSON response
+          const jsonResponse = JSON.parse(stdout) as ClaudeJSONResponse;
+
+          const cost = jsonResponse.total_cost_usd || 0;
+          const text = jsonResponse.result || '';
+          const durationMs = jsonResponse.duration_ms;
+          const inputTokens = jsonResponse.usage?.input_tokens;
+          const outputTokens = jsonResponse.usage?.output_tokens;
+
+          console.log('[Claude CLI] Success, cost: $' + cost.toFixed(4) + ', duration: ' + durationMs + 'ms');
+
+          // Log cost to database
+          if (cost > 0) {
+            try {
+              logCost({
+                project_id: outcomeId,
+                worker_id: workerId,
+                amount: cost,
+                description: description || `Claude CLI call (${inputTokens || 0} in, ${outputTokens || 0} out)`,
+              });
+            } catch (logError) {
+              console.error('[Claude CLI] Failed to log cost:', logError);
+            }
+          }
+
+          resolve({
+            text,
+            success: !jsonResponse.is_error,
+            cost,
+            durationMs,
+            inputTokens,
+            outputTokens,
+          });
+        } catch (parseError) {
+          // If JSON parsing fails, treat stdout as plain text
+          console.log('[Claude CLI] Success (non-JSON response), length:', stdout.length);
+          resolve({
+            text: stdout.trim(),
+            success: true,
+          });
         }
-        resolve({
-          text: stdout.trim(),
-          success: true,
-        });
       } else {
         console.error('[Claude CLI] Failed with code:', code);
         console.error('[Claude CLI] stderr:', stderr.substring(0, 500));
@@ -124,12 +181,18 @@ export async function complete(options: {
   system?: string;
   prompt: string;
   timeout?: number;
-}): Promise<{ text: string; success: boolean; error?: string }> {
+  outcomeId?: string;
+  workerId?: string;
+  description?: string;
+}): Promise<{ text: string; success: boolean; error?: string; cost?: number }> {
   return claudeComplete({
     prompt: options.prompt,
     systemPrompt: options.system,
     maxTurns: 1,
     timeout: options.timeout,
+    outcomeId: options.outcomeId,
+    workerId: options.workerId,
+    description: options.description,
   });
 }
 

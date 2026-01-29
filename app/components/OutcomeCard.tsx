@@ -71,9 +71,9 @@ export function OutcomeCard({
   return (
     <Card hover={!!onClick} onClick={onClick} className="group">
       <CardHeader>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div
-            className={`w-2 h-2 rounded-full ${
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${
               hasWorkers ? 'bg-status-success animate-pulse' :
               isActive ? 'bg-accent' :
               isDormant ? 'bg-status-warning' :
@@ -82,7 +82,7 @@ export function OutcomeCard({
           />
           <CardTitle className="truncate">{outcome.name}</CardTitle>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {outcome.is_ongoing && (
             <Badge variant="info" className="text-[10px]">Ongoing</Badge>
           )}

@@ -60,6 +60,7 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
   const [saving, setSaving] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Default workspace path for this outcome
   const defaultWorkspacePath = getDefaultWorkspacePath(outcomeId);
@@ -107,6 +108,11 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
 
   const handleSave = async () => {
     setSaving(true);
+
+    // Auto-generate branch names if not set
+    const finalWorkBranch = workBranch || generateBranchNameValue();
+    const finalBaseBranch = baseBranch || gitStatus?.defaultBranch || 'main';
+
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}`, {
         method: 'PATCH',
@@ -114,8 +120,8 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
         body: JSON.stringify({
           working_directory: workingDirectory || null,
           git_mode: gitMode,
-          base_branch: baseBranch || null,
-          work_branch: workBranch || null,
+          base_branch: (gitMode === 'branch' || gitMode === 'worktree') ? finalBaseBranch : null,
+          work_branch: (gitMode === 'branch' || gitMode === 'worktree') ? finalWorkBranch : null,
           auto_commit: autoCommit,
           create_pr_on_complete: createPr,
         }),
@@ -146,13 +152,17 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
     setIsEditing(false);
   };
 
-  const generateBranchName = () => {
+  const generateBranchNameValue = (): string => {
     const slug = outcomeName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .substring(0, 30);
-    setWorkBranch(`outcome/${slug}`);
+    return `outcome/${slug}`;
+  };
+
+  const generateBranchName = () => {
+    setWorkBranch(generateBranchNameValue());
   };
 
   return (
@@ -220,7 +230,18 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
               <label className="block text-xs text-text-tertiary mb-1">Workflow Mode</label>
               <select
                 value={gitMode}
-                onChange={(e) => setGitMode(e.target.value as GitMode)}
+                onChange={(e) => {
+                  const newMode = e.target.value as GitMode;
+                  setGitMode(newMode);
+                  // Auto-generate branch name when switching to branch mode
+                  if ((newMode === 'branch' || newMode === 'worktree') && !workBranch) {
+                    generateBranchName();
+                  }
+                  // Auto-set base branch
+                  if ((newMode === 'branch' || newMode === 'worktree') && !baseBranch) {
+                    setBaseBranch(gitStatus?.defaultBranch || 'main');
+                  }
+                }}
                 className="w-full px-3 py-2 bg-bg-secondary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
               >
                 {GIT_MODE_OPTIONS.map(opt => (
@@ -232,45 +253,55 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
               </p>
             </div>
 
-            {/* Branch Configuration (only for branch/worktree modes) */}
+            {/* Branch info (simplified - just show what will happen) */}
             {(gitMode === 'branch' || gitMode === 'worktree') && (
-              <>
-                <div>
-                  <label className="block text-xs text-text-tertiary mb-1">Base Branch</label>
-                  <select
-                    value={baseBranch}
-                    onChange={(e) => setBaseBranch(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-secondary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
-                  >
-                    <option value="">Select branch...</option>
-                    {gitStatus?.branches?.map(branch => (
-                      <option key={branch} value={branch}>{branch}</option>
-                    ))}
-                    {!gitStatus?.branches?.length && (
-                      <>
-                        <option value="main">main</option>
-                        <option value="master">master</option>
-                      </>
-                    )}
-                  </select>
+              <div className="p-3 bg-bg-secondary rounded-lg text-sm">
+                <div className="text-text-secondary">
+                  Workers will commit to: <span className="text-text-primary font-medium">{workBranch || `outcome/${outcomeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 30)}`}</span>
                 </div>
-
-                <div>
-                  <label className="block text-xs text-text-tertiary mb-1">Work Branch</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={workBranch}
-                      onChange={(e) => setWorkBranch(e.target.value)}
-                      placeholder="outcome/feature-name"
-                      className="flex-1 px-3 py-2 bg-bg-secondary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent"
-                    />
-                    <Button variant="ghost" size="sm" onClick={generateBranchName}>
-                      Generate
-                    </Button>
+                <div className="text-text-tertiary text-xs mt-1">
+                  PR will merge into {baseBranch || gitStatus?.defaultBranch || 'main'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="text-xs text-accent hover:underline mt-2"
+                >
+                  {showAdvanced ? 'Hide' : 'Change'} branch names
+                </button>
+                {showAdvanced && (
+                  <div className="mt-3 pt-3 border-t border-border space-y-3">
+                    <div>
+                      <label className="block text-xs text-text-tertiary mb-1">Work Branch</label>
+                      <input
+                        type="text"
+                        value={workBranch}
+                        onChange={(e) => setWorkBranch(e.target.value)}
+                        placeholder="outcome/feature-name"
+                        className="w-full px-2 py-1 bg-bg-primary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-tertiary mb-1">Base Branch</label>
+                      <select
+                        value={baseBranch}
+                        onChange={(e) => setBaseBranch(e.target.value)}
+                        className="w-full px-2 py-1 bg-bg-primary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
+                      >
+                        {gitStatus?.branches?.map(branch => (
+                          <option key={branch} value={branch}>{branch}</option>
+                        ))}
+                        {!gitStatus?.branches?.length && (
+                          <>
+                            <option value="main">main</option>
+                            <option value="master">master</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
                   </div>
-                </div>
-              </>
+                )}
+              </div>
             )}
 
             {/* Auto-commit option (for any mode except none) */}

@@ -130,10 +130,43 @@ export async function analyzeApproachForInfrastructure(
     }
   }
 
-  // Pattern 5: Keywords indicating skill-based approach
+  // Pattern 5: Natural skill mentions like "**Market Intelligence Skill**" or "1. **Persona Research Skill**:"
+  // This catches common ways people write about skills in approaches
+  const naturalSkillPatterns = [
+    // "**Market Intelligence Skill**" - bold skill names
+    /\*\*([\w\s]+)\s+Skill\*\*/gi,
+    // "1. **Persona Research Skill**:" - numbered lists with bold
+    /^\s*[\d\-\*\.]+\s*\*\*([\w\s]+)\s+Skill\*\*\s*:/gim,
+    // "Market Intelligence Skill:" - plain text with colon
+    /^\s*[\d\-\*\.]+\s*([\w\s]+)\s+Skill\s*:/gim,
+  ];
+
+  for (const pattern of naturalSkillPatterns) {
+    let match;
+    while ((match = pattern.exec(approach)) !== null) {
+      const skillName = match[1].trim();
+      // Convert to path format: "Market Intelligence" -> "market-intelligence"
+      const pathName = skillName.toLowerCase().replace(/\s+/g, '-');
+      const path = `skills/${pathName}.md`;
+
+      // Avoid duplicates
+      if (!needs.some(n => n.path === path)) {
+        needs.push({
+          type: 'skill',
+          name: skillName + ' Skill',
+          path,
+          description: `Build skill: ${skillName} Skill`,
+          specification: extractSpecification(approach, skillName, 'skill'),
+        });
+      }
+    }
+  }
+
+  // Pattern 6: Keywords indicating skill-based approach (fallback to Claude extraction)
   const skillKeywords = [
     'skill-based',
     'skill-driven',
+    'skills-first',
     'skill documents',
     'methodology files',
     'skill files',
@@ -332,7 +365,12 @@ export function hasInfrastructureNeeds(approach: string): boolean {
     /tools\/[\w-]+\.(ts|js)/i,
     /skill[- ]?based/i,
     /skill[- ]?driven/i,
+    /skills[- ]?first/i,
     /methodology files/i,
+    // Natural skill mentions: "**Market Intelligence Skill**" or "1. **Persona Research Skill**:"
+    /\*\*[\w\s]+Skill\*\*/i,
+    // Numbered skill lists: "1. Market Intelligence Skill:" or "- Campaign Planning Skill:"
+    /^[\d\-\*\.]+\s*\*?\*?[\w\s]+Skill\*?\*?\s*:/im,
   ];
 
   return patterns.some(p => p.test(approach));

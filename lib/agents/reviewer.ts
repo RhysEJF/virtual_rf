@@ -195,11 +195,11 @@ function buildReviewContext(
 ): ReviewContext {
   return {
     outcomeName,
-    prdItems: intent?.items.map(item => ({
+    prdItems: (intent?.items || []).map(item => ({
       id: item.id,
       title: item.title,
-      criteria: item.acceptance_criteria,
-    })) || [],
+      criteria: item.acceptance_criteria || [],
+    })),
     completedTasks: completedTasks.map(t => ({
       id: t.id,
       title: t.title,
@@ -216,7 +216,7 @@ function buildReviewContext(
 function buildReviewPrompt(context: ReviewContext): string {
   const prdSection = context.prdItems.length > 0
     ? context.prdItems.map(item =>
-        `## ${item.id}: ${item.title}\nAcceptance Criteria:\n${item.criteria.map(c => `- ${c}`).join('\n')}`
+        `## ${item.id}: ${item.title}\nAcceptance Criteria:\n${(item.criteria || []).map(c => `- ${c}`).join('\n') || '- None specified'}`
       ).join('\n\n')
     : 'No specific PRD items defined.';
 

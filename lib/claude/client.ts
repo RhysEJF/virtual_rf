@@ -36,8 +36,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
   return new Promise((resolve) => {
     const args: string[] = [
-      '--print', // Non-interactive mode
-      '-p', prompt,
+      '-p', prompt, // -p makes it non-interactive (print mode)
       '--output-format', outputFormat,
       '--max-turns', maxTurns.toString(),
     ];
@@ -51,6 +50,9 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
     if (allowedTools && allowedTools.length > 0) {
       args.push('--allowedTools', allowedTools.join(' '));
     }
+
+    // Log the command for debugging
+    console.log('[Claude CLI] Running:', 'claude', args.join(' ').substring(0, 100) + '...');
 
     const claude = spawn('claude', args, {
       env: { ...process.env },
@@ -82,11 +84,14 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       clearTimeout(timeoutId);
 
       if (code === 0) {
+        console.log('[Claude CLI] Success, response length:', stdout.length);
         resolve({
           text: stdout.trim(),
           success: true,
         });
       } else {
+        console.error('[Claude CLI] Failed with code:', code);
+        console.error('[Claude CLI] stderr:', stderr.substring(0, 500));
         resolve({
           text: stdout.trim(),
           success: false,

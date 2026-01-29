@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatch, type DispatchResult } from '@/lib/agents/dispatcher';
 import { executeQuick } from '@/lib/agents/quick-executor';
+import { briefAndCreateProject } from '@/lib/agents/briefer';
+import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
 
 interface DispatchRequest {
@@ -77,10 +79,58 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       }
 
       case 'deep': {
-        // TODO: Implement briefer and orchestrator
+        // Generate brief and create project
+        const briefResult = await briefAndCreateProject(input);
+
+        if (!briefResult.success || !briefResult.brief) {
+          return NextResponse.json({
+            type: 'deep',
+            error: briefResult.error || 'Failed to create project brief',
+          });
+        }
+
+        const brief = briefResult.brief;
+        const prdList = brief.prd
+          .map((item, i) => `${i + 1}. [ ] ${item.title}`)
+          .join('\n');
+
+        // Auto-start the Ralph worker
+        let workerStatus = '';
+        try {
+          const workerResult = await startRalphWorker({
+            projectId: briefResult.projectId!,
+            projectName: brief.title,
+            objective: brief.objective,
+            prd: brief.prd,
+          });
+
+          if (workerResult.started) {
+            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the PRD. Check the \`workspaces/${briefResult.projectId}\` folder for progress.`;
+          } else {
+            workerStatus = `\n\n**Worker failed to start:** ${workerResult.error}`;
+          }
+        } catch (err) {
+          workerStatus = `\n\n**Worker failed to start:** ${err instanceof Error ? err.message : 'Unknown error'}`;
+        }
+
         return NextResponse.json({
           type: 'deep',
-          response: `**Deep work request received:** "${classification.summary || input}"\n\nThis would normally create a project brief and spawn workers. Coming soon.\n\nFor now, try breaking this into smaller, specific tasks I can help with immediately.`,
+          projectId: briefResult.projectId,
+          response: `**Project Created: ${brief.title}**
+
+**Objective:** ${brief.objective}
+
+**Scope:**
+${brief.scope.map(s => `- ${s}`).join('\n')}
+
+**Deliverables:**
+${brief.deliverables.map(d => `- ${d}`).join('\n')}
+
+**PRD Checklist:**
+${prdList}
+
+**Estimated time:** ~${brief.estimatedMinutes} minutes
+${workerStatus}`,
         });
       }
 

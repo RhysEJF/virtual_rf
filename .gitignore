@@ -43,3 +43,6 @@ coverage/
 # Misc
 *.log
 .vercel
+
+# Workspaces (generated project outputs)
+workspaces/

@@ -128,6 +128,19 @@ export function OutcomeCard({
           </div>
         )}
 
+        {/* View outputs link - show when work has been done */}
+        {outcome.completed_tasks > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.location.href = `/outcome/${outcome.id}#outputs`;
+            }}
+            className="text-xs text-accent hover:text-accent-hover mb-2"
+          >
+            View outputs
+          </button>
+        )}
+
         {/* Actions */}
         {(isActive || isDormant) && (onStartWorker || onPause || onAchieve) && (
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/50">

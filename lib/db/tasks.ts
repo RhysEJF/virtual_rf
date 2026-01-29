@@ -8,7 +8,7 @@
 
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
-import type { Task, TaskStatus } from './schema';
+import type { Task, TaskStatus, TaskPhase, InfraType } from './schema';
 import { touchOutcome } from './outcomes';
 
 // ============================================================================
@@ -24,6 +24,8 @@ export interface CreateTaskInput {
   priority?: number;
   from_review?: boolean;
   review_cycle?: number;
+  phase?: TaskPhase;
+  infra_type?: InfraType;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -35,9 +37,9 @@ export function createTask(input: CreateTaskInput): Task {
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
-      from_review, review_cycle, created_at, updated_at
+      from_review, review_cycle, phase, infra_type, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -50,6 +52,8 @@ export function createTask(input: CreateTaskInput): Task {
     input.priority ?? 100,
     input.from_review ? 1 : 0,
     input.review_cycle ?? null,
+    input.phase || 'execution',
+    input.infra_type || null,
     timestamp,
     timestamp
   );
@@ -108,6 +112,94 @@ export function getPendingTasks(outcomeId: string): Task[] {
     ...row,
     from_review: Boolean(row.from_review),
   }));
+}
+
+// ============================================================================
+// Phase-Aware Queries
+// ============================================================================
+
+/**
+ * Get tasks filtered by phase
+ */
+export function getTasksByPhase(outcomeId: string, phase: TaskPhase): Task[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM tasks
+    WHERE outcome_id = ? AND phase = ?
+    ORDER BY priority ASC, score DESC
+  `).all(outcomeId, phase) as Task[];
+
+  return rows.map(row => ({
+    ...row,
+    from_review: Boolean(row.from_review),
+  }));
+}
+
+/**
+ * Get pending infrastructure tasks for an outcome
+ */
+export function getPendingInfrastructureTasks(outcomeId: string): Task[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM tasks
+    WHERE outcome_id = ? AND phase = 'infrastructure' AND status = 'pending'
+    ORDER BY priority ASC, score DESC
+  `).all(outcomeId) as Task[];
+
+  return rows.map(row => ({
+    ...row,
+    from_review: Boolean(row.from_review),
+  }));
+}
+
+/**
+ * Check if all tasks in a phase are complete
+ */
+export function isPhaseComplete(outcomeId: string, phase: TaskPhase): boolean {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+    FROM tasks
+    WHERE outcome_id = ? AND phase = ?
+  `).get(outcomeId, phase) as { total: number; completed: number };
+
+  // Phase is complete if there are tasks and all are completed
+  return row.total > 0 && row.total === row.completed;
+}
+
+/**
+ * Get count of tasks by phase and status
+ */
+export function getPhaseStats(outcomeId: string): {
+  infrastructure: { total: number; pending: number; completed: number; failed: number };
+  execution: { total: number; pending: number; completed: number; failed: number };
+} {
+  const db = getDb();
+
+  const infraRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+    FROM tasks WHERE outcome_id = ? AND phase = 'infrastructure'
+  `).get(outcomeId) as { total: number; pending: number; completed: number; failed: number };
+
+  const execRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+    FROM tasks WHERE outcome_id = ? AND phase = 'execution'
+  `).get(outcomeId) as { total: number; pending: number; completed: number; failed: number };
+
+  return {
+    infrastructure: infraRow,
+    execution: execRow,
+  };
 }
 
 export function getTasksByWorker(workerId: string): Task[] {
@@ -213,21 +305,32 @@ export function claimTask(taskId: string, workerId: string): ClaimResult {
 /**
  * Atomically claim the next available task for a worker.
  * Finds the highest priority pending task and claims it.
+ * Optionally filter by phase for orchestrated execution.
  */
-export function claimNextTask(outcomeId: string, workerId: string): ClaimResult {
+export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskPhase): ClaimResult {
   const db = getDb();
   const timestamp = now();
 
   try {
     db.exec('BEGIN IMMEDIATE');
 
-    // Find the highest priority pending task
-    const task = db.prepare(`
-      SELECT * FROM tasks
-      WHERE outcome_id = ? AND status = 'pending'
-      ORDER BY priority ASC, score DESC
-      LIMIT 1
-    `).get(outcomeId) as Task | undefined;
+    // Find the highest priority pending task, optionally filtered by phase
+    let task: Task | undefined;
+    if (phase) {
+      task = db.prepare(`
+        SELECT * FROM tasks
+        WHERE outcome_id = ? AND status = 'pending' AND phase = ?
+        ORDER BY priority ASC, score DESC
+        LIMIT 1
+      `).get(outcomeId, phase) as Task | undefined;
+    } else {
+      task = db.prepare(`
+        SELECT * FROM tasks
+        WHERE outcome_id = ? AND status = 'pending'
+        ORDER BY priority ASC, score DESC
+        LIMIT 1
+      `).get(outcomeId) as Task | undefined;
+    }
 
     if (!task) {
       db.exec('ROLLBACK');

@@ -224,6 +224,7 @@ export interface UpdateOutcomeInput {
   brief?: string;
   intent?: string;
   timeline?: string;
+  infrastructure_ready?: number;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {
@@ -256,6 +257,10 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.timeline !== undefined) {
     updates.push('timeline = ?');
     values.push(input.timeline);
+  }
+  if (input.infrastructure_ready !== undefined) {
+    updates.push('infrastructure_ready = ?');
+    values.push(input.infrastructure_ready);
   }
 
   values.push(id);

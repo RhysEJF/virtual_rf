@@ -32,7 +32,7 @@ import {
   getTaskStats,
   getPendingTasks,
 } from '../db/tasks';
-import type { Task, Intent } from '../db/schema';
+import type { Task, Intent, TaskPhase } from '../db/schema';
 import { getOutcomeById } from '../db/outcomes';
 import { createProgressEntry } from '../db/progress';
 import {
@@ -95,13 +95,19 @@ const activeWorkers = new Map<string, {
 function generateTaskInstructions(
   outcomeName: string,
   intent: Intent | null,
-  task: Task
+  task: Task,
+  additionalSkillContext?: string
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
   // Try to load relevant skills based on task title and description
   const searchQuery = `${task.title} ${task.description || ''}`;
   const skillContext = buildSkillContext(searchQuery, 2);
+
+  // Combine built-in skill matching with any additional context from orchestrator
+  const combinedSkillContext = [skillContext, additionalSkillContext]
+    .filter(Boolean)
+    .join('\n\n');
 
   return `# Current Task
 
@@ -121,7 +127,7 @@ ${task.prd_context ? `### PRD Context\n${task.prd_context}\n` : ''}
 ${task.design_context ? `### Design Context\n${task.design_context}\n` : ''}
 
 ---
-${skillContext ? `\n${skillContext}\n---\n` : ''}
+${combinedSkillContext ? `\n${combinedSkillContext}\n---\n` : ''}
 ## Instructions
 
 1. Complete the task described above
@@ -676,4 +682,154 @@ export function listActiveWorkers(): RalphProgress[] {
 export function hasPendingTasks(outcomeId: string): boolean {
   const pending = getPendingTasks(outcomeId);
   return pending.length > 0;
+}
+
+// ============================================================================
+// Worker Loop (for Orchestrator)
+// ============================================================================
+
+export interface WorkerLoopOptions {
+  singleTask?: boolean;           // Only process one task then exit
+  phase?: TaskPhase;              // Filter tasks by phase
+  skillContext?: string;          // Additional skill context to inject
+  maxIterations?: number;         // Override max iterations
+}
+
+/**
+ * Run a worker loop for the orchestrator.
+ * This is a simplified version that processes tasks and can be controlled
+ * by the orchestrator for phase-aware execution.
+ */
+export async function runWorkerLoop(
+  outcomeId: string,
+  workerId: string,
+  options: WorkerLoopOptions = {}
+): Promise<void> {
+  const {
+    singleTask = false,
+    phase,
+    skillContext,
+    maxIterations = 50,
+  } = options;
+
+  // Get outcome
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) {
+    throw new Error('Outcome not found');
+  }
+
+  // Parse intent
+  let intent: Intent | null = null;
+  if (outcome.intent) {
+    try {
+      intent = JSON.parse(outcome.intent) as Intent;
+    } catch {
+      // Intent might not be valid JSON
+    }
+  }
+
+  // Set up workspace
+  const workspacePath = join(process.cwd(), 'workspaces');
+  const outcomeWorkspace = join(workspacePath, outcomeId);
+
+  if (!existsSync(outcomeWorkspace)) {
+    mkdirSync(outcomeWorkspace, { recursive: true });
+  }
+
+  // Log file
+  const logPath = join(outcomeWorkspace, `worker-${workerId}.log`);
+  const appendLog = (message: string) => {
+    const timestamp = new Date().toISOString();
+    writeFileSync(logPath, `[${timestamp}] ${message}\n`, { flag: 'a' });
+  };
+
+  appendLog(`Worker loop started - phase: ${phase || 'any'}, singleTask: ${singleTask}`);
+
+  let iteration = 0;
+
+  while (iteration < maxIterations) {
+    iteration++;
+
+    // Try to claim a task (with optional phase filter)
+    const claimResult = claimNextTask(outcomeId, workerId, phase);
+
+    if (!claimResult.success || !claimResult.task) {
+      appendLog(`No more tasks available for phase: ${phase || 'any'}`);
+      break;
+    }
+
+    const task = claimResult.task;
+    appendLog(`Claimed task: ${task.title} (${task.id})`);
+
+    // Mark task as running
+    startTask(task.id);
+
+    // Create task workspace
+    const taskWorkspace = join(outcomeWorkspace, task.id);
+    if (!existsSync(taskWorkspace)) {
+      mkdirSync(taskWorkspace, { recursive: true });
+    }
+
+    // Write CLAUDE.md with skill context
+    const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
+    writeFileSync(
+      claudeMdPath,
+      generateTaskInstructions(outcome.name, intent, task, skillContext)
+    );
+
+    const progressPath = join(taskWorkspace, 'progress.txt');
+    writeFileSync(progressPath, generateInitialProgress(task));
+
+    // Spawn Claude for this task
+    const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
+Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
+
+    const args = [
+      '-p', ralphPrompt,
+      '--dangerously-skip-permissions',
+      '--max-turns', '20',
+    ];
+
+    appendLog(`Spawning Claude for task`);
+
+    const taskResult = await executeTask(
+      taskWorkspace,
+      args,
+      progressPath,
+      workerId,
+      task,
+      appendLog
+    );
+
+    if (taskResult.success) {
+      completeTask(task.id);
+      appendLog(`Task completed: ${task.title}`);
+
+      // Record progress
+      createProgressEntry({
+        outcome_id: outcomeId,
+        worker_id: workerId,
+        iteration,
+        content: `Completed: ${task.title}`,
+      });
+    } else {
+      failTask(task.id);
+      appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
+
+      createProgressEntry({
+        outcome_id: outcomeId,
+        worker_id: workerId,
+        iteration,
+        content: `Failed: ${task.title} - ${taskResult.error}`,
+      });
+    }
+
+    // If single task mode, exit after processing one task
+    if (singleTask) {
+      appendLog(`Single task mode - exiting after one task`);
+      break;
+    }
+  }
+
+  appendLog(`Worker loop finished after ${iteration} iterations`);
 }

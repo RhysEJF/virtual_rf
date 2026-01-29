@@ -79,6 +79,7 @@ export async function POST(
       tasksCreated: result.tasksCreated,
       issues: result.issues,
       convergence: result.convergence,
+      rawResponse: result.rawResponse,
       message: result.issuesFound === 0
         ? 'No issues found!'
         : `Found ${result.issuesFound} issues, created ${result.tasksCreated} tasks`,

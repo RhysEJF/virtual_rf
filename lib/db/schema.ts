@@ -52,6 +52,7 @@ export interface Outcome {
   brief: string | null;             // Original user input/ramble
   intent: string | null;            // PRD - the WHAT (JSON)
   timeline: string | null;          // Target date or "ongoing"
+  infrastructure_ready: number;     // 0 = not started, 1 = in progress, 2 = complete
   created_at: number;
   updated_at: number;
   last_activity_at: number;         // For recency-based sorting
@@ -76,6 +77,9 @@ export interface Collaborator {
   accepted_at: number | null;
 }
 
+export type TaskPhase = 'infrastructure' | 'execution';
+export type InfraType = 'skill' | 'tool' | 'config';
+
 export interface Task {
   id: string;
   outcome_id: string;
@@ -96,6 +100,9 @@ export interface Task {
   // For review-generated tasks
   from_review: boolean;
   review_cycle: number | null;
+  // For skill-first orchestration
+  phase: TaskPhase;                 // 'infrastructure' | 'execution'
+  infra_type: InfraType | null;     // 'skill' | 'tool' | 'config' | null
 }
 
 export interface Worker {
@@ -137,6 +144,7 @@ export interface ReviewCycle {
   issues_found: number;
   tasks_added: number;
   verification: string | null;      // JSON of verification checklist results
+  raw_response: string | null;      // Claude's full reasoning/analysis
   created_at: number;
 }
 
@@ -320,6 +328,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
   brief TEXT,
   intent TEXT,
   timeline TEXT,
+  infrastructure_ready INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   last_activity_at INTEGER NOT NULL
@@ -369,6 +378,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at INTEGER NOT NULL,
   from_review INTEGER NOT NULL DEFAULT 0,
   review_cycle INTEGER,
+  phase TEXT NOT NULL DEFAULT 'execution',
+  infra_type TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
 );
@@ -416,6 +427,7 @@ CREATE TABLE IF NOT EXISTS review_cycles (
   issues_found INTEGER NOT NULL DEFAULT 0,
   tasks_added INTEGER NOT NULL DEFAULT 0,
   verification TEXT,
+  raw_response TEXT,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL

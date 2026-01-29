@@ -21,6 +21,7 @@ export interface CreateReviewCycleInput {
   issues_found: number;
   tasks_added: number;
   verification?: VerificationResult;
+  raw_response?: string;
 }
 
 export function createReviewCycle(input: CreateReviewCycleInput): ReviewCycle {
@@ -38,9 +39,9 @@ export function createReviewCycle(input: CreateReviewCycleInput): ReviewCycle {
   const stmt = db.prepare(`
     INSERT INTO review_cycles (
       id, outcome_id, worker_id, cycle_number, iteration_at,
-      issues_found, tasks_added, verification, created_at
+      issues_found, tasks_added, verification, raw_response, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -52,6 +53,7 @@ export function createReviewCycle(input: CreateReviewCycleInput): ReviewCycle {
     input.issues_found,
     input.tasks_added,
     input.verification ? JSON.stringify(input.verification) : null,
+    input.raw_response || null,
     timestamp
   );
 

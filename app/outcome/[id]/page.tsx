@@ -8,6 +8,7 @@ import { Button } from '@/app/components/ui/Button';
 import { Progress } from '@/app/components/ui/Progress';
 import { ProgressView } from '@/app/components/ProgressView';
 import { InterventionForm } from '@/app/components/InterventionForm';
+import { OutputsSection } from '@/app/components/OutputsSection';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker } from '@/lib/db/schema';
 
@@ -23,6 +24,7 @@ interface OutcomeDetail {
   created_at: number;
   updated_at: number;
   last_activity_at: number;
+  infrastructure_ready: number;  // 0 = not started, 1 = in progress, 2 = complete
   design_doc: { approach: string; version: number } | null;
   tasks: Task[];
   workers: Worker[];
@@ -88,6 +90,18 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [optimizingIntent, setOptimizingIntent] = useState(false);
   const [optimizingApproach, setOptimizingApproach] = useState(false);
 
+  // Edit mode states
+  const [isEditingIntent, setIsEditingIntent] = useState(false);
+  const [isEditingApproach, setIsEditingApproach] = useState(false);
+  const [editedIntentSummary, setEditedIntentSummary] = useState('');
+  const [editedApproach, setEditedApproach] = useState('');
+  const [savingIntent, setSavingIntent] = useState(false);
+  const [savingApproach, setSavingApproach] = useState(false);
+
+  // Review response state
+  const [lastReviewResponse, setLastReviewResponse] = useState<string | null>(null);
+  const [showReviewDetails, setShowReviewDetails] = useState(false);
+
   // Fetch outcome data
   const fetchOutcome = useCallback(async () => {
     try {
@@ -132,13 +146,41 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  const handleStartOrchestrated = async () => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/orchestrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ async: true }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'success', message: 'Orchestrated execution started - building infrastructure first' });
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to start orchestration' });
+      }
+      fetchOutcome();
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to start orchestration' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleRunReview = async () => {
     setActionLoading(true);
+    setLastReviewResponse(null);
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}/review`, { method: 'POST' });
       const data = await response.json();
       if (data.success) {
         toast({ type: 'success', message: `Review complete: ${data.message}` });
+        // Store Claude's reasoning for display
+        if (data.rawResponse) {
+          setLastReviewResponse(data.rawResponse);
+          setShowReviewDetails(true);
+        }
       } else {
         toast({ type: 'error', message: data.error || 'Review failed' });
       }
@@ -221,6 +263,92 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  // Direct edit handlers
+  const handleStartEditIntent = () => {
+    if (outcome?.intent) {
+      try {
+        const parsed = JSON.parse(outcome.intent);
+        setEditedIntentSummary(parsed.summary || '');
+      } catch {
+        setEditedIntentSummary(outcome.intent);
+      }
+    }
+    setIsEditingIntent(true);
+  };
+
+  const handleSaveIntent = async () => {
+    setSavingIntent(true);
+    try {
+      // Parse existing intent to preserve structure
+      let existingIntent = { summary: '', items: [], success_criteria: [] };
+      if (outcome?.intent) {
+        try {
+          existingIntent = JSON.parse(outcome.intent);
+        } catch {
+          // Use default
+        }
+      }
+
+      // Update summary while preserving other fields
+      const updatedIntent = {
+        ...existingIntent,
+        summary: editedIntentSummary,
+      };
+
+      const response = await fetch(`/api/outcomes/${outcomeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent: JSON.stringify(updatedIntent) }),
+      });
+
+      if (response.ok) {
+        toast({ type: 'success', message: 'Intent saved' });
+        setIsEditingIntent(false);
+        fetchOutcome();
+      } else {
+        toast({ type: 'error', message: 'Failed to save intent' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to save intent' });
+    } finally {
+      setSavingIntent(false);
+    }
+  };
+
+  const handleStartEditApproach = () => {
+    setEditedApproach(outcome?.design_doc?.approach || '');
+    setIsEditingApproach(true);
+  };
+
+  const handleSaveApproach = async () => {
+    setSavingApproach(true);
+    try {
+      const updatedDesignDoc = {
+        ...(outcome?.design_doc || {}),
+        approach: editedApproach,
+        version: (outcome?.design_doc?.version || 0) + 1,
+      };
+
+      const response = await fetch(`/api/outcomes/${outcomeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ design_doc: JSON.stringify(updatedDesignDoc) }),
+      });
+
+      if (response.ok) {
+        toast({ type: 'success', message: 'Approach saved' });
+        setIsEditingApproach(false);
+        fetchOutcome();
+      } else {
+        toast({ type: 'error', message: 'Failed to save approach' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to save approach' });
+    } finally {
+      setSavingApproach(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="max-w-5xl mx-auto p-6">
@@ -254,6 +382,11 @@ export default function OutcomeDetailPage(): JSX.Element {
   const isDraft = !hasEverHadWorker && outcome.status === 'active';
   const canStartWorker = hasPendingTasks && !hasRunningWorker && outcome.status === 'active';
 
+  // Infrastructure status
+  const needsInfrastructure = outcome.infrastructure_ready === 0;
+  const infrastructureInProgress = outcome.infrastructure_ready === 1;
+  const infrastructureReady = outcome.infrastructure_ready === 2;
+
   // Parse intent if available
   let intent: { summary?: string; items?: { id: string; title: string; status: string }[]; success_criteria?: string[] } | null = null;
   if (outcome.intent) {
@@ -280,6 +413,15 @@ export default function OutcomeDetailPage(): JSX.Element {
               <h1 className="text-2xl font-semibold text-text-primary">{outcome.name}</h1>
               {outcome.is_ongoing && <Badge variant="info">Ongoing</Badge>}
               <Badge variant={status.variant}>{status.label}</Badge>
+              {needsInfrastructure && (
+                <Badge variant="warning">Infrastructure Needed</Badge>
+              )}
+              {infrastructureInProgress && (
+                <Badge variant="info">Building Infrastructure</Badge>
+              )}
+              {infrastructureReady && outcome.infrastructure_ready !== 0 && (
+                <Badge variant="success">Infrastructure Ready</Badge>
+              )}
             </div>
             {outcome.brief && (
               <p className="text-text-secondary text-sm max-w-2xl">{outcome.brief}</p>
@@ -288,8 +430,11 @@ export default function OutcomeDetailPage(): JSX.Element {
           <div className="flex gap-2">
             {/* Start Worker - only show in header if not draft (banner has it) */}
             {canStartWorker && !isDraft && (
-              <Button onClick={handleStartWorker} disabled={actionLoading}>
-                Start Worker
+              <Button
+                onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
+                disabled={actionLoading}
+              >
+                {needsInfrastructure ? 'Build & Run' : 'Start Worker'}
               </Button>
             )}
             {outcome.status === 'active' && hasEverHadWorker && (
@@ -321,13 +466,18 @@ export default function OutcomeDetailPage(): JSX.Element {
                 <p className="text-text-secondary text-sm">
                   Review the intent and approach below. When you're ready, start a worker to begin execution.
                 </p>
+                {needsInfrastructure && (
+                  <p className="text-text-tertiary text-xs mt-1">
+                    Infrastructure (skills/tools) will be built first before main execution.
+                  </p>
+                )}
               </div>
               <Button
-                onClick={handleStartWorker}
+                onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
                 disabled={actionLoading || !hasPendingTasks}
                 className="ml-4"
               >
-                {actionLoading ? 'Starting...' : 'Start Worker'}
+                {actionLoading ? 'Starting...' : needsInfrastructure ? 'Build & Run' : 'Start Worker'}
               </Button>
             </div>
             {!hasPendingTasks && (
@@ -335,6 +485,23 @@ export default function OutcomeDetailPage(): JSX.Element {
                 No pending tasks yet. The outcome needs tasks before a worker can start.
               </p>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Infrastructure In Progress Banner */}
+      {infrastructureInProgress && (
+        <Card padding="md" className="mb-6 border-status-info/30 bg-status-info/5">
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <div className="animate-spin h-5 w-5 border-2 border-status-info border-t-transparent rounded-full"></div>
+              <div>
+                <h3 className="text-text-primary font-medium">Building Infrastructure</h3>
+                <p className="text-text-secondary text-sm">
+                  Workers are building skills and tools. Execution will begin automatically when ready.
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -416,9 +583,23 @@ export default function OutcomeDetailPage(): JSX.Element {
                           ({convergence.consecutive_zero_issues} clean)
                         </span>
                       )}
-                      <Button variant="ghost" size="sm" className="ml-4" onClick={handleRunReview} disabled={actionLoading}>
-                        Run Review
-                      </Button>
+                    </div>
+                  )}
+                  {/* Last Review Response */}
+                  {lastReviewResponse && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <button
+                        className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary"
+                        onClick={() => setShowReviewDetails(!showReviewDetails)}
+                      >
+                        <span className={`transform transition-transform ${showReviewDetails ? 'rotate-90' : ''}`}>▶</span>
+                        Review Analysis
+                      </button>
+                      {showReviewDetails && (
+                        <div className="mt-2 p-3 bg-bg-secondary rounded text-sm text-text-secondary whitespace-pre-wrap max-h-64 overflow-y-auto">
+                          {lastReviewResponse}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -430,12 +611,37 @@ export default function OutcomeDetailPage(): JSX.Element {
           <Card padding="md">
             <CardHeader>
               <CardTitle>Intent (What)</CardTitle>
+              {!isEditingIntent && intent?.summary && (
+                <Button variant="ghost" size="sm" onClick={handleStartEditIntent}>
+                  Edit
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              {/* Current Intent Display */}
-              {intent?.summary && (
-                <p className="text-text-secondary text-sm mb-4">{intent.summary}</p>
-              )}
+              {/* Edit Mode */}
+              {isEditingIntent ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={editedIntentSummary}
+                    onChange={(e) => setEditedIntentSummary(e.target.value)}
+                    className="w-full h-32 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary"
+                    placeholder="What should this outcome achieve?"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button variant="primary" size="sm" onClick={handleSaveIntent} disabled={savingIntent}>
+                      {savingIntent ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setIsEditingIntent(false)} disabled={savingIntent}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Current Intent Display */}
+                  {intent?.summary && (
+                    <p className="text-text-secondary text-sm mb-4">{intent.summary}</p>
+                  )}
               {intent?.items && intent.items.length > 0 && (
                 <div className="space-y-2 mb-4">
                   {intent.items.map((item) => (
@@ -484,28 +690,57 @@ export default function OutcomeDetailPage(): JSX.Element {
                   </span>
                 </div>
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
           {/* Approach (Design Doc) with Ramble Box */}
           <Card padding="md">
             <CardHeader>
-              <CardTitle>Approach (How)</CardTitle>
-              {outcome.design_doc && (
-                <Badge variant="default">v{outcome.design_doc.version}</Badge>
+              <div className="flex items-center gap-2">
+                <CardTitle>Approach (How)</CardTitle>
+                {outcome.design_doc && (
+                  <Badge variant="default">v{outcome.design_doc.version}</Badge>
+                )}
+              </div>
+              {!isEditingApproach && outcome.design_doc && (
+                <Button variant="ghost" size="sm" onClick={handleStartEditApproach}>
+                  Edit
+                </Button>
               )}
             </CardHeader>
             <CardContent>
-              {/* Current Approach Display */}
-              {outcome.design_doc ? (
-                <p className="text-text-secondary text-sm whitespace-pre-wrap mb-4">
-                  {outcome.design_doc.approach}
-                </p>
+              {/* Edit Mode */}
+              {isEditingApproach ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={editedApproach}
+                    onChange={(e) => setEditedApproach(e.target.value)}
+                    className="w-full h-48 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary font-mono"
+                    placeholder="How will this outcome be achieved?"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button variant="primary" size="sm" onClick={handleSaveApproach} disabled={savingApproach}>
+                      {savingApproach ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setIsEditingApproach(false)} disabled={savingApproach}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <p className="text-text-tertiary text-sm mb-4">
-                  No design doc yet. Add your thoughts below to generate one.
-                </p>
-              )}
+                <>
+                  {/* Current Approach Display */}
+                  {outcome.design_doc ? (
+                    <p className="text-text-secondary text-sm whitespace-pre-wrap mb-4">
+                      {outcome.design_doc.approach}
+                    </p>
+                  ) : (
+                    <p className="text-text-tertiary text-sm mb-4">
+                      No design doc yet. Add your thoughts below to generate one.
+                    </p>
+                  )}
 
               {/* Ramble Input Box */}
               <div className="border-t border-border pt-4 mt-4">
@@ -529,8 +764,13 @@ export default function OutcomeDetailPage(): JSX.Element {
                   </span>
                 </div>
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
+
+          {/* Outputs (auto-detected deliverables) */}
+          <OutputsSection outcomeId={outcomeId} />
 
           {/* Tasks */}
           <Card padding="md">
@@ -607,7 +847,11 @@ export default function OutcomeDetailPage(): JSX.Element {
                   {outcome.workers.map((worker) => {
                     const workerStatus = workerStatusConfig[worker.status];
                     return (
-                      <div key={worker.id} className="p-2 rounded bg-bg-secondary">
+                      <div
+                        key={worker.id}
+                        className="p-3 rounded bg-bg-secondary cursor-pointer hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border"
+                        onClick={() => router.push(`/worker/${worker.id}`)}
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-text-primary text-sm">{worker.name}</span>
                           <Badge variant={workerStatus.variant}>{workerStatus.label}</Badge>
@@ -615,16 +859,6 @@ export default function OutcomeDetailPage(): JSX.Element {
                         <div className="text-xs text-text-tertiary">
                           Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
                         </div>
-                        {worker.status === 'running' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="mt-2 w-full"
-                            onClick={() => router.push(`/worker/${worker.id}`)}
-                          >
-                            View Details
-                          </Button>
-                        )}
                       </div>
                     );
                   })}
@@ -658,8 +892,17 @@ export default function OutcomeDetailPage(): JSX.Element {
             <CardContent>
               <div className="space-y-2">
                 {canStartWorker && (
-                  <Button variant="primary" className="w-full" onClick={handleStartWorker} disabled={actionLoading}>
-                    {isDraft ? 'Start Worker' : 'Start Another Worker'}
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
+                    disabled={actionLoading}
+                  >
+                    {needsInfrastructure
+                      ? 'Build & Run'
+                      : isDraft
+                      ? 'Start Worker'
+                      : 'Start Another Worker'}
                   </Button>
                 )}
                 {hasEverHadWorker && (

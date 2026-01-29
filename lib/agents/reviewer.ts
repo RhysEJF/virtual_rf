@@ -39,6 +39,7 @@ export interface ReviewResult {
   issues: ReviewIssue[];
   convergence: ConvergenceStatus;
   verification?: VerificationResult;
+  rawResponse?: string;  // Claude's full reasoning/analysis
   error?: string;
 }
 
@@ -97,7 +98,7 @@ export async function reviewOutcome(
     const result = await claudeComplete({
       prompt: reviewPrompt,
       timeout: 120000, // 2 minutes for review
-      maxTurns: 1,
+      maxTurns: 5, // Allow multiple turns for thorough review
     });
 
     console.log('[Reviewer] Claude result:', { success: result.success, error: result.error, textLength: result.text?.length });
@@ -141,7 +142,7 @@ export async function reviewOutcome(
     const activeWorker = workers.find(w => w.status === 'running');
     const iterationAt = options?.iteration || activeWorker?.iteration || 0;
 
-    // Create review cycle record
+    // Create review cycle record with Claude's full response
     const reviewCycle = createReviewCycle({
       outcome_id: outcomeId,
       worker_id: options?.workerId || activeWorker?.id,
@@ -149,6 +150,7 @@ export async function reviewOutcome(
       issues_found: issues.length,
       tasks_added: createdTasks.length,
       verification,
+      raw_response: result.text,
     });
 
     // Log activity
@@ -166,6 +168,7 @@ export async function reviewOutcome(
       issues,
       convergence,
       verification,
+      rawResponse: result.text,
     };
   } catch (error) {
     return {

@@ -40,6 +40,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          'var(--font-body)',
           'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
@@ -47,7 +48,9 @@ const config: Config = {
           'Roboto',
           'sans-serif',
         ],
+        serif: ['var(--font-display)', 'Georgia', 'Times New Roman', 'serif'],
         mono: [
+          'var(--font-mono)',
           'ui-monospace',
           'SFMono-Regular',
           'SF Mono',

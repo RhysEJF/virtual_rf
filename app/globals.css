@@ -4,48 +4,77 @@
 
 /* Light Theme (Default) - Earthy Green-Beige */
 :root {
-  --bg-primary: #f5f2eb;
-  --bg-secondary: #ebe7dd;
-  --bg-tertiary: #e0dbd0;
-  --border: #d4cfc3;
-  --border-hover: #c5bfb0;
-  --text-primary: #3d3a33;
-  --text-secondary: #6b6560;
-  --text-tertiary: #9a948a;
-  --accent: #7a8c6e;
-  --accent-hover: #6b7d5f;
-  --accent-muted: #9aa88f;
-  --accent-light: #e8ece4;
-  --warning: #b8986a;
-  --error: #a67272;
-  --success: #6e8c6e;
-  --info: #7a8a94;
+  --bg-primary: #f4efe6;
+  --bg-secondary: #efe6d8;
+  --bg-tertiary: #e7dbc8;
+  --border: #cbbba7;
+  --border-hover: #b9a993;
+  --text-primary: #1f1a17;
+  --text-secondary: #5c5349;
+  --text-tertiary: #8c8378;
+  --accent: #7c9a6c;
+  --accent-hover: #6f8c60;
+  --accent-muted: #a2af98;
+  --accent-light: #e4ebdc;
+  --warning: #c9a959;
+  --error: #a65d5d;
+  --success: #5d8a6b;
+  --info: #6e7e8d;
+  --paper-grid: rgba(31, 26, 23, 0.04);
 }
 
 /* Dark Theme */
 .dark {
-  --bg-primary: #1a1a1a;
-  --bg-secondary: #252525;
-  --bg-tertiary: #2d2d2d;
-  --border: #3a3a3a;
-  --border-hover: #4a4a4a;
-  --text-primary: #e5e5e5;
-  --text-secondary: #a0a0a0;
-  --text-tertiary: #666666;
-  --accent: #8fa67a;
-  --accent-hover: #a0b88c;
-  --accent-muted: #6b8060;
-  --accent-light: #2a3025;
+  --bg-primary: #1c1916;
+  --bg-secondary: #24201c;
+  --bg-tertiary: #2d2722;
+  --border: #3a332b;
+  --border-hover: #4a4037;
+  --text-primary: #f1e8dc;
+  --text-secondary: #c6bbad;
+  --text-tertiary: #8f8578;
+  --accent: #93a883;
+  --accent-hover: #a4b994;
+  --accent-muted: #6f8164;
+  --accent-light: #2d3429;
   --warning: #c9a959;
   --error: #b57272;
-  --success: #6e9a6e;
-  --info: #7a9aaa;
+  --success: #6f9b7b;
+  --info: #8aa0ad;
+  --paper-grid: rgba(241, 232, 220, 0.03);
 }
 
 @layer base {
   body {
     @apply bg-bg-primary text-text-primary transition-colors duration-200;
     font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-family: var(--font-body);
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+    /* Subtle paper grid for an analog feel without visual noise. */
+    background-image:
+      linear-gradient(to right, var(--paper-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--paper-grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Serif headings for an editorial, print-inspired hierarchy. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  /* Monospace for code blocks and inline code. */
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
   }
 
   /* Scrollbar styling */
@@ -119,21 +148,21 @@
 
   .badge-success {
     @apply badge text-status-success;
-    background-color: color-mix(in srgb, var(--success) 15%, transparent);
+    background-color: color-mix(in srgb, var(--success) 20%, transparent);
   }
 
   .badge-warning {
     @apply badge text-status-warning;
-    background-color: color-mix(in srgb, var(--warning) 15%, transparent);
+    background-color: color-mix(in srgb, var(--warning) 20%, transparent);
   }
 
   .badge-error {
     @apply badge text-status-error;
-    background-color: color-mix(in srgb, var(--error) 15%, transparent);
+    background-color: color-mix(in srgb, var(--error) 20%, transparent);
   }
 
   .badge-info {
     @apply badge text-status-info;
-    background-color: color-mix(in srgb, var(--info) 15%, transparent);
+    background-color: color-mix(in srgb, var(--info) 20%, transparent);
   }
 }

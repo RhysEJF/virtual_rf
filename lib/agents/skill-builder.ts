@@ -90,9 +90,32 @@ Detailed instructions for this step...
 ### Step 3: [Name]
 Detailed instructions for this step...
 
-## Tools & Resources
-- **tool_name**: When to use this tool
-- **resource_type**: How to access this resource
+## Tools Available
+
+For each tool this skill uses, document it with this structure:
+
+### [tool-name]
+**Purpose:** What this tool does
+**Path:** \`../tools/tool-name.ts\`
+**Run:** \`npx ts-node ../tools/tool-name.ts [args]\`
+**Key Options:**
+- \`--option1\`: Description
+- \`--option2\`: Description
+
+**Example Usage:**
+\`\`\`bash
+npx ts-node ../tools/tool-name.ts https://example.com --json
+\`\`\`
+
+**When to Use:** Specific situations in the methodology where this tool applies
+
+---
+
+IMPORTANT: If tools exist in ../tools/, check their --help output and document:
+1. The exact path to run them
+2. Required and optional arguments
+3. Example commands for common use cases
+4. Which methodology steps use this tool
 
 ## Output Template
 Define the expected format for deliverables:
@@ -112,10 +135,12 @@ Brief example of applying this methodology...
 
 ## Requirements
 1. The skill document must have valid YAML frontmatter with name and triggers
-2. Include all required sections: Purpose, When to Use, Methodology, Output Template
+2. Include all required sections: Purpose, When to Use, Methodology, Tools Available, Output Template
 3. The methodology must be actionable and step-by-step
 4. Include specific examples where helpful
 5. The skill should be self-contained and usable without additional context
+6. **Tools section must include executable instructions** - path, run command, args, examples
+7. Cross-reference tools in methodology steps (e.g., "Use web-scraper tool to fetch...")
 
 ## Validation
 After creating the skill document, verify:
@@ -126,11 +151,15 @@ After creating the skill document, verify:
 
 ## Instructions
 1. Read the specification carefully
-2. Research best practices for this type of skill if needed
-3. Create the skill document following the template
-4. Ensure the methodology is detailed enough for an AI to follow
-5. Write the file to the output location
-6. Write DONE to progress.txt when complete
+2. Check if any tools exist in \`../tools/\` that are relevant to this skill
+3. If tools exist, run \`npx ts-node ../tools/[name].ts --help\` to get their CLI interface
+4. Research best practices for this type of skill if needed
+5. Create the skill document following the template
+6. Document all relevant tools with executable instructions (path, command, args, examples)
+7. Cross-reference tools in the methodology steps
+8. Ensure the methodology is detailed enough for an AI to follow
+9. Write the file to the output location
+10. Write DONE to progress.txt when complete
 `;
 }
 

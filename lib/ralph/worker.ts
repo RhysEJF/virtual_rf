@@ -23,6 +23,7 @@ import {
   completeWorker,
   failWorker,
 } from '../db/workers';
+import { buildSkillContext } from '../agents/skill-manager';
 import {
   claimNextTask,
   startTask,
@@ -90,6 +91,10 @@ function generateTaskInstructions(
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
+  // Try to load relevant skills based on task title and description
+  const searchQuery = `${task.title} ${task.description || ''}`;
+  const skillContext = buildSkillContext(searchQuery, 2);
+
   return `# Current Task
 
 ## Outcome: ${outcomeName}
@@ -108,7 +113,7 @@ ${task.prd_context ? `### PRD Context\n${task.prd_context}\n` : ''}
 ${task.design_context ? `### Design Context\n${task.design_context}\n` : ''}
 
 ---
-
+${skillContext ? `\n${skillContext}\n---\n` : ''}
 ## Instructions
 
 1. Complete the task described above

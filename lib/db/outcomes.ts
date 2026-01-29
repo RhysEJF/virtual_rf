@@ -169,10 +169,10 @@ export function getOutcomesByStatus(status: OutcomeStatus): Outcome[] {
 }
 
 export interface OutcomeListItem extends Outcome {
-  task_count: number;
-  active_task_count: number;
-  worker_count: number;
-  active_worker_count: number;
+  total_tasks: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  active_workers: number;
   is_converging: boolean;
 }
 
@@ -182,10 +182,10 @@ export function getOutcomesWithCounts(): OutcomeListItem[] {
   const rows = db.prepare(`
     SELECT
       o.*,
-      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id) as task_count,
-      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id AND status IN ('pending', 'claimed', 'running')) as active_task_count,
-      (SELECT COUNT(*) FROM workers WHERE outcome_id = o.id) as worker_count,
-      (SELECT COUNT(*) FROM workers WHERE outcome_id = o.id AND status = 'running') as active_worker_count,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id) as total_tasks,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id AND status = 'pending') as pending_tasks,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id AND status = 'completed') as completed_tasks,
+      (SELECT COUNT(*) FROM workers WHERE outcome_id = o.id AND status = 'running') as active_workers,
       (
         SELECT CASE
           WHEN COUNT(*) >= 2 AND SUM(issues_found) = 0 THEN 1
@@ -199,10 +199,10 @@ export function getOutcomesWithCounts(): OutcomeListItem[] {
     FROM outcomes o
     ORDER BY o.last_activity_at DESC
   `).all() as (Outcome & {
-    task_count: number;
-    active_task_count: number;
-    worker_count: number;
-    active_worker_count: number;
+    total_tasks: number;
+    pending_tasks: number;
+    completed_tasks: number;
+    active_workers: number;
     is_converging: number;
   })[];
 

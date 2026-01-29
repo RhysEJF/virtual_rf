@@ -248,8 +248,24 @@ export default function OutcomeDetailPage(): JSX.Element {
             <CardHeader>
               <CardTitle>Progress</CardTitle>
               {convergence && (
-                <Badge variant={convergence.is_converging ? 'success' : 'default'}>
-                  {convergence.is_converging ? 'Converging' : `${convergence.trend}`}
+                <Badge variant={
+                  convergence.is_converging || (progressPercent === 100 && convergence.consecutive_zero_issues >= 1)
+                    ? 'success'
+                    : convergence.trend === 'improving' ? 'info' : 'default'
+                }>
+                  {convergence.is_converging
+                    ? 'Converging'
+                    : progressPercent === 100 && convergence.consecutive_zero_issues >= 1
+                    ? 'Complete'
+                    : convergence.total_cycles === 0
+                    ? 'Needs Review'
+                    : convergence.trend === 'unknown'
+                    ? convergence.last_issues === 0 ? 'Clean' : 'In Progress'
+                    : convergence.trend === 'improving'
+                    ? 'Improving'
+                    : convergence.trend === 'stable'
+                    ? 'Stable'
+                    : 'Needs Work'}
                 </Badge>
               )}
             </CardHeader>

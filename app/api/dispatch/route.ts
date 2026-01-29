@@ -10,29 +10,33 @@ import { dispatch, type DispatchResult } from '@/lib/agents/dispatcher';
 import { executeQuick } from '@/lib/agents/quick-executor';
 import { generateBrief } from '@/lib/agents/briefer';
 import { executeResearch, formatResearchPlan } from '@/lib/agents/research-handler';
-import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
 import { createOutcome } from '@/lib/db/outcomes';
-import { logOutcomeCreated, logWorkerStarted } from '@/lib/db/activity';
+import { logOutcomeCreated } from '@/lib/db/activity';
+
+type ModeHint = 'smart' | 'quick' | 'long';
 
 interface DispatchRequest {
   input: string;
+  modeHint?: ModeHint; // User can override AI classification
   projectContext?: string; // For interventions on existing projects
 }
 
 interface DispatchResponse {
-  type: DispatchResult['type'];
+  type: DispatchResult['type'] | 'outcome';
   response?: string;
   questions?: string[];
-  projectId?: string;
+  projectId?: string; // Deprecated, use outcomeId
+  outcomeId?: string;
+  navigateTo?: string;
   error?: string;
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<DispatchResponse>> {
   try {
     const body = (await request.json()) as DispatchRequest;
-    const { input } = body;
+    const { input, modeHint } = body;
 
     if (!input || typeof input !== 'string') {
       return NextResponse.json(
@@ -53,11 +57,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       );
     }
 
-    // Classify the request
-    const classification = await dispatch(input);
+    // Determine request type based on mode hint or AI classification
+    let requestType: 'quick' | 'research' | 'deep' | 'clarification';
+    let clarifyingQuestions: string[] | undefined;
+
+    if (modeHint === 'quick') {
+      // User explicitly wants a quick response
+      requestType = 'quick';
+    } else if (modeHint === 'long') {
+      // User explicitly wants long-running agent - treat as deep work
+      requestType = 'deep';
+    } else {
+      // Smart mode: let AI classify
+      const classification = await dispatch(input);
+      requestType = classification.type;
+      clarifyingQuestions = classification.clarifyingQuestions;
+    }
 
     // Handle based on type
-    switch (classification.type) {
+    switch (requestType) {
       case 'quick': {
         const result = await executeQuick(input);
 
@@ -75,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       }
 
       case 'research': {
-        const result = await executeResearch(input, true);
+        const result = await executeResearch(input, false); // Don't auto-start - let user review first
 
         if (!result.success) {
           return NextResponse.json({
@@ -84,17 +102,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
           });
         }
 
-        let response = formatResearchPlan(result.plan!);
-
-        if (result.workerStarted) {
-          response += `\n\n**Worker Started!** Ralph is now researching. Check the outcome detail for progress.`;
-        } else {
-          response += `\n\n**Outcome created.** Start a worker to begin the research.`;
-        }
+        const response = formatResearchPlan(result.plan!) + '\n\nReview the outcome and start a worker when ready.';
 
         return NextResponse.json({
-          type: 'research',
-          projectId: result.outcomeId,
+          type: 'outcome',
+          outcomeId: result.outcomeId,
+          navigateTo: `/outcome/${result.outcomeId}`,
           response,
         });
       }
@@ -133,10 +146,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
         // Log activity
         logOutcomeCreated(outcomeId, brief.title);
 
-        const prdList = brief.prd
-          .map((item, i) => `${i + 1}. [ ] ${item.title}`)
-          .join('\n');
-
         // Create tasks from PRD items for the worker to claim
         for (const item of brief.prd) {
           createTask({
@@ -148,46 +157,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
           });
         }
 
-        // Auto-start the Ralph worker
-        let workerStatus = '';
-        try {
-          const workerResult = await startRalphWorker({
-            outcomeId: outcomeId,
-          });
-
-          if (workerResult.started) {
-            logWorkerStarted(outcomeId, brief.title, `Ralph Worker ${workerResult.workerId?.slice(-12)}`, workerResult.workerId || '');
-            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the tasks. Check the \`workspaces/${outcomeId}\` folder for progress.`;
-          } else {
-            workerStatus = `\n\n**Worker failed to start:** ${workerResult.error}`;
-          }
-        } catch (err) {
-          workerStatus = `\n\n**Worker failed to start:** ${err instanceof Error ? err.message : 'Unknown error'}`;
-        }
-
+        // Don't auto-start - let user review and start when ready
         return NextResponse.json({
-          type: 'deep',
-          projectId: outcomeId,
+          type: 'outcome',
+          outcomeId: outcomeId,
+          navigateTo: `/outcome/${outcomeId}`,
           response: `**Outcome Created: ${brief.title}**
 
 **Objective:** ${brief.objective}
 
-**Scope:**
-${brief.scope.map(s => `- ${s}`).join('\n')}
+**Tasks:** ${brief.prd.length} tasks created
 
-**Deliverables:**
-${brief.deliverables.map(d => `- ${d}`).join('\n')}
-
-**Tasks:**
-${prdList}
-
-**Estimated time:** ~${brief.estimatedMinutes} minutes
-${workerStatus}`,
+Review the outcome and start a worker when ready.`,
         });
       }
 
       case 'clarification': {
-        const questions = classification.clarifyingQuestions || [
+        const questions = clarifyingQuestions || [
           'Could you please provide more details about what you need?',
         ];
 

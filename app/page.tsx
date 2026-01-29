@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { CommandBar } from './components/CommandBar';
+import { CommandBar, type RequestMode } from './components/CommandBar';
 import { SystemStatus } from './components/SystemStatus';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ActivityFeed } from './components/ActivityFeed';
@@ -40,7 +40,7 @@ export default function Dashboard(): JSX.Element {
     return () => clearInterval(interval);
   }, [fetchOutcomes]);
 
-  const handleSubmit = useCallback(async (input: string) => {
+  const handleSubmit = useCallback(async (input: string, mode: RequestMode) => {
     setLoading(true);
     setLastResponse(null);
 
@@ -48,17 +48,24 @@ export default function Dashboard(): JSX.Element {
       const response = await fetch('/api/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input, modeHint: mode }),
       });
 
       const data = await response.json();
+
+      // For outcomes (research/deep work), navigate to the detail page
+      if (data.type === 'outcome' && data.navigateTo) {
+        fetchOutcomes();
+        router.push(data.navigateTo);
+        return; // Don't show inline response, navigate instead
+      }
+
+      // For quick tasks and clarifications, show inline response
       setLastResponse(data.response || data.error || 'Processing...');
 
-      // Refresh outcomes if a new one was created
-      if (data.projectId) {
+      // Legacy support: if projectId exists but no navigateTo
+      if (data.projectId || data.outcomeId) {
         fetchOutcomes();
-        // Navigate to the new outcome
-        router.push(`/outcome/${data.projectId}`);
       }
     } catch (error) {
       setLastResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);

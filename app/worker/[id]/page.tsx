@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Badge } from '@/app/components/ui/Badge';
 import { Button } from '@/app/components/ui/Button';
 import { Progress } from '@/app/components/ui/Progress';
-import type { WorkerStatus, TaskStatus, Task, Worker } from '@/lib/db/schema';
+import { InterventionForm } from '@/app/components/InterventionForm';
+import { useToast } from '@/app/hooks/useToast';
+import type { WorkerStatus, TaskStatus, Task, Worker, ProgressEntry } from '@/lib/db/schema';
 
 // Status configurations
 const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'error' }> = {
@@ -32,15 +34,19 @@ interface WorkerWithLiveStatus extends Worker {
 export default function WorkerDetailPage(): JSX.Element {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast();
   const workerId = params.id as string;
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const [worker, setWorker] = useState<WorkerWithLiveStatus | null>(null);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [totalTasks, setTotalTasks] = useState(0);
+  const [logs, setLogs] = useState<ProgressEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   // Fetch worker data
   const fetchWorker = useCallback(async () => {
@@ -63,23 +69,76 @@ export default function WorkerDetailPage(): JSX.Element {
     }
   }, [workerId]);
 
+  // Fetch logs
+  const fetchLogs = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/workers/${workerId}/logs?limit=50`);
+      if (response.ok) {
+        const data = await response.json();
+        setLogs(data.entries || []);
+        // Auto-scroll to bottom if enabled
+        if (autoScroll && logsEndRef.current) {
+          logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    } catch (err) {
+      // Silent fail for logs
+    }
+  }, [workerId, autoScroll]);
+
   useEffect(() => {
     fetchWorker();
-    const interval = setInterval(fetchWorker, 3000); // Poll more frequently
-    return () => clearInterval(interval);
-  }, [fetchWorker]);
+    fetchLogs();
+    const workerInterval = setInterval(fetchWorker, 3000);
+    const logsInterval = setInterval(fetchLogs, 3000);
+    return () => {
+      clearInterval(workerInterval);
+      clearInterval(logsInterval);
+    };
+  }, [fetchWorker, fetchLogs]);
 
   // Actions
   const handleStopWorker = async () => {
     if (!worker) return;
     setActionLoading(true);
     try {
-      await fetch(`/api/outcomes/${worker.outcome_id}/workers?workerId=${workerId}`, {
+      const response = await fetch(`/api/outcomes/${worker.outcome_id}/workers?workerId=${workerId}`, {
         method: 'DELETE',
       });
+      if (response.ok) {
+        toast({ type: 'success', message: 'Worker stopped' });
+      } else {
+        toast({ type: 'error', message: 'Failed to stop worker' });
+      }
       fetchWorker();
     } catch (err) {
-      alert('Failed to stop worker');
+      toast({ type: 'error', message: 'Failed to stop worker' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePauseWorker = async () => {
+    if (!worker) return;
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/outcomes/${worker.outcome_id}/interventions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'pause',
+          message: 'Paused from worker detail page',
+          worker_id: workerId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'success', message: 'Pause signal sent - worker will stop after current task' });
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to pause worker' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to pause worker' });
     } finally {
       setActionLoading(false);
     }
@@ -155,8 +214,8 @@ export default function WorkerDetailPage(): JSX.Element {
             </p>
           </div>
           {isRunning && (
-            <Button variant="secondary" onClick={handleStopWorker} disabled={actionLoading}>
-              Stop Worker
+            <Button variant="secondary" onClick={handlePauseWorker} disabled={actionLoading}>
+              Pause Worker
             </Button>
           )}
         </div>
@@ -236,6 +295,50 @@ export default function WorkerDetailPage(): JSX.Element {
               )}
             </CardContent>
           </Card>
+
+          {/* Live Logs */}
+          <Card padding="md">
+            <CardHeader>
+              <CardTitle>Live Logs</CardTitle>
+              <div className="flex items-center gap-2">
+                <span className="text-text-tertiary text-sm">{logs.length} entries</span>
+                <button
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`text-xs px-2 py-0.5 rounded ${
+                    autoScroll
+                      ? 'bg-accent/20 text-accent'
+                      : 'bg-bg-tertiary text-text-tertiary'
+                  }`}
+                >
+                  {autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {logs.length === 0 ? (
+                <p className="text-text-tertiary text-sm">No logs yet</p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto font-mono text-xs">
+                  {logs.map((entry, idx) => (
+                    <div
+                      key={entry.id || idx}
+                      className="p-2 rounded bg-bg-secondary border-l-2 border-accent/30"
+                    >
+                      <div className="flex items-center gap-2 mb-1 text-text-tertiary">
+                        <span>Iteration {entry.iteration}</span>
+                        <span>•</span>
+                        <span>{new Date(entry.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="text-text-secondary whitespace-pre-wrap">
+                        {entry.content}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sidebar */}
@@ -285,6 +388,26 @@ export default function WorkerDetailPage(): JSX.Element {
             </Card>
           )}
 
+          {/* Send Intervention */}
+          {isRunning && (
+            <Card padding="md">
+              <CardHeader>
+                <CardTitle>Send Instruction</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InterventionForm
+                  outcomeId={worker.outcome_id}
+                  workerId={workerId}
+                  onSuccess={() => {
+                    fetchWorker();
+                    fetchLogs();
+                  }}
+                  compact
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Quick Actions */}
           <Card padding="md">
             <CardHeader>
@@ -293,9 +416,14 @@ export default function WorkerDetailPage(): JSX.Element {
             <CardContent>
               <div className="space-y-2">
                 {isRunning && (
-                  <Button variant="secondary" className="w-full" onClick={handleStopWorker} disabled={actionLoading}>
-                    Stop Worker
-                  </Button>
+                  <>
+                    <Button variant="secondary" className="w-full" onClick={handlePauseWorker} disabled={actionLoading}>
+                      Pause Worker
+                    </Button>
+                    <Button variant="ghost" className="w-full text-status-error hover:bg-status-error/10" onClick={handleStopWorker} disabled={actionLoading}>
+                      Force Stop
+                    </Button>
+                  </>
                 )}
                 <Button variant="ghost" className="w-full" onClick={() => router.push(`/outcome/${worker.outcome_id}`)}>
                   View Outcome

@@ -6,6 +6,8 @@ import type { Activity, ActivityType } from '@/lib/db/schema';
 
 interface ActivityFeedProps {
   onOutcomeClick?: (outcomeId: string) => void;
+  outcomeId?: string; // Filter to specific outcome
+  showFilter?: boolean; // Show outcome filter dropdown
 }
 
 // Activity type icons and colors
@@ -40,13 +42,43 @@ function formatTimeAgo(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-export function ActivityFeed({ onOutcomeClick }: ActivityFeedProps): JSX.Element {
+interface OutcomeOption {
+  id: string;
+  name: string;
+}
+
+export function ActivityFeed({ onOutcomeClick, outcomeId, showFilter = false }: ActivityFeedProps): JSX.Element {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterOutcomeId, setFilterOutcomeId] = useState<string>(outcomeId || '');
+  const [outcomeOptions, setOutcomeOptions] = useState<OutcomeOption[]>([]);
+
+  // Fetch outcome options for filter
+  useEffect(() => {
+    if (!showFilter) return;
+    const fetchOutcomes = async () => {
+      try {
+        const response = await fetch('/api/outcomes');
+        const data = await response.json();
+        const options = (data.outcomes || []).map((o: { id: string; name: string }) => ({
+          id: o.id,
+          name: o.name,
+        }));
+        setOutcomeOptions(options);
+      } catch (error) {
+        console.error('Failed to fetch outcomes:', error);
+      }
+    };
+    fetchOutcomes();
+  }, [showFilter]);
 
   const fetchActivity = useCallback(async () => {
     try {
-      const response = await fetch('/api/activity?limit=30');
+      const params = new URLSearchParams({ limit: '30' });
+      if (filterOutcomeId) {
+        params.set('outcome_id', filterOutcomeId);
+      }
+      const response = await fetch(`/api/activity?${params}`);
       const data = await response.json();
       setActivities(data.activities || []);
     } catch (error) {
@@ -54,7 +86,7 @@ export function ActivityFeed({ onOutcomeClick }: ActivityFeedProps): JSX.Element
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterOutcomeId]);
 
   useEffect(() => {
     fetchActivity();
@@ -63,26 +95,51 @@ export function ActivityFeed({ onOutcomeClick }: ActivityFeedProps): JSX.Element
     return () => clearInterval(interval);
   }, [fetchActivity]);
 
+  const filterDropdown = showFilter && (
+    <div className="mb-3">
+      <select
+        value={filterOutcomeId}
+        onChange={(e) => setFilterOutcomeId(e.target.value)}
+        className="w-full text-xs bg-bg-secondary border border-border rounded px-2 py-1.5 text-text-secondary focus:outline-none focus:border-accent"
+      >
+        <option value="">All Outcomes</option>
+        {outcomeOptions.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="text-text-tertiary text-sm">Loading activity...</div>
+      <div>
+        {filterDropdown}
+        <div className="text-text-tertiary text-sm">Loading activity...</div>
+      </div>
     );
   }
 
   if (activities.length === 0) {
     return (
-      <Card padding="md">
-        <CardContent>
-          <p className="text-text-tertiary text-sm">
-            No activity yet. Create an outcome to get started!
-          </p>
-        </CardContent>
-      </Card>
+      <div>
+        {filterDropdown}
+        <Card padding="md">
+          <CardContent>
+            <p className="text-text-tertiary text-sm">
+              {filterOutcomeId ? 'No activity for this outcome yet.' : 'No activity yet. Create an outcome to get started!'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-2 max-h-[70vh] overflow-y-auto">
+    <div>
+      {filterDropdown}
+      <div className="space-y-2 max-h-[70vh] overflow-y-auto">
       {activities.map((activity) => {
         const config = activityConfig[activity.type] || { icon: '•', color: 'text-text-secondary' };
 
@@ -124,6 +181,7 @@ export function ActivityFeed({ onOutcomeClick }: ActivityFeedProps): JSX.Element
           </Card>
         );
       })}
+      </div>
     </div>
   );
 }

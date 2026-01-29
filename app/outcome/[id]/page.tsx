@@ -7,6 +7,8 @@ import { Badge } from '@/app/components/ui/Badge';
 import { Button } from '@/app/components/ui/Button';
 import { Progress } from '@/app/components/ui/Progress';
 import { ProgressView } from '@/app/components/ProgressView';
+import { InterventionForm } from '@/app/components/InterventionForm';
+import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker } from '@/lib/db/schema';
 
 // Types
@@ -70,6 +72,7 @@ const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'defaul
 export default function OutcomeDetailPage(): JSX.Element {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast();
   const outcomeId = params.id as string;
 
   const [outcome, setOutcome] = useState<OutcomeDetail | null>(null);
@@ -116,12 +119,14 @@ export default function OutcomeDetailPage(): JSX.Element {
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}/workers`, { method: 'POST' });
       const data = await response.json();
-      if (!data.success) {
-        alert(data.error || 'Failed to start worker');
+      if (data.success) {
+        toast({ type: 'success', message: 'Worker started!' });
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to start worker' });
       }
       fetchOutcome();
     } catch (err) {
-      alert('Failed to start worker');
+      toast({ type: 'error', message: 'Failed to start worker' });
     } finally {
       setActionLoading(false);
     }
@@ -133,13 +138,13 @@ export default function OutcomeDetailPage(): JSX.Element {
       const response = await fetch(`/api/outcomes/${outcomeId}/review`, { method: 'POST' });
       const data = await response.json();
       if (data.success) {
-        alert(`Review complete: ${data.message}`);
+        toast({ type: 'success', message: `Review complete: ${data.message}` });
       } else {
-        alert(data.error || 'Review failed');
+        toast({ type: 'error', message: data.error || 'Review failed' });
       }
       fetchOutcome();
     } catch (err) {
-      alert('Failed to run review');
+      toast({ type: 'error', message: 'Failed to run review' });
     } finally {
       setActionLoading(false);
     }
@@ -153,9 +158,10 @@ export default function OutcomeDetailPage(): JSX.Element {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
+      toast({ type: 'success', message: `Status changed to ${newStatus}` });
       fetchOutcome();
     } catch (err) {
-      alert('Failed to update status');
+      toast({ type: 'error', message: 'Failed to update status' });
     } finally {
       setActionLoading(false);
     }
@@ -163,7 +169,7 @@ export default function OutcomeDetailPage(): JSX.Element {
 
   const handleOptimizeIntent = async () => {
     if (!intentRamble.trim()) {
-      alert('Please enter your thoughts in the ramble box first');
+      toast({ type: 'warning', message: 'Please enter your thoughts in the ramble box first' });
       return;
     }
     setOptimizingIntent(true);
@@ -177,12 +183,12 @@ export default function OutcomeDetailPage(): JSX.Element {
       if (data.success) {
         setIntentRamble('');
         fetchOutcome();
-        alert('Intent updated successfully!');
+        toast({ type: 'success', message: 'Intent updated successfully!' });
       } else {
-        alert(data.error || 'Failed to optimize intent');
+        toast({ type: 'error', message: data.error || 'Failed to optimize intent' });
       }
     } catch (err) {
-      alert('Failed to optimize intent');
+      toast({ type: 'error', message: 'Failed to optimize intent' });
     } finally {
       setOptimizingIntent(false);
     }
@@ -190,7 +196,7 @@ export default function OutcomeDetailPage(): JSX.Element {
 
   const handleOptimizeApproach = async () => {
     if (!approachRamble.trim()) {
-      alert('Please enter your thoughts in the ramble box first');
+      toast({ type: 'warning', message: 'Please enter your thoughts in the ramble box first' });
       return;
     }
     setOptimizingApproach(true);
@@ -204,12 +210,12 @@ export default function OutcomeDetailPage(): JSX.Element {
       if (data.success) {
         setApproachRamble('');
         fetchOutcome();
-        alert('Approach updated successfully!');
+        toast({ type: 'success', message: 'Approach updated successfully!' });
       } else {
-        alert(data.error || 'Failed to optimize approach');
+        toast({ type: 'error', message: data.error || 'Failed to optimize approach' });
       }
     } catch (err) {
-      alert('Failed to optimize approach');
+      toast({ type: 'error', message: 'Failed to optimize approach' });
     } finally {
       setOptimizingApproach(false);
     }
@@ -244,6 +250,9 @@ export default function OutcomeDetailPage(): JSX.Element {
     : 0;
   const hasRunningWorker = outcome.workers.some(w => w.status === 'running');
   const hasPendingTasks = taskStats ? taskStats.pending > 0 : false;
+  const hasEverHadWorker = outcome.workers.length > 0;
+  const isDraft = !hasEverHadWorker && outcome.status === 'active';
+  const canStartWorker = hasPendingTasks && !hasRunningWorker && outcome.status === 'active';
 
   // Parse intent if available
   let intent: { summary?: string; items?: { id: string; title: string; status: string }[]; success_criteria?: string[] } | null = null;
@@ -277,12 +286,13 @@ export default function OutcomeDetailPage(): JSX.Element {
             )}
           </div>
           <div className="flex gap-2">
-            {outcome.status === 'active' && hasPendingTasks && !hasRunningWorker && (
+            {/* Start Worker - only show in header if not draft (banner has it) */}
+            {canStartWorker && !isDraft && (
               <Button onClick={handleStartWorker} disabled={actionLoading}>
                 Start Worker
               </Button>
             )}
-            {outcome.status === 'active' && (
+            {outcome.status === 'active' && hasEverHadWorker && (
               <Button variant="secondary" onClick={() => handleStatusChange('dormant')} disabled={actionLoading}>
                 Pause
               </Button>
@@ -301,6 +311,34 @@ export default function OutcomeDetailPage(): JSX.Element {
         </div>
       </div>
 
+      {/* Draft State Banner */}
+      {isDraft && (
+        <Card padding="md" className="mb-6 border-accent/30 bg-accent/5">
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-text-primary font-medium mb-1">Ready to Start</h3>
+                <p className="text-text-secondary text-sm">
+                  Review the intent and approach below. When you're ready, start a worker to begin execution.
+                </p>
+              </div>
+              <Button
+                onClick={handleStartWorker}
+                disabled={actionLoading || !hasPendingTasks}
+                className="ml-4"
+              >
+                {actionLoading ? 'Starting...' : 'Start Worker'}
+              </Button>
+            </div>
+            {!hasPendingTasks && (
+              <p className="text-status-warning text-xs mt-2">
+                No pending tasks yet. The outcome needs tasks before a worker can start.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
@@ -308,7 +346,9 @@ export default function OutcomeDetailPage(): JSX.Element {
           <Card padding="md">
             <CardHeader>
               <CardTitle>Progress</CardTitle>
-              {convergence && (
+              {isDraft ? (
+                <Badge variant="info">Draft</Badge>
+              ) : convergence && (
                 <Badge variant={
                   convergence.is_converging || (progressPercent === 100 && convergence.consecutive_zero_issues >= 1)
                     ? 'success'
@@ -331,42 +371,57 @@ export default function OutcomeDetailPage(): JSX.Element {
               )}
             </CardHeader>
             <CardContent>
-              <div className="mb-4">
-                <Progress value={progressPercent} showLabel variant={progressPercent === 100 ? 'success' : 'default'} />
-              </div>
-              {taskStats && (
-                <div className="flex gap-6 text-sm">
-                  <div>
-                    <span className="text-text-tertiary">Completed: </span>
-                    <span className="text-text-primary font-medium">{taskStats.completed}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-tertiary">Running: </span>
-                    <span className="text-text-primary font-medium">{taskStats.running + taskStats.claimed}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-tertiary">Pending: </span>
-                    <span className="text-text-primary font-medium">{taskStats.pending}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-tertiary">Failed: </span>
-                    <span className="text-status-error font-medium">{taskStats.failed}</span>
-                  </div>
+              {isDraft ? (
+                <div className="text-center py-4">
+                  <p className="text-text-secondary text-sm mb-2">
+                    {taskStats && taskStats.total > 0
+                      ? `${taskStats.total} task${taskStats.total !== 1 ? 's' : ''} ready to execute`
+                      : 'No tasks generated yet'}
+                  </p>
+                  <p className="text-text-tertiary text-xs">
+                    Review the intent and approach, then start a worker to begin
+                  </p>
                 </div>
-              )}
-              {convergence && convergence.total_cycles > 0 && (
-                <div className="mt-4 pt-4 border-t border-border text-sm">
-                  <span className="text-text-tertiary">Review cycles: </span>
-                  <span className="text-text-primary">{convergence.total_cycles}</span>
-                  {convergence.consecutive_zero_issues > 0 && (
-                    <span className="text-status-success ml-2">
-                      ({convergence.consecutive_zero_issues} clean)
-                    </span>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <Progress value={progressPercent} showLabel variant={progressPercent === 100 ? 'success' : 'default'} />
+                  </div>
+                  {taskStats && (
+                    <div className="flex gap-6 text-sm">
+                      <div>
+                        <span className="text-text-tertiary">Completed: </span>
+                        <span className="text-text-primary font-medium">{taskStats.completed}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-tertiary">Running: </span>
+                        <span className="text-text-primary font-medium">{taskStats.running + taskStats.claimed}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-tertiary">Pending: </span>
+                        <span className="text-text-primary font-medium">{taskStats.pending}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-tertiary">Failed: </span>
+                        <span className="text-status-error font-medium">{taskStats.failed}</span>
+                      </div>
+                    </div>
                   )}
-                  <Button variant="ghost" size="sm" className="ml-4" onClick={handleRunReview} disabled={actionLoading}>
-                    Run Review
-                  </Button>
-                </div>
+                  {convergence && convergence.total_cycles > 0 && (
+                    <div className="mt-4 pt-4 border-t border-border text-sm">
+                      <span className="text-text-tertiary">Review cycles: </span>
+                      <span className="text-text-primary">{convergence.total_cycles}</span>
+                      {convergence.consecutive_zero_issues > 0 && (
+                        <span className="text-status-success ml-2">
+                          ({convergence.consecutive_zero_issues} clean)
+                        </span>
+                      )}
+                      <Button variant="ghost" size="sm" className="ml-4" onClick={handleRunReview} disabled={actionLoading}>
+                        Run Review
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -485,7 +540,12 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardHeader>
             <CardContent>
               {outcome.tasks.length === 0 ? (
-                <p className="text-text-tertiary text-sm">No tasks yet</p>
+                <div className="text-center py-6">
+                  <p className="text-text-tertiary text-sm mb-2">No tasks yet</p>
+                  <p className="text-text-tertiary text-xs">
+                    Tasks are generated from the intent. Try optimizing the intent above to create tasks.
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {outcome.tasks.map((task) => {
@@ -513,14 +573,16 @@ export default function OutcomeDetailPage(): JSX.Element {
           </Card>
 
           {/* Worker Progress (Episodic Memory) */}
-          <Card padding="md">
-            <CardHeader>
-              <CardTitle>Worker Progress</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ProgressView outcomeId={outcomeId} />
-            </CardContent>
-          </Card>
+          {!isDraft && (
+            <Card padding="md">
+              <CardHeader>
+                <CardTitle>Worker Progress</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ProgressView outcomeId={outcomeId} />
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -532,7 +594,14 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardHeader>
             <CardContent>
               {outcome.workers.length === 0 ? (
-                <p className="text-text-tertiary text-sm">No workers</p>
+                <div className="text-center py-4">
+                  <p className="text-text-tertiary text-sm mb-2">No workers started yet</p>
+                  {isDraft && (
+                    <p className="text-text-tertiary text-xs">
+                      Start a worker using the button above to begin execution
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-3">
                   {outcome.workers.map((worker) => {
@@ -564,6 +633,23 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardContent>
           </Card>
 
+          {/* Intervention Form */}
+          {hasRunningWorker && (
+            <Card padding="md">
+              <CardHeader>
+                <CardTitle>Send Instruction</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InterventionForm
+                  outcomeId={outcomeId}
+                  workerId={outcome.workers.find(w => w.status === 'running')?.id}
+                  onSuccess={fetchOutcome}
+                  compact
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Quick Actions */}
           <Card padding="md">
             <CardHeader>
@@ -571,14 +657,26 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {!hasRunningWorker && hasPendingTasks && (
+                {canStartWorker && (
                   <Button variant="primary" className="w-full" onClick={handleStartWorker} disabled={actionLoading}>
-                    Start Worker
+                    {isDraft ? 'Start Worker' : 'Start Another Worker'}
                   </Button>
                 )}
-                <Button variant="secondary" className="w-full" onClick={handleRunReview} disabled={actionLoading}>
-                  Run Review
-                </Button>
+                {hasEverHadWorker && (
+                  <Button variant="secondary" className="w-full" onClick={handleRunReview} disabled={actionLoading}>
+                    Run Review
+                  </Button>
+                )}
+                {outcome.status === 'active' && hasEverHadWorker && (
+                  <Button variant="ghost" className="w-full" onClick={() => handleStatusChange('dormant')} disabled={actionLoading}>
+                    Pause Outcome
+                  </Button>
+                )}
+                {outcome.status === 'dormant' && (
+                  <Button variant="ghost" className="w-full" onClick={() => handleStatusChange('active')} disabled={actionLoading}>
+                    Resume Outcome
+                  </Button>
+                )}
                 <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
                   Back to Dashboard
                 </Button>

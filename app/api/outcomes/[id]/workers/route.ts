@@ -10,6 +10,7 @@ import { getWorkersByOutcome } from '@/lib/db/workers';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { getPendingTasks } from '@/lib/db/tasks';
 import { startRalphWorker, stopRalphWorker, getRalphWorkerStatus } from '@/lib/ralph/worker';
+import { isGitRepo } from '@/lib/worktree/manager';
 
 export async function GET(
   request: NextRequest,
@@ -54,12 +55,25 @@ export async function GET(
   }
 }
 
+interface StartWorkerRequest {
+  parallel?: boolean; // Allow starting even if another worker is running
+  useWorktree?: boolean; // Use git worktree for isolation
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
+
+    // Parse request body (optional)
+    let body: StartWorkerRequest = {};
+    try {
+      body = await request.json();
+    } catch {
+      // No body is fine
+    }
 
     // Verify outcome exists
     const outcome = getOutcomeById(id);
@@ -79,21 +93,32 @@ export async function POST(
       );
     }
 
-    // Check for already running workers
+    // Check for already running workers (unless parallel mode)
     const workers = getWorkersByOutcome(id);
-    const runningWorker = workers.find(w => w.status === 'running');
-    if (runningWorker) {
+    const runningWorkers = workers.filter(w => w.status === 'running');
+
+    if (runningWorkers.length > 0 && !body.parallel) {
       return NextResponse.json(
         {
-          error: 'A worker is already running for this outcome',
-          workerId: runningWorker.id,
+          error: 'A worker is already running for this outcome. Use parallel=true to start another.',
+          workerId: runningWorkers[0].id,
+          runningCount: runningWorkers.length,
         },
         { status: 400 }
       );
     }
 
+    // Check if worktrees can be used
+    const canUseWorktree = body.useWorktree && isGitRepo();
+    if (body.useWorktree && !canUseWorktree) {
+      console.warn('[Workers] Worktree requested but not in a git repo, using shared workspace');
+    }
+
     // Start new worker
-    const result = await startRalphWorker({ outcomeId: id });
+    const result = await startRalphWorker({
+      outcomeId: id,
+      useWorktree: canUseWorktree,
+    });
 
     if (!result.started) {
       return NextResponse.json(
@@ -107,6 +132,8 @@ export async function POST(
         success: true,
         workerId: result.workerId,
         message: `Worker started with ${pendingTasks.length} pending tasks`,
+        parallel: body.parallel || false,
+        usingWorktree: canUseWorktree,
       },
       { status: 201 }
     );

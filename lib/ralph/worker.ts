@@ -35,6 +35,13 @@ import {
 import type { Task, Intent } from '../db/schema';
 import { getOutcomeById } from '../db/outcomes';
 import { createProgressEntry } from '../db/progress';
+import {
+  getPendingInterventionsForWorker,
+  acknowledgeIntervention,
+  completeIntervention,
+} from '../db/interventions';
+import { updateWorker as updateWorkerDb } from '../db/workers';
+import { createWorktree, removeWorktree, isGitRepo } from '../worktree/manager';
 
 // ============================================================================
 // Types
@@ -45,6 +52,7 @@ export interface RalphConfig {
   workspacePath?: string;
   maxIterations?: number; // Default 50
   heartbeatIntervalMs?: number; // Default 30000 (30 seconds)
+  useWorktree?: boolean; // Use git worktree for isolation (parallel workers)
 }
 
 export interface RalphProgress {
@@ -189,6 +197,7 @@ export async function startRalphWorker(
     workspacePath = join(process.cwd(), 'workspaces'),
     maxIterations = 50,
     heartbeatIntervalMs = 30000,
+    useWorktree = false,
   } = config;
 
   // Verify outcome exists
@@ -207,21 +216,47 @@ export async function startRalphWorker(
     }
   }
 
-  // Create workspace
-  const outcomeWorkspace = join(workspacePath, outcomeId);
-  if (!existsSync(workspacePath)) {
-    mkdirSync(workspacePath, { recursive: true });
-  }
-  if (!existsSync(outcomeWorkspace)) {
-    mkdirSync(outcomeWorkspace, { recursive: true });
-  }
-
-  // Create worker in database
+  // Create worker in database first (needed for worktree branch name)
   const dbWorker = createWorker({
     outcome_id: outcomeId,
     name: `Ralph Worker ${Date.now()}`,
   });
   const workerId = dbWorker.id;
+
+  // Set up workspace - either worktree or shared
+  let outcomeWorkspace: string;
+  let worktreePath: string | null = null;
+  let branchName: string | null = null;
+
+  if (useWorktree && isGitRepo()) {
+    try {
+      const worktree = createWorktree(outcomeId, workerId);
+      worktreePath = worktree.path;
+      branchName = worktree.branch;
+      outcomeWorkspace = worktree.path;
+
+      // Update worker with worktree info
+      updateWorkerDb(workerId, {
+        worktree_path: worktreePath,
+        branch_name: branchName,
+      });
+
+      console.log(`[Worker] Using worktree at ${worktreePath} on branch ${branchName}`);
+    } catch (err) {
+      console.error('[Worker] Failed to create worktree, falling back to shared workspace:', err);
+      // Fall back to shared workspace
+      outcomeWorkspace = join(workspacePath, outcomeId);
+    }
+  } else {
+    // Create shared workspace
+    outcomeWorkspace = join(workspacePath, outcomeId);
+    if (!existsSync(workspacePath)) {
+      mkdirSync(workspacePath, { recursive: true });
+    }
+    if (!existsSync(outcomeWorkspace)) {
+      mkdirSync(outcomeWorkspace, { recursive: true });
+    }
+  }
 
   // Start the worker (sets status to 'running', started_at, heartbeat)
   startWorkerDb(workerId);
@@ -279,6 +314,65 @@ export async function startRalphWorker(
       while (workerState.running && iteration < maxIterations) {
         iteration++;
         incrementIteration(workerId);
+
+        // Check for pending interventions before claiming next task
+        const interventions = getPendingInterventionsForWorker(workerId, outcomeId);
+        for (const intervention of interventions) {
+          appendLog(`Processing intervention: ${intervention.type} - ${intervention.message}`);
+          acknowledgeIntervention(intervention.id);
+
+          switch (intervention.type) {
+            case 'add_task':
+              // Task was already created by the API, just log it
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Intervention: Added task - ${intervention.message}`,
+              });
+              completeIntervention(intervention.id);
+              break;
+
+            case 'redirect':
+              // Store redirect message to inject into next task context
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Intervention: Redirect instruction - ${intervention.message}`,
+              });
+              // The redirect message will be visible in progress, worker sees it
+              appendLog(`Redirect instruction received: ${intervention.message}`);
+              completeIntervention(intervention.id);
+              break;
+
+            case 'pause':
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Intervention: Paused - ${intervention.message || 'User requested pause'}`,
+              });
+              appendLog(`Pause intervention received, stopping worker`);
+              completeIntervention(intervention.id);
+              workerState.running = false;
+              break;
+
+            case 'priority_change':
+              // Priority changes are handled at the task level, just acknowledge
+              completeIntervention(intervention.id);
+              break;
+          }
+
+          // If paused, break out of intervention loop
+          if (!workerState.running) break;
+        }
+
+        // Check if we were paused by an intervention
+        if (!workerState.running) {
+          appendLog(`Worker paused by intervention`);
+          break;
+        }
 
         // Update progress
         progress.status = 'claiming';
@@ -397,11 +491,15 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     // Cleanup
     clearInterval(heartbeatInterval);
 
-    // Final status
+    // Final status - check if paused by intervention or stopped manually
+    const wasPaused = !workerState.running && !hasError;
     if (hasError) {
       failWorker(workerId);
       progress.status = 'failed';
       progress.error = errorMessage;
+    } else if (wasPaused) {
+      updateWorker(workerId, { status: 'paused' });
+      progress.status = 'stopped';
     } else {
       completeWorker(workerId);
       progress.status = 'completed';

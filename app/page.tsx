@@ -6,6 +6,8 @@ import { CommandBar, type RequestMode } from './components/CommandBar';
 import { SystemStatus } from './components/SystemStatus';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ActivityFeed } from './components/ActivityFeed';
+import { SupervisorAlerts } from './components/SupervisorAlerts';
+import { ImprovementSuggestions } from './components/ImprovementSuggestions';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
 import { Card, CardContent } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
@@ -284,14 +286,27 @@ export default function Dashboard(): JSX.Element {
           )}
         </div>
 
-        {/* Right Column: Activity Feed */}
-        <div className="space-y-4">
-          <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
-            Activity
-          </h2>
-          <ActivityFeed
+        {/* Right Column: Supervisor & Activity Feed */}
+        <div className="space-y-6">
+          {/* Supervisor Alerts */}
+          <SupervisorAlerts
+            onWorkerClick={(workerId) => router.push(`/worker/${workerId}`)}
             onOutcomeClick={(outcomeId) => router.push(`/outcome/${outcomeId}`)}
           />
+
+          {/* Improvement Suggestions */}
+          <ImprovementSuggestions />
+
+          {/* Activity Feed */}
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
+              Activity
+            </h2>
+            <ActivityFeed
+              onOutcomeClick={(outcomeId) => router.push(`/outcome/${outcomeId}`)}
+              showFilter
+            />
+          </div>
         </div>
       </div>
 

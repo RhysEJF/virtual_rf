@@ -80,6 +80,8 @@ export interface UpdateWorkerInput {
   iteration?: number;
   progress_summary?: string | null;
   cost?: number;
+  worktree_path?: string | null;
+  branch_name?: string | null;
 }
 
 export function updateWorker(id: string, input: UpdateWorkerInput): Worker | null {
@@ -112,6 +114,14 @@ export function updateWorker(id: string, input: UpdateWorkerInput): Worker | nul
   if (input.cost !== undefined) {
     updates.push('cost = ?');
     values.push(input.cost);
+  }
+  if (input.worktree_path !== undefined) {
+    updates.push('worktree_path = ?');
+    values.push(input.worktree_path);
+  }
+  if (input.branch_name !== undefined) {
+    updates.push('branch_name = ?');
+    values.push(input.branch_name);
   }
 
   values.push(id);

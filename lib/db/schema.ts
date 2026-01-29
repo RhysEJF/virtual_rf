@@ -30,8 +30,15 @@ export type TaskStatus =
 export type WorkerStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed';
 
 export type InterventionType = 'clarification' | 'redirect' | 'skill_gap' | 'error';
+export type InterventionActionType = 'add_task' | 'redirect' | 'pause' | 'priority_change';
+export type InterventionStatus = 'pending' | 'acknowledged' | 'completed' | 'dismissed';
 export type SuggestionType = 'skill' | 'automation' | 'process';
 export type SuggestionStatus = 'pending' | 'accepted' | 'dismissed';
+
+// Supervisor alert types
+export type SupervisorAlertType = 'stuck' | 'no_progress' | 'repeated_errors' | 'high_cost';
+export type SupervisorAlertSeverity = 'warning' | 'critical';
+export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 
 // ============================================================================
 // Core Entities
@@ -103,6 +110,22 @@ export interface Worker {
   cost: number;
   started_at: number | null;
   updated_at: number;
+  // Parallel worker support
+  worktree_path: string | null;     // Path to git worktree
+  branch_name: string | null;       // Git branch name for this worker
+}
+
+export type MergeQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'conflicted';
+
+export interface MergeQueueEntry {
+  id: number;
+  outcome_id: string;
+  source_worker_id: string;
+  status: MergeQueueStatus;
+  conflict_files: string | null;    // JSON array of conflicting files
+  error_message: string | null;
+  created_at: number;
+  completed_at: number | null;
 }
 
 export interface ReviewCycle {
@@ -197,6 +220,33 @@ export interface Activity {
   description: string | null;
   metadata: string | null;          // JSON for additional data
   created_at: number;
+}
+
+export interface Intervention {
+  id: string;
+  outcome_id: string;
+  worker_id: string | null;         // NULL means for any worker on this outcome
+  type: InterventionActionType;
+  message: string;
+  priority: number;                 // Higher = more urgent
+  status: InterventionStatus;
+  created_at: number;
+  acknowledged_at: number | null;
+  completed_at: number | null;
+}
+
+export interface SupervisorAlert {
+  id: number;
+  worker_id: string;
+  outcome_id: string;
+  type: SupervisorAlertType;
+  severity: SupervisorAlertSeverity;
+  message: string;
+  status: SupervisorAlertStatus;
+  auto_paused: boolean;             // Whether the supervisor auto-paused the worker
+  created_at: number;
+  acknowledged_at: number | null;
+  resolved_at: number | null;
 }
 
 // ============================================================================
@@ -336,8 +386,24 @@ CREATE TABLE IF NOT EXISTS workers (
   cost REAL DEFAULT 0,
   started_at INTEGER,
   updated_at INTEGER NOT NULL,
+  worktree_path TEXT,
+  branch_name TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (current_task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+-- Merge Queue: Track worker branch merges
+CREATE TABLE IF NOT EXISTS merge_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  outcome_id TEXT NOT NULL,
+  source_worker_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  conflict_files TEXT,
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
 
 -- Review Cycles: Track convergence
@@ -451,6 +517,39 @@ CREATE TABLE IF NOT EXISTS activity_log (
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE
 );
 
+-- Interventions (user commands to workers)
+CREATE TABLE IF NOT EXISTS interventions (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL,
+  worker_id TEXT,
+  type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  acknowledged_at INTEGER,
+  completed_at INTEGER,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
+  FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE SET NULL
+);
+
+-- Supervisor alerts (automated monitoring alerts)
+CREATE TABLE IF NOT EXISTS supervisor_alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  auto_paused INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  acknowledged_at INTEGER,
+  resolved_at INTEGER,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
+  FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
 -- ============================================================================
 -- Indexes
 -- ============================================================================
@@ -498,6 +597,23 @@ CREATE INDEX IF NOT EXISTS idx_progress_compacted ON progress_entries(compacted)
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_outcome ON activity_log(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(type);
+
+-- Interventions
+CREATE INDEX IF NOT EXISTS idx_interventions_outcome ON interventions(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_interventions_worker ON interventions(worker_id, status);
+CREATE INDEX IF NOT EXISTS idx_interventions_status ON interventions(status);
+CREATE INDEX IF NOT EXISTS idx_interventions_pending ON interventions(worker_id, status, priority DESC) WHERE status = 'pending';
+
+-- Supervisor alerts
+CREATE INDEX IF NOT EXISTS idx_supervisor_alerts_status ON supervisor_alerts(status);
+CREATE INDEX IF NOT EXISTS idx_supervisor_alerts_worker ON supervisor_alerts(worker_id);
+CREATE INDEX IF NOT EXISTS idx_supervisor_alerts_outcome ON supervisor_alerts(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_supervisor_alerts_active ON supervisor_alerts(status, created_at DESC) WHERE status = 'active';
+
+-- Merge queue
+CREATE INDEX IF NOT EXISTS idx_merge_queue_outcome ON merge_queue(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_merge_queue_status ON merge_queue(status);
+CREATE INDEX IF NOT EXISTS idx_merge_queue_pending ON merge_queue(outcome_id, status) WHERE status = 'pending';
 `;
 
 // ============================================================================

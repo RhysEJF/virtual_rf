@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Button } from '@/app/components/ui/Button';
 import { Badge } from '@/app/components/ui/Badge';
+import { useToast } from '@/app/hooks/useToast';
 
 interface Skill {
   id: string;
@@ -26,6 +27,7 @@ interface SkillStats {
 
 export default function SkillsLibraryPage(): JSX.Element {
   const router = useRouter();
+  const { toast } = useToast();
   const [skills, setSkills] = useState<Record<string, Skill[]>>({});
   const [stats, setStats] = useState<SkillStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,12 +70,12 @@ export default function SkillsLibraryPage(): JSX.Element {
       });
       const data = await response.json();
       if (data.success) {
-        alert(`Synced: ${data.loaded} loaded, ${data.updated} updated`);
+        toast({ type: 'success', message: `Synced: ${data.loaded} loaded, ${data.updated} updated` });
         fetchSkills();
       }
     } catch (error) {
       console.error('Failed to sync skills:', error);
-      alert('Failed to sync skills');
+      toast({ type: 'error', message: 'Failed to sync skills' });
     } finally {
       setSyncing(false);
     }
@@ -98,7 +100,7 @@ export default function SkillsLibraryPage(): JSX.Element {
 
   const createSkill = async () => {
     if (!newSkillCategory.trim() || !newSkillName.trim()) {
-      alert('Category and name are required');
+      toast({ type: 'warning', message: 'Category and name are required' });
       return;
     }
 
@@ -115,18 +117,18 @@ export default function SkillsLibraryPage(): JSX.Element {
       });
       const data = await response.json();
       if (data.success) {
-        alert(`Skill created at: ${data.path}`);
+        toast({ type: 'success', message: `Skill created at: ${data.path}` });
         setShowCreateForm(false);
         setNewSkillCategory('');
         setNewSkillName('');
         setNewSkillDescription('');
         fetchSkills();
       } else {
-        alert(data.error || 'Failed to create skill');
+        toast({ type: 'error', message: data.error || 'Failed to create skill' });
       }
     } catch (error) {
       console.error('Failed to create skill:', error);
-      alert('Failed to create skill');
+      toast({ type: 'error', message: 'Failed to create skill' });
     } finally {
       setCreating(false);
     }

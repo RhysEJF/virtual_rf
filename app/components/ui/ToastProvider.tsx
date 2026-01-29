@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useState, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Toast, type ToastData, type ToastType } from './Toast';
 
@@ -23,10 +23,10 @@ export function ToastProvider({ children }: { children: ReactNode }): JSX.Elemen
   const [toasts, setToasts] = useState<ToastData[]>([]);
   const [mounted, setMounted] = useState(false);
 
-  // Track if we're mounted (for portal rendering)
-  useState(() => {
+  // Only render portal after client-side hydration
+  useEffect(() => {
     setMounted(true);
-  });
+  }, []);
 
   const toast = useCallback((input: ToastInput) => {
     const id = `toast-${++toastCounter}-${Date.now()}`;

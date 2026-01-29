@@ -126,7 +126,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
           if (cost > 0) {
             try {
               logCost({
-                project_id: outcomeId,
+                outcome_id: outcomeId,
                 worker_id: workerId,
                 amount: cost,
                 description: description || `Claude CLI call (${inputTokens || 0} in, ${outputTokens || 0} out)`,

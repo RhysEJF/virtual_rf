@@ -18,7 +18,7 @@ import {
 // ============================================================================
 
 export interface LogCostInput {
-  project_id?: string;
+  outcome_id?: string;
   worker_id?: string;
   amount: number;
   description?: string;
@@ -32,12 +32,12 @@ export function logCost(input: LogCostInput): CostLogEntry {
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO cost_log (project_id, worker_id, amount, description, created_at)
+    INSERT INTO cost_log (outcome_id, worker_id, amount, description, created_at)
     VALUES (?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
-    input.project_id || null,
+    input.outcome_id || null,
     input.worker_id || null,
     input.amount,
     input.description || null,
@@ -57,12 +57,12 @@ export function getCostLogEntry(id: number): CostLogEntry | null {
 }
 
 /**
- * Get cost log entries for a project
+ * Get cost log entries for an outcome
  */
-export function getCostLogByProject(projectId: string): CostLogEntry[] {
+export function getCostLogByProject(outcomeId: string): CostLogEntry[] {
   const db = getDb();
-  const stmt = db.prepare('SELECT * FROM cost_log WHERE project_id = ? ORDER BY created_at DESC');
-  return stmt.all(projectId) as CostLogEntry[];
+  const stmt = db.prepare('SELECT * FROM cost_log WHERE outcome_id = ? ORDER BY created_at DESC');
+  return stmt.all(outcomeId) as CostLogEntry[];
 }
 
 /**
@@ -96,7 +96,7 @@ export function getCostForRange(startTime: number, endTime: number): number {
 // ============================================================================
 
 export interface LogBottleneckInput {
-  project_id?: string;
+  outcome_id?: string;
   intervention_type: InterventionType;
   description: string;
   resolution?: string;
@@ -110,12 +110,12 @@ export function logBottleneck(input: LogBottleneckInput): BottleneckLogEntry {
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO bottleneck_log (project_id, intervention_type, description, resolution, created_at)
+    INSERT INTO bottleneck_log (outcome_id, intervention_type, description, resolution, created_at)
     VALUES (?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
-    input.project_id || null,
+    input.outcome_id || null,
     input.intervention_type,
     input.description,
     input.resolution || null,
@@ -139,7 +139,7 @@ export function getBottleneckLogEntry(id: number): BottleneckLogEntry | null {
  */
 export function getBottleneckLogByProject(projectId: string): BottleneckLogEntry[] {
   const db = getDb();
-  const stmt = db.prepare('SELECT * FROM bottleneck_log WHERE project_id = ? ORDER BY created_at DESC');
+  const stmt = db.prepare('SELECT * FROM bottleneck_log WHERE outcome_id = ? ORDER BY created_at DESC');
   return stmt.all(projectId) as BottleneckLogEntry[];
 }
 

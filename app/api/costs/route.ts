@@ -58,14 +58,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const db = getDb();
     const topOutcomes = db.prepare(`
       SELECT
-        cl.project_id as outcome_id,
+        cl.outcome_id,
         o.name as outcome_name,
         SUM(cl.amount) as total_cost,
         COUNT(*) as call_count
       FROM cost_log cl
-      LEFT JOIN outcomes o ON cl.project_id = o.id
+      LEFT JOIN outcomes o ON cl.outcome_id = o.id
       WHERE cl.created_at >= ?
-      GROUP BY cl.project_id
+      GROUP BY cl.outcome_id
       ORDER BY total_cost DESC
       LIMIT 10
     `).all(startTime) as Array<{

@@ -196,8 +196,12 @@ Start by reading CLAUDE.md, then begin with task 1.`;
     const claudeProcess = spawn('claude', args, {
       cwd: projectWorkspace,
       env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin
+      detached: true, // Run independently of parent process
     });
+
+    // Allow the parent process to exit independently
+    claudeProcess.unref();
 
     // Track the worker
     activeWorkers.set(workerId, {
@@ -246,13 +250,23 @@ Start by reading CLAUDE.md, then begin with task 1.`;
     // Poll progress every 2 seconds
     const progressInterval = setInterval(checkProgress, 2000);
 
+    // Write worker output to log file
+    const logPath = join(projectWorkspace, 'worker.log');
+    const appendLog = (prefix: string, data: Buffer) => {
+      const timestamp = new Date().toISOString();
+      const line = `[${timestamp}] ${prefix}: ${data.toString()}\n`;
+      writeFileSync(logPath, line, { flag: 'a' });
+    };
+
     // Handle process output
     claudeProcess.stdout?.on('data', (data: Buffer) => {
       console.log(`[Ralph ${workerId}] stdout:`, data.toString().substring(0, 200));
+      appendLog('stdout', data);
     });
 
     claudeProcess.stderr?.on('data', (data: Buffer) => {
       console.error(`[Ralph ${workerId}] stderr:`, data.toString().substring(0, 200));
+      appendLog('stderr', data);
     });
 
     // Handle process completion

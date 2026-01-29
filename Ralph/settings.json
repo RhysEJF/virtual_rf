@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(mkdir *)",
+      "Bash(echo *)",
+      "Read(*)",
+      "Write(src/**)",
+      "Write(tests/**)",
+      "Write(__tests__/**)",
+      "Write(plans/**)",
+      "Write(docs/**)",
+      "Write(*.md)",
+      "Write(*.json)",
+      "Write(*.ts)",
+      "Write(*.tsx)",
+      "Write(*.js)",
+      "Write(*.jsx)",
+      "Write(*.css)",
+      "Write(*.html)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(npm publish *)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Write(*secret*)",
+      "Write(*password*)",
+      "Write(package-lock.json)",
+      "Write(node_modules/**)"
+    ]
+  },
+  "model": "claude-sonnet-4-20250514",
+  "preferences": {
+    "autoApprove": true,
+    "verboseMode": true
+  }
+}

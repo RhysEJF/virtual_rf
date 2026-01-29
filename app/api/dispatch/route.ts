@@ -8,10 +8,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatch, type DispatchResult } from '@/lib/agents/dispatcher';
 import { executeQuick } from '@/lib/agents/quick-executor';
-import { briefAndCreateProject } from '@/lib/agents/briefer';
+import { generateBrief } from '@/lib/agents/briefer';
 import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
+import { createOutcome } from '@/lib/db/outcomes';
 
 interface DispatchRequest {
   input: string;
@@ -80,27 +81,43 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       }
 
       case 'deep': {
-        // Generate brief and create project
-        const briefResult = await briefAndCreateProject(input);
+        // Generate brief using Claude
+        const brief = await generateBrief(input);
 
-        if (!briefResult.success || !briefResult.brief) {
+        if (!brief) {
           return NextResponse.json({
             type: 'deep',
-            error: briefResult.error || 'Failed to create project brief',
+            error: 'Failed to create project brief',
           });
         }
 
-        const brief = briefResult.brief;
-        const projectId = briefResult.projectId!;
+        // Create an Outcome (not a legacy Project)
+        const outcome = createOutcome({
+          name: brief.title,
+          brief: input,
+          intent: JSON.stringify({
+            summary: brief.objective,
+            items: brief.prd.map(item => ({
+              id: item.id,
+              title: item.title,
+              description: item.description,
+              acceptance_criteria: [],
+              priority: item.priority <= 3 ? 'high' : item.priority <= 6 ? 'medium' : 'low',
+              status: 'pending',
+            })),
+            success_criteria: brief.deliverables,
+          }),
+        });
+
+        const outcomeId = outcome.id;
         const prdList = brief.prd
           .map((item, i) => `${i + 1}. [ ] ${item.title}`)
           .join('\n');
 
         // Create tasks from PRD items for the worker to claim
-        // Note: briefer uses numeric priority (1 = highest)
         for (const item of brief.prd) {
           createTask({
-            outcome_id: projectId, // Using project ID as outcome ID for legacy compat
+            outcome_id: outcomeId,
             title: item.title,
             description: item.description,
             prd_context: JSON.stringify(item),
@@ -108,15 +125,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
           });
         }
 
-        // Auto-start the Ralph worker with new task-based config
+        // Auto-start the Ralph worker
         let workerStatus = '';
         try {
           const workerResult = await startRalphWorker({
-            outcomeId: projectId,
+            outcomeId: outcomeId,
           });
 
           if (workerResult.started) {
-            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the tasks. Check the \`workspaces/${projectId}\` folder for progress.`;
+            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the tasks. Check the \`workspaces/${outcomeId}\` folder for progress.`;
           } else {
             workerStatus = `\n\n**Worker failed to start:** ${workerResult.error}`;
           }
@@ -126,8 +143,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
 
         return NextResponse.json({
           type: 'deep',
-          projectId: projectId,
-          response: `**Project Created: ${brief.title}**
+          projectId: outcomeId,
+          response: `**Outcome Created: ${brief.title}**
 
 **Objective:** ${brief.objective}
 
@@ -137,7 +154,7 @@ ${brief.scope.map(s => `- ${s}`).join('\n')}
 **Deliverables:**
 ${brief.deliverables.map(d => `- ${d}`).join('\n')}
 
-**PRD Checklist:**
+**Tasks:**
 ${prdList}
 
 **Estimated time:** ~${brief.estimatedMinutes} minutes

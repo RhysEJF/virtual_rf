@@ -13,6 +13,7 @@ import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
 import { createOutcome } from '@/lib/db/outcomes';
+import { logOutcomeCreated, logWorkerStarted } from '@/lib/db/activity';
 
 interface DispatchRequest {
   input: string;
@@ -110,6 +111,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
         });
 
         const outcomeId = outcome.id;
+
+        // Log activity
+        logOutcomeCreated(outcomeId, brief.title);
+
         const prdList = brief.prd
           .map((item, i) => `${i + 1}. [ ] ${item.title}`)
           .join('\n');
@@ -133,6 +138,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
           });
 
           if (workerResult.started) {
+            logWorkerStarted(outcomeId, brief.title, `Ralph Worker ${workerResult.workerId?.slice(-12)}`, workerResult.workerId || '');
             workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the tasks. Check the \`workspaces/${outcomeId}\` folder for progress.`;
           } else {
             workerStatus = `\n\n**Worker failed to start:** ${workerResult.error}`;

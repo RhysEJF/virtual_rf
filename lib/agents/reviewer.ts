@@ -15,6 +15,7 @@ import {
   hasConverged,
   type ConvergenceStatus,
 } from '../db/review-cycles';
+import { logReviewCompleted } from '../db/activity';
 import type { Task, Intent, VerificationResult } from '../db/schema';
 
 // ============================================================================
@@ -145,6 +146,9 @@ export async function reviewOutcome(
       tasks_added: createdTasks.length,
       verification,
     });
+
+    // Log activity
+    logReviewCompleted(outcomeId, outcome.name, issues.length, createdTasks.length);
 
     // Get updated convergence status
     const convergence = getConvergenceStatus(outcomeId);

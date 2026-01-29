@@ -174,6 +174,31 @@ export interface ProgressEntry {
   created_at: number;
 }
 
+// Activity types for the activity feed
+export type ActivityType =
+  | 'task_completed'
+  | 'task_claimed'
+  | 'task_failed'
+  | 'worker_started'
+  | 'worker_completed'
+  | 'worker_failed'
+  | 'review_completed'
+  | 'outcome_created'
+  | 'outcome_achieved'
+  | 'design_updated'
+  | 'intent_updated';
+
+export interface Activity {
+  id: number;
+  outcome_id: string;
+  outcome_name: string | null;      // Denormalized for display
+  type: ActivityType;
+  title: string;
+  description: string | null;
+  metadata: string | null;          // JSON for additional data
+  created_at: number;
+}
+
 // ============================================================================
 // Parsed/Enriched Types
 // ============================================================================
@@ -413,6 +438,19 @@ CREATE TABLE IF NOT EXISTS progress_entries (
   FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
 
+-- Activity log (for activity feed)
+CREATE TABLE IF NOT EXISTS activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  outcome_id TEXT NOT NULL,
+  outcome_name TEXT,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE
+);
+
 -- ============================================================================
 -- Indexes
 -- ============================================================================
@@ -455,6 +493,11 @@ CREATE INDEX IF NOT EXISTS idx_bottleneck_log_outcome ON bottleneck_log(outcome_
 -- Progress
 CREATE INDEX IF NOT EXISTS idx_progress_outcome_worker ON progress_entries(outcome_id, worker_id, iteration);
 CREATE INDEX IF NOT EXISTS idx_progress_compacted ON progress_entries(compacted);
+
+-- Activity log
+CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_outcome ON activity_log(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(type);
 `;
 
 // ============================================================================

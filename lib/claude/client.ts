@@ -85,6 +85,12 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
       if (code === 0) {
         console.log('[Claude CLI] Success, response length:', stdout.length);
+        // Log first 200 chars of response for debugging
+        if (stdout.length < 500) {
+          console.log('[Claude CLI] Response:', stdout.trim());
+        } else {
+          console.log('[Claude CLI] Response preview:', stdout.substring(0, 200) + '...');
+        }
         resolve({
           text: stdout.trim(),
           success: true,

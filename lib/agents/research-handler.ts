@@ -75,7 +75,9 @@ export async function planResearch(request: string): Promise<ResearchPlan | null
   try {
     const jsonMatch = result.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('No JSON found in response');
+      console.error('[Research] No JSON found in response. Response was:', result.text.substring(0, 200));
+      // Fall back to creating a simple plan from the request
+      return createFallbackPlan(request);
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
@@ -93,7 +95,9 @@ export async function planResearch(request: string): Promise<ResearchPlan | null
     return plan;
   } catch (error) {
     console.error('[Research] Failed to parse research plan:', error);
-    return null;
+    console.error('[Research] Response was:', result.text.substring(0, 200));
+    // Fall back to creating a simple plan from the request
+    return createFallbackPlan(request);
   }
 }
 
@@ -106,6 +110,43 @@ function normalizeQuestions(questions: unknown): ResearchQuestion[] {
     priority: typeof q?.priority === 'number' ? q.priority : index + 1,
     sources: Array.isArray(q?.sources) ? q.sources : undefined,
   }));
+}
+
+/**
+ * Create a simple fallback plan when Claude doesn't return proper JSON
+ */
+function createFallbackPlan(request: string): ResearchPlan {
+  // Extract a simple title from the request
+  const words = request.split(' ').slice(0, 5).join(' ');
+  const title = words.length > 40 ? words.substring(0, 40) + '...' : words;
+
+  return {
+    title: `Research: ${title}`,
+    objective: request,
+    questions: [
+      {
+        id: '1',
+        question: `What are the key facts about: ${request}?`,
+        priority: 1,
+        sources: ['web search'],
+      },
+      {
+        id: '2',
+        question: 'What are the main findings and insights?',
+        priority: 2,
+        sources: ['analysis'],
+      },
+      {
+        id: '3',
+        question: 'What conclusions can be drawn?',
+        priority: 3,
+        sources: ['synthesis'],
+      },
+    ],
+    suggestedSources: ['Web search', 'Documentation', 'Existing files'],
+    outputFormat: 'summary report',
+    estimatedMinutes: 15,
+  };
 }
 
 /**

@@ -68,6 +68,24 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE tasks ADD COLUMN infra_type TEXT`);
     console.log('[DB Migration] Added infra_type column to tasks');
   }
+
+  // Add git configuration columns to outcomes
+  const outcomesColumnsRefresh = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  const gitColumns = [
+    { name: 'working_directory', sql: 'ALTER TABLE outcomes ADD COLUMN working_directory TEXT' },
+    { name: 'git_mode', sql: `ALTER TABLE outcomes ADD COLUMN git_mode TEXT NOT NULL DEFAULT 'none'` },
+    { name: 'base_branch', sql: 'ALTER TABLE outcomes ADD COLUMN base_branch TEXT' },
+    { name: 'work_branch', sql: 'ALTER TABLE outcomes ADD COLUMN work_branch TEXT' },
+    { name: 'auto_commit', sql: 'ALTER TABLE outcomes ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 0' },
+    { name: 'create_pr_on_complete', sql: 'ALTER TABLE outcomes ADD COLUMN create_pr_on_complete INTEGER NOT NULL DEFAULT 0' },
+  ];
+  for (const col of gitColumns) {
+    const exists = outcomesColumnsRefresh.some(c => c.name === col.name);
+    if (!exists) {
+      database.exec(col.sql);
+      console.log(`[DB Migration] Added ${col.name} column to outcomes`);
+    }
+  }
 }
 
 /**

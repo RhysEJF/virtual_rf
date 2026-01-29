@@ -16,6 +16,7 @@ import type {
   Task,
   Worker,
   ReviewCycle,
+  GitMode,
 } from './schema';
 
 // ============================================================================
@@ -28,6 +29,13 @@ export interface CreateOutcomeInput {
   intent?: string;
   timeline?: string;
   is_ongoing?: boolean;
+  // Git configuration
+  working_directory?: string;
+  git_mode?: GitMode;
+  base_branch?: string;
+  work_branch?: string;
+  auto_commit?: boolean;
+  create_pr_on_complete?: boolean;
 }
 
 export function createOutcome(input: CreateOutcomeInput): Outcome {
@@ -36,8 +44,12 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
   const id = generateId('out');
 
   const stmt = db.prepare(`
-    INSERT INTO outcomes (id, name, status, is_ongoing, brief, intent, timeline, created_at, updated_at, last_activity_at)
-    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO outcomes (
+      id, name, status, is_ongoing, brief, intent, timeline,
+      working_directory, git_mode, base_branch, work_branch, auto_commit, create_pr_on_complete,
+      created_at, updated_at, last_activity_at
+    )
+    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -47,6 +59,12 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
     input.brief || null,
     input.intent || null,
     input.timeline || null,
+    input.working_directory || null,
+    input.git_mode || 'none',
+    input.base_branch || null,
+    input.work_branch || null,
+    input.auto_commit ? 1 : 0,
+    input.create_pr_on_complete ? 1 : 0,
     timestamp,
     timestamp,
     timestamp
@@ -65,9 +83,19 @@ export function getOutcomeById(id: string): Outcome | null {
 
   if (!row) return null;
 
+  return mapOutcomeRow(row);
+}
+
+/**
+ * Map database row to Outcome, converting integer booleans and ensuring proper types
+ */
+function mapOutcomeRow(row: Outcome): Outcome {
   return {
     ...row,
     is_ongoing: Boolean(row.is_ongoing),
+    auto_commit: Boolean(row.auto_commit),
+    create_pr_on_complete: Boolean(row.create_pr_on_complete),
+    git_mode: (row.git_mode || 'none') as GitMode,
   };
 }
 
@@ -134,10 +162,7 @@ export function getAllOutcomes(): Outcome[] {
     ORDER BY last_activity_at DESC
   `).all() as Outcome[];
 
-  return rows.map(row => ({
-    ...row,
-    is_ongoing: Boolean(row.is_ongoing),
-  }));
+  return rows.map(mapOutcomeRow);
 }
 
 export function getActiveOutcomes(): Outcome[] {
@@ -148,10 +173,7 @@ export function getActiveOutcomes(): Outcome[] {
     ORDER BY last_activity_at DESC
   `).all() as Outcome[];
 
-  return rows.map(row => ({
-    ...row,
-    is_ongoing: Boolean(row.is_ongoing),
-  }));
+  return rows.map(mapOutcomeRow);
 }
 
 export function getOutcomesByStatus(status: OutcomeStatus): Outcome[] {
@@ -162,10 +184,7 @@ export function getOutcomesByStatus(status: OutcomeStatus): Outcome[] {
     ORDER BY last_activity_at DESC
   `).all(status) as Outcome[];
 
-  return rows.map(row => ({
-    ...row,
-    is_ongoing: Boolean(row.is_ongoing),
-  }));
+  return rows.map(mapOutcomeRow);
 }
 
 export interface OutcomeListItem extends Outcome {
@@ -207,8 +226,11 @@ export function getOutcomesWithCounts(): OutcomeListItem[] {
   })[];
 
   return rows.map(row => ({
-    ...row,
-    is_ongoing: Boolean(row.is_ongoing),
+    ...mapOutcomeRow(row),
+    total_tasks: row.total_tasks,
+    pending_tasks: row.pending_tasks,
+    completed_tasks: row.completed_tasks,
+    active_workers: row.active_workers,
     is_converging: Boolean(row.is_converging),
   }));
 }
@@ -225,6 +247,13 @@ export interface UpdateOutcomeInput {
   intent?: string;
   timeline?: string;
   infrastructure_ready?: number;
+  // Git configuration
+  working_directory?: string | null;
+  git_mode?: GitMode;
+  base_branch?: string | null;
+  work_branch?: string | null;
+  auto_commit?: boolean;
+  create_pr_on_complete?: boolean;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {
@@ -261,6 +290,31 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.infrastructure_ready !== undefined) {
     updates.push('infrastructure_ready = ?');
     values.push(input.infrastructure_ready);
+  }
+  // Git configuration fields
+  if (input.working_directory !== undefined) {
+    updates.push('working_directory = ?');
+    values.push(input.working_directory);
+  }
+  if (input.git_mode !== undefined) {
+    updates.push('git_mode = ?');
+    values.push(input.git_mode);
+  }
+  if (input.base_branch !== undefined) {
+    updates.push('base_branch = ?');
+    values.push(input.base_branch);
+  }
+  if (input.work_branch !== undefined) {
+    updates.push('work_branch = ?');
+    values.push(input.work_branch);
+  }
+  if (input.auto_commit !== undefined) {
+    updates.push('auto_commit = ?');
+    values.push(input.auto_commit ? 1 : 0);
+  }
+  if (input.create_pr_on_complete !== undefined) {
+    updates.push('create_pr_on_complete = ?');
+    values.push(input.create_pr_on_complete ? 1 : 0);
   }
 
   values.push(id);

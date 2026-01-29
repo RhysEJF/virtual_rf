@@ -9,7 +9,7 @@
  */
 
 import { getDb, now } from '../db';
-import { getWorkerById } from '../db/workers';
+import { getWorkerById, markStaleWorkersFailed, getStaleWorkers } from '../db/workers';
 import { getTasksByOutcome } from '../db/tasks';
 import { getProgressEntriesByWorker } from '../db/progress';
 import {
@@ -212,9 +212,31 @@ function checkWorker(workerId: string): void {
 }
 
 /**
+ * Mark dead workers (stale heartbeat) as failed and resolve their alerts
+ */
+function cleanupDeadWorkers(): number {
+  // Get workers that will be marked as failed (for alert resolution)
+  const staleWorkers = getStaleWorkers();
+
+  // Mark them as failed
+  const count = markStaleWorkersFailed();
+
+  // Resolve alerts for each worker that was marked failed
+  for (const worker of staleWorkers) {
+    resolveAlertsForWorker(worker.id);
+    console.log(`[Supervisor] Marked worker ${worker.id} as failed (stale heartbeat) and resolved alerts`);
+  }
+
+  return count;
+}
+
+/**
  * Get all running workers and check them
  */
 function checkAllWorkers(): void {
+  // First, cleanup any dead workers (stale heartbeat)
+  cleanupDeadWorkers();
+
   const db = getDb();
   const workers = db.prepare(`
     SELECT id FROM workers WHERE status = 'running'

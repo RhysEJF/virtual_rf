@@ -22,15 +22,13 @@ interface Skill {
 interface SkillStats {
   totalSkills: number;
   categories: number;
-  topUsed: Skill[];
+  totalUses: number;
 }
 
-interface ApiKey {
-  name: string;
-  label: string;
-  description: string;
-  isSet: boolean;
-  preview: string | null;
+interface ApiKeyStatus {
+  configured: number;
+  total: number;
+  missing: string[];
 }
 
 export default function SkillsLibraryPage(): JSX.Element {
@@ -43,6 +41,7 @@ export default function SkillsLibraryPage(): JSX.Element {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [skillContent, setSkillContent] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
 
   // Create skill form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -51,24 +50,17 @@ export default function SkillsLibraryPage(): JSX.Element {
   const [newSkillDescription, setNewSkillDescription] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // API Keys state
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [loadingKeys, setLoadingKeys] = useState(true);
-  const [showAddKeyForm, setShowAddKeyForm] = useState(false);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyValue, setNewKeyValue] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
-
   const fetchSkills = useCallback(async () => {
     try {
       const response = await fetch('/api/skills?groupBy=category');
       const data = await response.json();
       setSkills(data.skills || {});
+
+      const allSkills = Object.values(data.skills || {}).flat() as Skill[];
       setStats({
         totalSkills: data.total || 0,
         categories: data.categories?.length || 0,
-        topUsed: [],
+        totalUses: allSkills.reduce((sum, s) => sum + s.usage_count, 0),
       });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
@@ -77,64 +69,22 @@ export default function SkillsLibraryPage(): JSX.Element {
     }
   }, []);
 
-  const fetchApiKeys = useCallback(async () => {
+  const fetchApiKeyStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/env-keys');
       const data = await response.json();
-      setApiKeys(data.keys || []);
+      const keys = data.keys || [];
+      const configured = keys.filter((k: { isSet: boolean }) => k.isSet).length;
+      const missing = keys.filter((k: { isSet: boolean; label: string }) => !k.isSet).map((k: { label: string }) => k.label);
+      setApiKeyStatus({
+        configured,
+        total: keys.length,
+        missing,
+      });
     } catch (error) {
-      console.error('Failed to fetch API keys:', error);
-    } finally {
-      setLoadingKeys(false);
+      console.error('Failed to fetch API key status:', error);
     }
   }, []);
-
-  const saveApiKey = async (name: string, value: string) => {
-    setSavingKey(true);
-    try {
-      const response = await fetch('/api/env-keys', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        toast({ type: 'success', message: data.message });
-        setShowAddKeyForm(false);
-        setEditingKey(null);
-        setNewKeyName('');
-        setNewKeyValue('');
-        fetchApiKeys();
-      } else {
-        toast({ type: 'error', message: data.error || 'Failed to save API key' });
-      }
-    } catch (error) {
-      console.error('Failed to save API key:', error);
-      toast({ type: 'error', message: 'Failed to save API key' });
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
-  const deleteApiKey = async (name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name}?`)) return;
-
-    try {
-      const response = await fetch(`/api/env-keys?name=${encodeURIComponent(name)}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json();
-      if (data.success) {
-        toast({ type: 'success', message: data.message });
-        fetchApiKeys();
-      } else {
-        toast({ type: 'error', message: data.error || 'Failed to remove API key' });
-      }
-    } catch (error) {
-      console.error('Failed to remove API key:', error);
-      toast({ type: 'error', message: 'Failed to remove API key' });
-    }
-  };
 
   const syncSkills = async () => {
     setSyncing(true);
@@ -212,8 +162,8 @@ export default function SkillsLibraryPage(): JSX.Element {
 
   useEffect(() => {
     fetchSkills();
-    fetchApiKeys();
-  }, [fetchSkills, fetchApiKeys]);
+    fetchApiKeyStatus();
+  }, [fetchSkills, fetchApiKeyStatus]);
 
   const categories = Object.keys(skills).sort();
 
@@ -262,152 +212,12 @@ export default function SkillsLibraryPage(): JSX.Element {
           </Card>
           <Card padding="md">
             <CardContent>
-              <div className="text-2xl font-semibold text-text-primary">
-                {Object.values(skills).flat().reduce((sum, s) => sum + s.usage_count, 0)}
-              </div>
+              <div className="text-2xl font-semibold text-text-primary">{stats.totalUses}</div>
               <div className="text-sm text-text-secondary">Total Uses</div>
             </CardContent>
           </Card>
         </div>
       )}
-
-      {/* API Keys Section */}
-      <Card padding="md" className="mb-6">
-        <CardHeader>
-          <CardTitle>API Keys</CardTitle>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setShowAddKeyForm(!showAddKeyForm);
-              setEditingKey(null);
-              setNewKeyName('');
-              setNewKeyValue('');
-            }}
-          >
-            {showAddKeyForm ? 'Cancel' : 'Add Key'}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <p className="text-text-secondary text-sm mb-4">
-            API keys are saved to .env.local and used by workers during execution.
-          </p>
-
-          {/* Add/Edit Key Form */}
-          {(showAddKeyForm || editingKey) && (
-            <div className="mb-4 p-4 bg-bg-secondary rounded-lg">
-              <div className="grid grid-cols-2 gap-4 mb-3">
-                <div>
-                  <label className="block text-xs text-text-tertiary mb-1">Key Name</label>
-                  {editingKey ? (
-                    <div className="px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm">
-                      {editingKey}
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      value={newKeyName}
-                      onChange={(e) => setNewKeyName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-                      placeholder="e.g., MY_API_KEY"
-                      className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent"
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs text-text-tertiary mb-1">Value</label>
-                  <input
-                    type="password"
-                    value={newKeyValue}
-                    onChange={(e) => setNewKeyValue(e.target.value)}
-                    placeholder="Enter API key value"
-                    className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => saveApiKey(editingKey || newKeyName, newKeyValue)}
-                  disabled={savingKey || (!editingKey && !newKeyName) || !newKeyValue}
-                >
-                  {savingKey ? 'Saving...' : editingKey ? 'Update Key' : 'Save Key'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowAddKeyForm(false);
-                    setEditingKey(null);
-                    setNewKeyName('');
-                    setNewKeyValue('');
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Keys List */}
-          {loadingKeys ? (
-            <p className="text-text-tertiary text-sm">Loading API keys...</p>
-          ) : (
-            <div className="space-y-2">
-              {apiKeys.map((key) => (
-                <div
-                  key={key.name}
-                  className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-text-primary text-sm font-medium">{key.label}</span>
-                      {key.isSet ? (
-                        <Badge variant="success" className="text-[10px]">Set</Badge>
-                      ) : (
-                        <Badge variant="warning" className="text-[10px]">Not Set</Badge>
-                      )}
-                    </div>
-                    <div className="text-text-tertiary text-xs">
-                      {key.description}
-                      {key.preview && (
-                        <span className="ml-2 font-mono text-text-secondary">{key.preview}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingKey(key.name);
-                        setNewKeyValue('');
-                        setShowAddKeyForm(false);
-                      }}
-                    >
-                      {key.isSet ? 'Update' : 'Add'}
-                    </Button>
-                    {key.isSet && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteApiKey(key.name)}
-                        className="text-status-error hover:text-status-error"
-                      >
-                        Remove
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {apiKeys.length === 0 && (
-                <p className="text-text-tertiary text-sm text-center py-4">
-                  No API keys configured yet.
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Create Skill Form */}
       {showCreateForm && (
@@ -489,7 +299,7 @@ export default function SkillsLibraryPage(): JSX.Element {
                 <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">
                   {category}
                 </h2>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {skills[category].map((skill) => (
                     <Card
                       key={skill.id}
@@ -505,19 +315,21 @@ export default function SkillsLibraryPage(): JSX.Element {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="text-text-primary font-medium">{skill.name}</span>
-                              {skill.usage_count > 0 && (
-                                <Badge variant="default" className="text-[10px]">
-                                  {skill.usage_count} uses
-                                </Badge>
-                              )}
                             </div>
                             {skill.description && (
                               <p className="text-text-tertiary text-sm mt-1 truncate">
                                 {skill.description}
                               </p>
                             )}
+                            <div className="flex items-center gap-2 mt-2">
+                              {skill.usage_count > 0 && (
+                                <span className="text-text-tertiary text-xs">
+                                  {skill.usage_count} uses
+                                </span>
+                              )}
+                              <Badge variant="success" className="text-[10px]">Ready</Badge>
+                            </div>
                           </div>
-                          <span className="text-text-tertiary text-xs">→</span>
                         </div>
                       </CardContent>
                     </Card>
@@ -574,6 +386,32 @@ export default function SkillsLibraryPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* API Keys Notice */}
+      {apiKeyStatus && apiKeyStatus.missing.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-bg-primary border-t border-border p-4">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-status-warning">⚠</span>
+              <div>
+                <p className="text-text-primary text-sm">
+                  {apiKeyStatus.missing.length} API key{apiKeyStatus.missing.length !== 1 ? 's' : ''} not configured
+                </p>
+                <p className="text-text-tertiary text-xs">
+                  Some skills may need API keys to function properly
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push('/settings')}
+            >
+              Configure in Settings →
+            </Button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

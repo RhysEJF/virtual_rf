@@ -171,7 +171,23 @@ export default function Dashboard(): JSX.Element {
           <h1 className="text-2xl font-semibold text-text-primary">@virtual_rf</h1>
           <p className="text-text-secondary mt-1">Your personal AI workforce</p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/skills')}
+            className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
+            title="Skills Library"
+          >
+            Skills
+          </button>
+          <button
+            onClick={() => router.push('/settings')}
+            className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
+            title="Settings"
+          >
+            Settings
+          </button>
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Command Bar */}

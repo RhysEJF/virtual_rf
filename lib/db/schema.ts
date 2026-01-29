@@ -40,6 +40,9 @@ export type SupervisorAlertType = 'stuck' | 'no_progress' | 'repeated_errors' | 
 export type SupervisorAlertSeverity = 'warning' | 'critical';
 export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 
+// Git workflow modes for outcomes
+export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -56,6 +59,13 @@ export interface Outcome {
   created_at: number;
   updated_at: number;
   last_activity_at: number;         // For recency-based sorting
+  // Git configuration
+  working_directory: string | null; // Path to workspace/repo
+  git_mode: GitMode;                // 'none' | 'local' | 'branch' | 'worktree'
+  base_branch: string | null;       // e.g., 'main' - branch to merge into
+  work_branch: string | null;       // e.g., 'outcome/my-feature' - working branch
+  auto_commit: boolean;             // Auto-commit after successful task completion
+  create_pr_on_complete: boolean;   // Create PR when outcome achieved
 }
 
 export interface DesignDoc {
@@ -331,7 +341,14 @@ CREATE TABLE IF NOT EXISTS outcomes (
   infrastructure_ready INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  last_activity_at INTEGER NOT NULL
+  last_activity_at INTEGER NOT NULL,
+  -- Git configuration
+  working_directory TEXT,
+  git_mode TEXT NOT NULL DEFAULT 'none',
+  base_branch TEXT,
+  work_branch TEXT,
+  auto_commit INTEGER NOT NULL DEFAULT 0,
+  create_pr_on_complete INTEGER NOT NULL DEFAULT 0
 );
 
 -- Design Docs: HOW to achieve outcomes (versioned)
@@ -715,4 +732,23 @@ SELECT name FROM sqlite_master WHERE type='table' AND name='projects';
 
 -- Then drop old tables:
 -- DROP TABLE IF EXISTS projects;
+`;
+
+// ============================================================================
+// Git Config Migration
+// ============================================================================
+
+export const GIT_CONFIG_MIGRATION_SQL = `
+-- Add git configuration columns to outcomes table
+-- These are idempotent - safe to run multiple times
+
+-- Check if columns exist before adding (SQLite workaround)
+-- We wrap each in a try-catch by using PRAGMA to check column existence
+
+ALTER TABLE outcomes ADD COLUMN working_directory TEXT;
+ALTER TABLE outcomes ADD COLUMN git_mode TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE outcomes ADD COLUMN base_branch TEXT;
+ALTER TABLE outcomes ADD COLUMN work_branch TEXT;
+ALTER TABLE outcomes ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE outcomes ADD COLUMN create_pr_on_complete INTEGER NOT NULL DEFAULT 0;
 `;

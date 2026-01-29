@@ -9,8 +9,9 @@ import { Progress } from '@/app/components/ui/Progress';
 import { ProgressView } from '@/app/components/ProgressView';
 import { InterventionForm } from '@/app/components/InterventionForm';
 import { OutputsSection } from '@/app/components/OutputsSection';
+import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { useToast } from '@/app/hooks/useToast';
-import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker } from '@/lib/db/schema';
+import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
 // Types
 interface OutcomeDetail {
@@ -28,6 +29,13 @@ interface OutcomeDetail {
   design_doc: { approach: string; version: number } | null;
   tasks: Task[];
   workers: Worker[];
+  // Git configuration
+  working_directory: string | null;
+  git_mode: GitMode;
+  base_branch: string | null;
+  work_branch: string | null;
+  auto_commit: boolean;
+  create_pr_on_complete: boolean;
 }
 
 interface TaskStats {
@@ -938,6 +946,21 @@ export default function OutcomeDetailPage(): JSX.Element {
               </CardContent>
             </Card>
           )}
+
+          {/* Git Configuration */}
+          <GitConfigSection
+            outcomeId={outcomeId}
+            outcomeName={outcome.name}
+            config={{
+              working_directory: outcome.working_directory,
+              git_mode: outcome.git_mode,
+              base_branch: outcome.base_branch,
+              work_branch: outcome.work_branch,
+              auto_commit: outcome.auto_commit,
+              create_pr_on_complete: outcome.create_pr_on_complete,
+            }}
+            onUpdate={fetchOutcome}
+          />
         </div>
       </div>
     </main>

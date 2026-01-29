@@ -40,6 +40,7 @@ import {
   acknowledgeIntervention,
   completeIntervention,
 } from '../db/interventions';
+import { resolveAlertsForWorker } from '../db/supervisor-alerts';
 import { updateWorker as updateWorkerDb } from '../db/workers';
 import { createWorktree, removeWorktree, isGitRepo } from '../worktree/manager';
 
@@ -638,27 +639,34 @@ async function executeTask(
 
 /**
  * Stop a running Ralph worker
+ * Always updates the database status, even if the process is already dead
  */
 export function stopRalphWorker(workerId: string): boolean {
   const worker = activeWorkers.get(workerId);
-  if (!worker) {
-    return false;
+
+  // If worker is in activeWorkers, clean it up properly
+  if (worker) {
+    worker.running = false;
+
+    if (worker.process) {
+      worker.process.kill('SIGTERM');
+    }
+
+    if (worker.heartbeatInterval) {
+      clearInterval(worker.heartbeatInterval);
+    }
+
+    activeWorkers.delete(workerId);
   }
 
-  worker.running = false;
+  // Always try to update the database status
+  // This handles cases where the process died but DB still shows 'running'
+  const result = updateWorker(workerId, { status: 'paused' });
 
-  if (worker.process) {
-    worker.process.kill('SIGTERM');
-  }
+  // Resolve any active alerts for this worker since it's been explicitly stopped
+  resolveAlertsForWorker(workerId);
 
-  if (worker.heartbeatInterval) {
-    clearInterval(worker.heartbeatInterval);
-  }
-
-  updateWorker(workerId, { status: 'paused' });
-  activeWorkers.delete(workerId);
-
-  return true;
+  return result !== null;
 }
 
 /**

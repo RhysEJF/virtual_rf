@@ -1155,6 +1155,618 @@ function selectModel(taskComplexity: string): string {
 
 ---
 
+## Git Integration & Output Control
+
+### Philosophy
+
+**Key insight:** We don't need complex OAuth integrations. Git is already on the user's machine, already authenticated via SSH keys or credential helpers. We need **workflow orchestration** on top of existing git.
+
+**Core principle:** User controls what flows where, and when. Never auto-push. Always review before sharing.
+
+### The Three Zones
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     RESOURCE CLASSIFICATION                              │
+│                                                                         │
+│  ┌─────────────────────────┐  ┌─────────────────────────────────────┐  │
+│  │     🔒 PRIVATE          │  │        🌐 SHAREABLE                  │  │
+│  │     (Never committed)   │  │        (Can be committed)            │  │
+│  │                         │  │                                      │  │
+│  │  • API Keys             │  │  • Skills (SKILL.md files)           │  │
+│  │  • .env.local           │  │  • Tools (scripts skills use)        │  │
+│  │  • Personal notes       │  │  • Source code                       │  │
+│  │  • Draft explorations   │  │  • Documentation                     │  │
+│  │  • Local app state      │  │  • Config (non-secret)               │  │
+│  │                         │  │                                      │  │
+│  └─────────────────────────┘  └─────────────────────────────────────┘  │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                    🎛️ USER CONTROLLED                              │ │
+│  │                    (User decides per-item)                         │ │
+│  │                                                                    │ │
+│  │  • Outcome outputs (code, docs, assets)                            │ │
+│  │  • Custom tools (share with team or keep private?)                 │ │
+│  │  • Research findings (share insights or keep competitive edge?)    │ │
+│  │                                                                    │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Output Destination Model
+
+Each outcome can be configured with where its outputs flow:
+
+```typescript
+interface OutcomeGitConfig {
+  // Where work happens
+  workingDirectory: string;
+
+  // Git mode
+  gitMode: 'none' | 'local' | 'branch' | 'worktree';
+
+  // Branch settings (when gitMode is 'branch' or 'worktree')
+  baseBranch?: string;           // e.g., 'main'
+  workBranch?: string;           // e.g., 'outcome/productx-landing'
+  branchNaming?: 'auto' | 'custom';
+
+  // Commit behavior
+  autoCommit: boolean;           // Commit after each task?
+  commitStrategy: 'per-task' | 'per-iteration' | 'manual';
+
+  // Push behavior (NEVER auto-push by default)
+  pushStrategy: 'manual' | 'ask-on-complete' | 'never';
+  createPrOnComplete: boolean;   // For collaboration mode
+}
+```
+
+### Workflow Modes
+
+#### Mode 1: Solo, No Git
+```
+Use case: Exploring ideas, not ready to version control
+─────────────────────────────────────────────────────────
+
+User selects: gitMode = 'none'
+         ↓
+Workers create files in working directory
+         ↓
+No commits, no branches
+         ↓
+User can later "Adopt" outputs into a repo if they want
+```
+
+#### Mode 2: Solo, Own Repo
+```
+Use case: Working on personal project with full control
+─────────────────────────────────────────────────────────
+
+User selects: gitMode = 'branch', baseBranch = 'main'
+         ↓
+Outcome creates: outcome/feature-name branch
+         ↓
+Workers commit to branch locally
+         ↓
+User reviews outputs in UI
+         ↓
+User clicks "Merge to main" (local merge, no PR needed)
+         ↓
+User clicks "Push" when ready
+```
+
+#### Mode 3: Collaboration, Shared Repo
+```
+Use case: Working with team, need review before merge
+─────────────────────────────────────────────────────────
+
+User selects: gitMode = 'branch', createPrOnComplete = true
+         ↓
+Outcome creates: outcome/feature-name branch
+         ↓
+Workers commit to branch locally
+         ↓
+User reviews outputs in UI (selective commit inclusion)
+         ↓
+User clicks "Create PR"
+         ↓
+gh pr create --title "..." --body "..."
+         ↓
+Opens PR in browser, collaborators review
+```
+
+#### Mode 4: Isolated Parallel Work
+```
+Use case: Multiple outcomes working on same repo simultaneously
+─────────────────────────────────────────────────────────
+
+User selects: gitMode = 'worktree'
+         ↓
+Git worktree created: .worktrees/outcome-{id}/
+         ↓
+Each outcome has isolated copy of repo
+         ↓
+No conflicts between parallel workers
+         ↓
+Merge back via PR workflow
+```
+
+### Output Review UI
+
+User must always review before pushing:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     OUTCOME: ProductX Landing                            │
+│                                                                         │
+│  ┌─ OUTPUT REVIEW ──────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  Branch: outcome/productx-landing                                 │  │
+│  │  Base: main (↓3 commits behind)                    [Sync Base]    │  │
+│  │                                                                   │  │
+│  │  ─────────────────────────────────────────────────────────────    │  │
+│  │                                                                   │  │
+│  │  LOCAL COMMITS (not pushed):                                      │  │
+│  │                                                                   │  │
+│  │  ☑ abc1234  Add hero section with animations         +142 -12    │  │
+│  │             components/Hero.tsx, styles/hero.css                  │  │
+│  │                                                      [View Diff]  │  │
+│  │                                                                   │  │
+│  │  ☑ def5678  Implement email signup form              +89 -3      │  │
+│  │             components/SignupForm.tsx, lib/email.ts               │  │
+│  │                                                      [View Diff]  │  │
+│  │                                                                   │  │
+│  │  ☑ ghi9012  Add testimonials component               +67 -0      │  │
+│  │             components/Testimonials.tsx                           │  │
+│  │                                                      [View Diff]  │  │
+│  │                                                                   │  │
+│  │  ☐ jkl3456  WIP: pricing table (incomplete)          +23 -0      │  │
+│  │             ⚠ Uncommitted changes in working tree                 │  │
+│  │                                                      [View Diff]  │  │
+│  │                                                                   │  │
+│  │  ─────────────────────────────────────────────────────────────    │  │
+│  │                                                                   │  │
+│  │  FILES MODIFIED (summary):                                        │  │
+│  │  • 4 new files, 2 modified, 0 deleted                             │  │
+│  │  • No sensitive files detected ✓                                  │  │
+│  │                                                                   │  │
+│  │  ─────────────────────────────────────────────────────────────    │  │
+│  │                                                                   │  │
+│  │  [Discard Selected]  [Push Selected]  [Create PR]                 │  │
+│  │                                                                   │  │
+│  │  ⚠ Base branch has new commits. Recommend syncing before push.   │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Git Operations (No OAuth Required)
+
+All git operations use the user's existing authentication:
+
+| Operation | Implementation | Auth Source |
+|-----------|---------------|-------------|
+| Clone | `git clone` | SSH keys / credential helper |
+| Create branch | `git checkout -b {name}` | Local only |
+| Commit | `git commit -m "..."` | Local only |
+| Push | `git push -u origin {branch}` | SSH keys / credential helper |
+| Create PR | `gh pr create` | GitHub CLI auth |
+| Check status | `git status`, `git log` | Local only |
+| Detect remote changes | `git fetch && git rev-list` | SSH keys / credential helper |
+
+**No OAuth tokens stored in the app. No GitHub API keys needed.**
+
+---
+
+## Skills, Tools & API Keys Architecture
+
+### The Separation of Concerns
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│   SKILL = Instructions (WHAT to do, HOW to do it)                       │
+│   ───────────────────────────────────────────────                       │
+│   • Markdown file with structured guidance                              │
+│   • Can reference tools by name                                         │
+│   • Can declare API key requirements                                    │
+│   • SHAREABLE - can be committed to repos                               │
+│                                                                         │
+│   TOOL = Executable capability (scripts, CLIs, integrations)            │
+│   ──────────────────────────────────────────────────────────            │
+│   • Scripts that skills can invoke                                      │
+│   • May need API keys to function                                       │
+│   • USER CONTROLLED - user decides if shared or private                 │
+│                                                                         │
+│   API KEY = Secret credential                                           │
+│   ───────────────────────────────                                       │
+│   • Required by some tools to function                                  │
+│   • ALWAYS PRIVATE - never committed, never in LLM context              │
+│   • Stored in .env.local (gitignored) or system keychain                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Skill Structure (Enhanced)
+
+```yaml
+# skills/research/web-research/SKILL.md
+---
+name: web-research
+description: Research topics using web search and content extraction
+version: 1.0.0
+category: research
+
+# What this skill needs to function
+requires:
+  apis:
+    - name: SERPER_API_KEY
+      purpose: Web search queries
+      required: true
+    - name: FIRECRAWL_API_KEY
+      purpose: Web page content extraction
+      required: false
+      fallback: "Uses basic fetch if not available"
+
+  tools:
+    - name: search-web
+      path: ./tools/search-web.ts
+    - name: extract-content
+      path: ./tools/extract-content.ts
+
+# Whether this skill can be shared
+sharing:
+  shareable: true
+  # Tools bundled with skill are shared too
+  includeTools: true
+---
+
+# Web Research Skill
+
+## When to Use
+Use this skill when you need to research a topic using web sources...
+
+## Process
+1. Use `search-web` tool to find relevant sources
+2. Use `extract-content` tool to get page content
+3. Synthesize findings into structured output
+
+## Tool Reference
+
+### search-web
+```bash
+npx ts-node tools/search-web.ts --query "your search query" --limit 10
+```
+
+### extract-content
+```bash
+npx ts-node tools/extract-content.ts --url "https://example.com"
+```
+```
+
+### Tool Privacy Control
+
+Users decide what tools to share:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     TOOL: competitor-scraper                             │
+│                                                                         │
+│  Location: skills/research/tools/competitor-scraper.ts                   │
+│  Used by: competitive-analysis skill                                     │
+│  Requires: BROWSERBASE_API_KEY                                          │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                                                                    │  │
+│  │  Sharing Settings:                                                 │  │
+│  │                                                                    │  │
+│  │  ○ Private - Keep in .gitignore, don't share                       │  │
+│  │     Tool stays local, collaborators won't see it                   │  │
+│  │                                                                    │  │
+│  │  ● Shared - Commit to repo, available to collaborators             │  │
+│  │     Tool code is visible, but API keys remain private              │  │
+│  │                                                                    │  │
+│  │  ○ Shared (Obfuscated) - Commit but minimize code visibility       │  │
+│  │     For competitive tools you want to share but not expose         │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### API Key Management
+
+API keys are managed separately from skills:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          SETTINGS > API KEYS                             │
+│                                                                         │
+│  API keys are stored securely in .env.local and never leave your        │
+│  machine. They're passed to workers as environment variables.           │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                                                                  │   │
+│  │  KEY                    STATUS      USED BY                      │   │
+│  │  ─────────────────────────────────────────────────────────────  │   │
+│  │                                                                  │   │
+│  │  SERPER_API_KEY         ✓ Set      web-research, seo-analysis   │   │
+│  │                                                        [Edit]    │   │
+│  │                                                                  │   │
+│  │  FIRECRAWL_API_KEY      ✓ Set      web-research                 │   │
+│  │                                                        [Edit]    │   │
+│  │                                                                  │   │
+│  │  BROWSERBASE_API_KEY    ○ Not Set  competitor-scraper           │   │
+│  │                                                        [Add]     │   │
+│  │                                                                  │   │
+│  │  OPENAI_API_KEY         ○ Not Set  (none currently)             │   │
+│  │                                                        [Add]     │   │
+│  │                                                                  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  [+ Add Custom Key]                                                     │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  ⚠ Keys are written directly to .env.local                             │
+│  ⚠ Never passed through AI models or logged                            │
+│  ⚠ Never committed to git (.env.local is in .gitignore)                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Skills Library Page (Redesigned)
+
+Focus on skills, not API keys:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ← Back to Dashboard                                                     │
+│                                                                         │
+│  SKILLS LIBRARY                                          [Sync] [+ New] │
+│  Reusable capabilities that Ralph can use on tasks                      │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ 🔍 Search skills...                              [All Categories]│   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  RESEARCH (3)                                                           │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  ┌──────────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │ 🌐 Web Research                  │  │ 📊 Competitive Analysis      │ │
+│  │                                  │  │                              │ │
+│  │ Research topics using web       │  │ Analyze competitor products  │ │
+│  │ search and content extraction   │  │ and market positioning       │ │
+│  │                                  │  │                              │ │
+│  │ Tools: 2  │  Uses: 14           │  │ Tools: 3  │  Uses: 8         │ │
+│  │                                  │  │                              │ │
+│  │ ✓ Ready                         │  │ ⚠ Missing: BROWSERBASE_KEY   │ │
+│  │                       [View]    │  │                       [View] │ │
+│  └──────────────────────────────────┘  └──────────────────────────────┘ │
+│                                                                         │
+│  ┌──────────────────────────────────┐                                   │
+│  │ 📈 SEO Analysis                  │                                   │
+│  │                                  │                                   │
+│  │ Analyze SEO performance and     │                                   │
+│  │ generate optimization tasks     │                                   │
+│  │                                  │                                   │
+│  │ Tools: 1  │  Uses: 3            │                                   │
+│  │                                  │                                   │
+│  │ ✓ Ready                         │                                   │
+│  │                       [View]    │                                   │
+│  └──────────────────────────────────┘                                   │
+│                                                                         │
+│  DEVELOPMENT (2)                                                        │
+│  ─────────────────────────────────────────────────────────────────────  │
+│                                                                         │
+│  ┌──────────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │ ⚛️ React Patterns                │  │ 🗄️ Database Design           │ │
+│  │                                  │  │                              │ │
+│  │ Best practices for React        │  │ Design efficient database    │ │
+│  │ component architecture          │  │ schemas and queries          │ │
+│  │                                  │  │                              │ │
+│  │ Tools: 0  │  Uses: 21           │  │ Tools: 1  │  Uses: 5         │ │
+│  │                                  │  │                              │ │
+│  │ ✓ Ready (no API keys needed)    │  │ ✓ Ready                      │ │
+│  │                       [View]    │  │                       [View] │ │
+│  └──────────────────────────────────┘  └──────────────────────────────┘ │
+│                                                                         │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  ⚙️ 2 skills need API keys configured. [Go to Settings]                 │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Skill Detail View
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ← Back to Skills                                                        │
+│                                                                         │
+│  🌐 WEB RESEARCH                                              [Edit]    │
+│  ═══════════════                                                        │
+│                                                                         │
+│  Research topics using web search and content extraction                │
+│                                                                         │
+│  Category: Research  │  Version: 1.0.0  │  Uses: 14                     │
+│                                                                         │
+│  ┌─ REQUIREMENTS ───────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  API Keys:                                                        │  │
+│  │  • SERPER_API_KEY (required)     ✓ Configured                    │  │
+│  │  • FIRECRAWL_API_KEY (optional)  ✓ Configured                    │  │
+│  │                                                                   │  │
+│  │  Tools:                                                           │  │
+│  │  • search-web.ts                 ✓ Available                     │  │
+│  │  • extract-content.ts            ✓ Available                     │  │
+│  │                                                                   │  │
+│  │  Status: ✓ Ready to use                                          │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  ┌─ SHARING ────────────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  This skill is: 🌐 Shared (committed to repo)                     │  │
+│  │                                                                   │  │
+│  │  Tools included:                                                  │  │
+│  │  • search-web.ts        🌐 Shared                                │  │
+│  │  • extract-content.ts   🌐 Shared                                │  │
+│  │                                                                   │  │
+│  │  Collaborators who clone this repo will:                          │  │
+│  │  • See this skill and its tools                                   │  │
+│  │  • Need to add their own API keys to use it                       │  │
+│  │                                                                   │  │
+│  │  [Change Sharing Settings]                                        │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  ┌─ INSTRUCTIONS ───────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  ## When to Use                                                   │  │
+│  │  Use this skill when you need to research a topic using web      │  │
+│  │  sources...                                                       │  │
+│  │                                                                   │  │
+│  │  ## Process                                                       │  │
+│  │  1. Use `search-web` tool to find relevant sources               │  │
+│  │  2. Use `extract-content` tool to get page content               │  │
+│  │  3. Synthesize findings into structured output                   │  │
+│  │                                                                   │  │
+│  │  [View Full Markdown]                                             │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  ┌─ USAGE HISTORY ──────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  Recent uses:                                                     │  │
+│  │  • ProductX MVP - Market research task (2 hours ago)              │  │
+│  │  • ConsultingY - Competitor analysis (yesterday)                  │  │
+│  │  • Product Strategy - Industry trends (3 days ago)                │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Collaborator Onboarding Flow
+
+When someone clones a repo that uses Digital Twin:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Step 1: Clone repo                                                     │
+│  ───────────────────                                                    │
+│  $ git clone git@github.com:team/project.git                            │
+│  $ cd project                                                           │
+│                                                                         │
+│  Repo contains:                                                         │
+│  • Source code                                                          │
+│  • skills/ directory with team's shared skills                          │
+│  • .gitignore includes .env.local                                       │
+│                                                                         │
+│  Step 2: First run of Digital Twin                                      │
+│  ─────────────────────────────────                                      │
+│  App detects:                                                           │
+│  • This is a git repo                                                   │
+│  • skills/ directory exists with 3 skills                               │
+│  • Some skills need API keys                                            │
+│                                                                         │
+│  Step 3: Onboarding prompt                                              │
+│  ──────────────────────────                                             │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                                                                    │  │
+│  │  Welcome to ProductX!                                              │  │
+│  │                                                                    │  │
+│  │  This project has 3 shared skills. Some need API keys to work:    │  │
+│  │                                                                    │  │
+│  │  web-research                                                      │  │
+│  │  ├── SERPER_API_KEY (required)      [Add Key]                     │  │
+│  │  └── FIRECRAWL_API_KEY (optional)   [Add Key] [Skip]              │  │
+│  │                                                                    │  │
+│  │  competitive-analysis                                              │  │
+│  │  └── BROWSERBASE_API_KEY (required) [Add Key]                     │  │
+│  │                                                                    │  │
+│  │  react-patterns                                                    │  │
+│  │  └── No API keys needed ✓                                         │  │
+│  │                                                                    │  │
+│  │  Your keys are stored in .env.local (gitignored, never shared)    │  │
+│  │                                                                    │  │
+│  │  [Configure Now]  [Skip for Now]                                   │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  Step 4: Ready to work                                                  │
+│  ─────────────────────                                                  │
+│  User can now use the shared skills with their own API keys.            │
+│  Outputs flow to branches, PRs for collaboration.                       │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## File System Layout
+
+```
+project/
+├── .git/                          # Git repo (user's existing auth)
+├── .gitignore                     # Includes .env.local, .digital-twin/
+├── .env.local                     # 🔒 API KEYS - NEVER COMMITTED
+│   ├── SERPER_API_KEY=xxx
+│   ├── FIRECRAWL_API_KEY=xxx
+│   └── ...
+│
+├── .digital-twin/                 # 🔒 LOCAL APP STATE - NEVER COMMITTED
+│   ├── outcomes.db                # SQLite database
+│   ├── cache/                     # Temporary files
+│   └── logs/                      # Worker logs
+│
+├── skills/                        # 🌐 SHAREABLE (if user chooses)
+│   ├── research/
+│   │   ├── web-research/
+│   │   │   ├── SKILL.md           # Skill instructions
+│   │   │   └── tools/             # Tool scripts
+│   │   │       ├── search-web.ts
+│   │   │       └── extract-content.ts
+│   │   └── competitive-analysis/
+│   │       ├── SKILL.md
+│   │       └── tools/
+│   │           └── analyze-competitor.ts
+│   └── development/
+│       └── react-patterns/
+│           └── SKILL.md           # No tools, just instructions
+│
+├── src/                           # 🌐 PROJECT SOURCE (committed)
+│   └── ...
+│
+├── workspaces/                    # 🔒 WORKING FILES - GITIGNORED
+│   └── outcome-{id}/              # Per-outcome working directory
+│       ├── progress.txt
+│       └── task-{id}/
+│
+└── package.json
+```
+
+### .gitignore Additions
+
+```gitignore
+# Digital Twin - Private files
+.env.local
+.digital-twin/
+workspaces/
+
+# Optional: Private skills/tools (if user marks them private)
+skills/**/*.private.ts
+skills/**/.private/
+```
+
+---
+
 ## Change Log
 
 | Date | Change | Rationale |
@@ -1168,6 +1780,10 @@ function selectModel(taskComplexity: string): string {
 | 2026-01-29 | Added skill quality gates | James's model + competitive edge gate |
 | 2026-01-29 | Added progress compaction details | James's episodic memory concept |
 | 2026-01-29 | Noted model routing for future | Infrastructure placeholder |
+| 2026-01-29 | Added Git Integration & Output Control | Workflow orchestration without OAuth |
+| 2026-01-29 | Added Skills, Tools & API Keys Architecture | Clear separation of shareable vs private |
+| 2026-01-29 | Added Collaborator Onboarding Flow | How team members join and configure |
+| 2026-01-29 | Added File System Layout | Clear mapping of what goes where |
 
 ---
 

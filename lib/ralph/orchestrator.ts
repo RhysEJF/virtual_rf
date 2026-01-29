@@ -379,6 +379,7 @@ async function validateInfrastructure(outcomeId: string): Promise<{
 
 /**
  * Build skill context to inject into worker CLAUDE.md
+ * Includes full skill content so workers have immediate access to methodologies
  */
 function buildSkillContext(
   outcomeId: string,
@@ -389,25 +390,23 @@ function buildSkillContext(
   }
 
   const lines = ['## Available Skills\n'];
-  lines.push('The following skills have been built for this outcome:\n');
+  lines.push('The following skills have been built for this outcome. Use their methodologies when relevant to your task.\n');
 
   for (const skill of skills) {
     const content = getSkillContent(outcomeId, skill.name);
     if (content) {
-      // Extract purpose section for summary
-      const purposeMatch = content.match(/## Purpose\n([\s\S]*?)(?=\n##|$)/);
-      const purpose = purposeMatch
-        ? purposeMatch[1].trim().split('\n')[0]
-        : 'Skill for ' + skill.name;
-
       lines.push(`### ${skill.name}`);
       lines.push(`**Triggers:** ${skill.triggers.join(', ') || 'N/A'}`);
-      lines.push(`**Purpose:** ${purpose}`);
-      lines.push(`**Location:** \`skills/${skill.name.toLowerCase().replace(/\s+/g, '-')}.md\`\n`);
+      lines.push('');
+      // Include full skill content so Claude has the complete methodology
+      lines.push('<skill-content>');
+      lines.push(content);
+      lines.push('</skill-content>');
+      lines.push('');
     }
   }
 
-  lines.push('\nWhen working on tasks, check if any available skills are relevant and follow their methodology.');
+  lines.push('\n**Instructions:** When working on tasks, check if any available skills are relevant and follow their methodology step-by-step.');
 
   return lines.join('\n');
 }

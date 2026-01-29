@@ -92,11 +92,15 @@ export async function reviewOutcome(
 
     // Run Claude review
     const reviewPrompt = buildReviewPrompt(reviewContext);
+    console.log('[Reviewer] Starting Claude review for outcome:', outcomeId);
+
     const result = await claudeComplete({
       prompt: reviewPrompt,
       timeout: 120000, // 2 minutes for review
       maxTurns: 1,
     });
+
+    console.log('[Reviewer] Claude result:', { success: result.success, error: result.error, textLength: result.text?.length });
 
     if (!result.success || !result.text) {
       return {
@@ -106,7 +110,7 @@ export async function reviewOutcome(
         tasksCreated: 0,
         issues: [],
         convergence: getConvergenceStatus(outcomeId),
-        error: result.error || 'Review failed',
+        error: result.error || 'Review failed - no response from Claude',
       };
     }
 

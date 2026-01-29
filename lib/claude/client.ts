@@ -65,6 +65,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       '-p', prompt, // -p makes it non-interactive (print mode)
       '--output-format', 'json', // Always use JSON to get cost info
       '--max-turns', maxTurns.toString(),
+      '--dangerously-skip-permissions', // Skip permission prompts for automated use
     ];
 
     // Add system prompt if provided

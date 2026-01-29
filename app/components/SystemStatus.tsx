@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
 export interface SystemStatusProps {
   activeAgents: number;
@@ -50,10 +51,10 @@ export function SystemStatus({
               ${loading ? '...' : todayCost.toFixed(2)}
             </span>
           </span>
-          <span>
+          <Link href="/skills" className="hover:text-accent transition-colors">
             <span className="text-text-primary font-medium">{skillsLoaded}</span> skill
             {skillsLoaded !== 1 ? 's' : ''} loaded
-          </span>
+          </Link>
         </div>
 
         {/* Right: Recent activity */}

@@ -68,7 +68,7 @@ Request to brief:
 export async function generateBrief(request: string): Promise<Brief | null> {
   const result = await complete({
     prompt: `${BRIEFER_PROMPT}"${request}"`,
-    timeout: 60000, // 60 seconds for briefing
+    timeout: 180000, // 3 minutes - briefing takes longer
   });
 
   if (!result.success) {

@@ -20,7 +20,7 @@ export async function executeQuick(input: string): Promise<QuickResult> {
   const result = await complete({
     system: 'You are a helpful AI assistant. Respond directly and concisely. Use markdown formatting when appropriate.',
     prompt: input,
-    timeout: 60000, // 1 minute for quick tasks
+    timeout: 120000, // 2 minutes - CLI can be slow
   });
 
   if (!result.success) {

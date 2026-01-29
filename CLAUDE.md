@@ -183,12 +183,55 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
+## Current Progress (Updated 2026-01-29)
+
+### Completed (MVP Working)
+- [x] Project setup (Next.js 14, TypeScript, Tailwind)
+- [x] Database schema and CRUD operations (SQLite)
+- [x] UI shell: Dashboard, CommandBar, SystemStatus, ThemeToggle
+- [x] Light/dark theme with earthy green-beige colors
+- [x] Claude CLI wrapper (`lib/claude/client.ts`) - uses `claude -p` for non-interactive calls
+- [x] Dispatcher agent - classifies requests as quick/research/deep/clarification
+- [x] Quick executor - handles simple one-shot questions
+- [x] Briefer agent - generates PRD from "deep" requests
+- [x] Ralph Worker - spawns autonomous `claude --dangerously-skip-permissions` processes
+- [x] Auto-start worker when project is created
+
+### Working Flow
+1. User submits request via CommandBar
+2. Dispatcher classifies it using Claude CLI
+3. If "deep" → Briefer creates PRD → Ralph Worker spawns
+4. Worker creates workspace in `workspaces/{project-id}/`
+5. Worker writes CLAUDE.md and progress.txt, then works autonomously
+
+### Not Yet Built
+- [ ] Research agent (for "research" classification)
+- [ ] Project detail page (`/project/[id]`)
+- [ ] Worker drill-down page (`/worker/[id]`)
+- [ ] SSE for live progress updates to UI
+- [ ] Supervisor agent (watches workers for stuck states)
+- [ ] Skill Manager (loads skills from `skills/` directory)
+- [ ] Self-Improvement Engine (logs bottlenecks, suggests improvements)
+- [ ] Telegram bridge
+
+### Known Issues
+- CLI spawns can be slow (30-60s first call)
+- Timeouts set to 2-3 minutes to accommodate
+- Worker output can corrupt terminal display (fixed by restarting Cursor)
+
+### Key Files to Understand
+- `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
+- `lib/agents/dispatcher.ts` - Request classification
+- `lib/agents/briefer.ts` - PRD generation
+- `lib/ralph/worker.ts` - Autonomous worker spawning
+- `app/api/dispatch/route.ts` - Main API endpoint
+
 ## Agent Notes
 
 When working on this codebase:
 
-1. **Start** by reading VISION.md for context
-2. **Check** the current task list
+1. **Start** by reading VISION.md for full context
+2. **Check** "Current Progress" section above for what's done/remaining
 3. **Understand** before modifying
 4. **Test** your changes locally
 5. **Commit** with proper message format

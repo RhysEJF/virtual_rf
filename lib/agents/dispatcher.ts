@@ -47,7 +47,7 @@ Request to classify:
 export async function dispatch(input: string): Promise<DispatchResult> {
   const result = await complete({
     prompt: `${DISPATCH_PROMPT}"${input}"`,
-    timeout: 30000, // 30 seconds for classification
+    timeout: 120000, // 2 minutes - CLI can be slow to start
   });
 
   if (!result.success) {

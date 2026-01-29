@@ -56,7 +56,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
     const claude = spawn('claude', args, {
       env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, pipe stdout/stderr
     });
 
     let stdout = '';

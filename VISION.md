@@ -2,6 +2,10 @@
 
 > A personal AI workforce management system that compounds knowledge and capability over time.
 
+**Related Documents:**
+- [DESIGN.md](./DESIGN.md) - Detailed UI mockups, interaction patterns, and design rationale
+- [CLAUDE.md](./CLAUDE.md) - Project coding standards for AI agents
+
 ---
 
 ## Executive Summary
@@ -414,6 +418,8 @@ for iteration in 1..MAX_ITERATIONS:
 
 ## Frontend Specification
 
+> **Detailed Mockups:** See [DESIGN.md](./DESIGN.md) for comprehensive UI mockups, interaction patterns, and design rationale including the PRD/Design Doc/Tasks separation model.
+
 ### Design Principles
 
 **Aesthetic:**
@@ -650,6 +656,141 @@ virtual_rf/
 - Human-in-the-loop decreases over time
 - System compounds capability
 - New project types handled without new code
+
+---
+
+## Information Architecture (Draft)
+
+As the system scales to thousands of projects with external collaborators, work organization becomes critical. After exploring various patterns (strict hierarchies, PARA method, Gloat's multi-ontology graphs), we've identified two complementary approaches.
+
+### Hybrid A: Explicit Outcomes + Flat Pool
+
+**Primary workflow for web interface.**
+
+**Core Concept:** User explicitly creates Outcomes (named goals), and everything else stays flat but tagged.
+
+**Structure:**
+```
+Outcomes/
+├── Launch ProductX MVP
+│   ├── collaborators: [client@email.com]
+│   ├── timeline: Q1 2025
+│   ├── repos: [github.com/user/productx]
+│   └── tagged items: [tasks, notes, files...]
+├── Scale ConsultingY Revenue
+│   ├── collaborators: []
+│   ├── timeline: ongoing
+│   └── tagged items: [research, strategy docs...]
+└── Personal Knowledge Base
+    └── tagged items: [notes, bookmarks...]
+
+Pool/ (flat, everything tagged)
+├── task: "Build landing page" → [Launch ProductX MVP]
+├── task: "Research competitors" → [Launch ProductX MVP, Scale ConsultingY]
+├── note: "Meeting notes Jan 15" → [Scale ConsultingY]
+├── file: "market-analysis.pdf" → [Launch ProductX MVP]
+└── note: "Random idea" → [] (untagged, personal)
+```
+
+**Key Properties:**
+- **Outcomes are explicit:** User creates them with a name, optional timeline, optional collaborators
+- **Everything else is flat:** Tasks, notes, files live in one pool
+- **Multi-tagging:** Items can belong to multiple outcomes
+- **GitHub integration:** Repos link to outcomes, not nested inside them
+- **Collaboration:** Invite people to specific outcomes; they see only that outcome's tagged items
+- **AI assists:** Suggests outcome tags, detects when item relates to multiple outcomes
+
+**Why This Works:**
+- Low overhead (create outcome when you know it's an outcome)
+- Cross-cutting work is natural (research feeds multiple projects)
+- Collaboration is explicit and auditable
+- Scales well (outcomes are few, items are many)
+- Search finds everything, tags provide context
+
+### Hybrid B: Conversational Streams + Emergent Outcomes
+
+**Evolution for Telegram interface.**
+
+**Core Concept:** Conversation naturally creates "streams" that the AI names and organizes. Streams map to Outcomes.
+
+**How It Works:**
+```
+User: "I need to research the enterprise SaaS market for a new product idea"
+AI: Creates stream: "Enterprise SaaS Research"
+    Tags: [potential outcome: New Product Launch?]
+
+User: "What did we find about pricing models?"
+AI: Continues in "Enterprise SaaS Research" stream
+
+User: "This is going to be Project Neptune"
+AI: Converts stream to Outcome: "Project Neptune"
+    Moves all stream items under this outcome
+```
+
+**Key Properties:**
+- **Streams emerge:** AI detects topic continuity, names streams automatically
+- **User promotes:** "Make this an outcome" converts stream to explicit outcome
+- **Context preserved:** Can reference "what we discussed about X" across sessions
+- **Telegram-native:** Works with chat-based interaction pattern
+- **Syncs with Hybrid A:** Outcomes from Telegram appear in web interface
+
+**Stream Detection Heuristics:**
+- Same topic across multiple messages
+- References to previous context ("that idea", "the research")
+- Client/project names mentioned
+- Time proximity + topic similarity
+
+**Why This Works:**
+- Zero friction (just talk, AI organizes)
+- Natural for mobile/async interaction
+- Preserves conversational context
+- Gradual formalization (stream → outcome when ready)
+
+### Relationship Between A and B
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     WEB INTERFACE                           │
+│                      (Hybrid A)                             │
+│                                                             │
+│   Explicit Outcomes → Flat Pool with Tags                   │
+│   - Create outcomes intentionally                           │
+│   - See full project dashboard                              │
+│   - Manage collaborators                                    │
+│   - Deep work execution                                     │
+│                                                             │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ sync
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   TELEGRAM INTERFACE                        │
+│                      (Hybrid B)                             │
+│                                                             │
+│   Conversational Streams → Emergent Outcomes                │
+│   - Talk naturally, AI organizes                            │
+│   - Streams auto-detected                                   │
+│   - Promote streams to outcomes                             │
+│   - Quick tasks, status checks                              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Sync Rules:**
+- Outcomes created in web appear as named streams in Telegram
+- Streams promoted to outcomes in Telegram appear in web
+- Items tagged in either interface sync both ways
+- Collaborator permissions from web apply to Telegram context
+
+### Migration Path
+
+This architecture supports future evolution:
+
+1. **Start simple:** Hybrid A with flat pool, outcomes when needed
+2. **Add Telegram:** Hybrid B streams naturally emerge
+3. **Scale later:** If pods/teams needed, outcomes can group under Pods
+4. **Never locked in:** Flat pool + tags means reorganization is just retagging
+
+The key insight: **Outcomes are the stable unit of work organization.** How you get to outcomes (explicit creation vs conversational emergence) depends on the interface.
 
 ---
 

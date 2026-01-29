@@ -1,8 +1,11 @@
 /**
  * Project CRUD operations
+ *
+ * @deprecated Use outcomes.ts instead. This file is kept for backwards compatibility.
  */
 
-import { getDb, now, type Project, type ProjectStatus, type PRD } from './index';
+import { getDb, now } from './index';
+import type { Project, ProjectStatus, PRD } from './schema';
 import { generateProjectId } from '../utils/id';
 
 export interface CreateProjectInput {

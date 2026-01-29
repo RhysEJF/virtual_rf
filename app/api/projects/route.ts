@@ -1,14 +1,16 @@
 /**
- * Projects API Route
+ * Projects API Route (Legacy)
  *
  * GET /api/projects - List all projects
  * POST /api/projects - Create a new project (handled by dispatch)
+ *
+ * @deprecated Use /api/outcomes instead. This route is kept for backwards compatibility.
  */
 
 import { NextResponse } from 'next/server';
 import { getAllProjects, getActiveProjects } from '@/lib/db/projects';
 import { getWorkersByProject } from '@/lib/db/workers';
-import type { ProjectStatus, WorkerStatus } from '@/lib/db/schema';
+import type { ProjectStatus, WorkerStatus, LegacyWorker } from '@/lib/db/schema';
 
 export interface ProjectWithWorkers {
   id: string;
@@ -38,12 +40,24 @@ export async function GET(request: Request): Promise<NextResponse> {
       const workers = getWorkersByProject(project.id);
       return {
         ...project,
-        workers: workers.map((w) => ({
-          id: w.id,
-          name: w.name,
-          status: w.status,
-          progress: w.progress ? JSON.parse(w.progress) : null,
-        })),
+        workers: workers.map((w) => {
+          // Handle both new and legacy worker formats
+          const legacyWorker = w as unknown as LegacyWorker;
+          let progress = null;
+          if (legacyWorker.progress) {
+            try {
+              progress = JSON.parse(legacyWorker.progress);
+            } catch {
+              progress = null;
+            }
+          }
+          return {
+            id: w.id,
+            name: w.name,
+            status: w.status,
+            progress,
+          };
+        }),
       };
     });
 

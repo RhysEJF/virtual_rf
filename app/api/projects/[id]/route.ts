@@ -1,12 +1,15 @@
 /**
- * Single Project API Route
+ * Single Project API Route (Legacy)
  *
  * GET /api/projects/[id] - Get project details
+ *
+ * @deprecated Use /api/outcomes/[id] instead. This route is kept for backwards compatibility.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getProjectById } from '@/lib/db/projects';
 import { getWorkersByProject } from '@/lib/db/workers';
+import type { LegacyWorker } from '@/lib/db/schema';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -55,10 +58,22 @@ export async function GET(
         ...project,
         prdParsed: prd,
       },
-      workers: workers.map((w) => ({
-        ...w,
-        progress: w.progress ? JSON.parse(w.progress) : null,
-      })),
+      workers: workers.map((w) => {
+        // Handle both new and legacy worker formats
+        const legacyWorker = w as unknown as LegacyWorker;
+        let progress = null;
+        if (legacyWorker.progress) {
+          try {
+            progress = JSON.parse(legacyWorker.progress);
+          } catch {
+            progress = null;
+          }
+        }
+        return {
+          ...w,
+          progress,
+        };
+      }),
       workspace: {
         progress: progressContent,
         log: workerLog,

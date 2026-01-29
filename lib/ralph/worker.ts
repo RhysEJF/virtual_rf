@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, watchFile, unwatchF
 import { join } from 'path';
 import { PRDItem } from '../agents/briefer';
 import { updateProject } from '../db/projects';
-import { createWorker, updateWorker } from '../db/workers';
+import { createWorker, updateWorker, startWorker } from '../db/workers';
 
 export interface RalphConfig {
   projectId: string;
@@ -157,10 +157,10 @@ export async function startRalphWorker(
   writeFileSync(progressPath, generateInitialProgress(config));
 
   // Create worker in database (returns worker with auto-generated ID)
+  // Note: Using outcome_id (projectId maps to outcome in new schema)
   const dbWorker = createWorker({
-    project_id: config.projectId,
+    outcome_id: config.projectId,
     name: 'Ralph Worker',
-    prd_slice: config.prd as unknown as import('../db/schema').PRDFeature[], // Type cast for compat
   });
   const workerId = dbWorker.id;
 
@@ -210,9 +210,9 @@ Start by reading CLAUDE.md, then begin with task 1.`;
       progress,
     });
 
-    // Update status
+    // Update status - use startWorker to set running status and timestamps
     progress.status = 'running';
-    updateWorker(workerId, { status: 'running', started_at: Date.now() });
+    startWorker(workerId);
 
     // Watch progress.txt for changes
     let lastProgressContent = '';
@@ -234,9 +234,9 @@ Start by reading CLAUDE.md, then begin with task 1.`;
             progress.status = 'completed';
           }
 
-          // Update database
+          // Update database with progress summary
           updateWorker(workerId, {
-            progress: { completed: progress.completedTasks, total: progress.totalTasks },
+            progress_summary: JSON.stringify({ completed: progress.completedTasks, total: progress.totalTasks }),
           });
 
           // Callback
@@ -282,7 +282,7 @@ Start by reading CLAUDE.md, then begin with task 1.`;
 
       updateWorker(workerId, {
         status: finalStatus as import('../db/schema').WorkerStatus,
-        progress: { completed: progress.completedTasks, total: progress.totalTasks },
+        progress_summary: JSON.stringify({ completed: progress.completedTasks, total: progress.totalTasks }),
       });
 
       // Update project status if worker completed

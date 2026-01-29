@@ -1,0 +1,154 @@
+/**
+ * Outcome Workers API Route
+ *
+ * GET /api/outcomes/[id]/workers - List workers for outcome
+ * POST /api/outcomes/[id]/workers - Start a new worker
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { getWorkersByOutcome } from '@/lib/db/workers';
+import { getOutcomeById } from '@/lib/db/outcomes';
+import { getPendingTasks } from '@/lib/db/tasks';
+import { startRalphWorker, stopRalphWorker, getRalphWorkerStatus } from '@/lib/ralph/worker';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+
+    // Verify outcome exists
+    const outcome = getOutcomeById(id);
+    if (!outcome) {
+      return NextResponse.json(
+        { error: 'Outcome not found' },
+        { status: 404 }
+      );
+    }
+
+    let workers = getWorkersByOutcome(id);
+
+    if (status) {
+      workers = workers.filter(w => w.status === status);
+    }
+
+    // Add live status for running workers
+    const enrichedWorkers = workers.map(worker => {
+      const liveStatus = getRalphWorkerStatus(worker.id);
+      return {
+        ...worker,
+        liveStatus,
+      };
+    });
+
+    return NextResponse.json({ workers: enrichedWorkers });
+  } catch (error) {
+    console.error('Error fetching workers:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch workers' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+
+    // Verify outcome exists
+    const outcome = getOutcomeById(id);
+    if (!outcome) {
+      return NextResponse.json(
+        { error: 'Outcome not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if there are pending tasks
+    const pendingTasks = getPendingTasks(id);
+    if (pendingTasks.length === 0) {
+      return NextResponse.json(
+        { error: 'No pending tasks to work on' },
+        { status: 400 }
+      );
+    }
+
+    // Check for already running workers
+    const workers = getWorkersByOutcome(id);
+    const runningWorker = workers.find(w => w.status === 'running');
+    if (runningWorker) {
+      return NextResponse.json(
+        {
+          error: 'A worker is already running for this outcome',
+          workerId: runningWorker.id,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Start new worker
+    const result = await startRalphWorker({ outcomeId: id });
+
+    if (!result.started) {
+      return NextResponse.json(
+        { error: result.error || 'Failed to start worker' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        workerId: result.workerId,
+        message: `Worker started with ${pendingTasks.length} pending tasks`,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error('Error starting worker:', error);
+    return NextResponse.json(
+      { error: 'Failed to start worker' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const workerId = searchParams.get('workerId');
+
+    if (!workerId) {
+      return NextResponse.json(
+        { error: 'workerId is required' },
+        { status: 400 }
+      );
+    }
+
+    const stopped = stopRalphWorker(workerId);
+    if (!stopped) {
+      return NextResponse.json(
+        { error: 'Worker not found or already stopped' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: 'Worker stopped' });
+  } catch (error) {
+    console.error('Error stopping worker:', error);
+    return NextResponse.json(
+      { error: 'Failed to stop worker' },
+      { status: 500 }
+    );
+  }
+}

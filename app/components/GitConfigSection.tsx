@@ -41,6 +41,12 @@ interface Props {
   onUpdate: () => void;
 }
 
+// Default workspace path pattern
+function getDefaultWorkspacePath(outcomeId: string): string {
+  // This matches lib/workspace/detector.ts: workspaces/{outcomeId}
+  return `workspaces/${outcomeId}`;
+}
+
 const GIT_MODE_OPTIONS: { value: GitMode; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'No git integration' },
   { value: 'local', label: 'Local', description: 'Commit locally, no push' },
@@ -55,15 +61,20 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
 
-  // Form state
-  const [workingDirectory, setWorkingDirectory] = useState(config.working_directory || '');
+  // Default workspace path for this outcome
+  const defaultWorkspacePath = getDefaultWorkspacePath(outcomeId);
+
+  // Form state - use default workspace path if none configured
+  const [workingDirectory, setWorkingDirectory] = useState(
+    config.working_directory || defaultWorkspacePath
+  );
   const [gitMode, setGitMode] = useState<GitMode>(config.git_mode || 'none');
   const [baseBranch, setBaseBranch] = useState(config.base_branch || '');
   const [workBranch, setWorkBranch] = useState(config.work_branch || '');
   const [autoCommit, setAutoCommit] = useState(config.auto_commit || false);
   const [createPr, setCreatePr] = useState(config.create_pr_on_complete || false);
 
-  const isConfigured = config.git_mode !== 'none' && config.working_directory;
+  const isConfigured = config.git_mode !== 'none';
 
   // Fetch git status for the working directory
   const fetchGitStatus = useCallback(async (path?: string) => {
@@ -125,8 +136,8 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
   };
 
   const handleCancel = () => {
-    // Reset form to original values
-    setWorkingDirectory(config.working_directory || '');
+    // Reset form to original values (or defaults)
+    setWorkingDirectory(config.working_directory || defaultWorkspacePath);
     setGitMode(config.git_mode || 'none');
     setBaseBranch(config.base_branch || '');
     setWorkBranch(config.work_branch || '');
@@ -168,7 +179,7 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
                   type="text"
                   value={workingDirectory}
                   onChange={(e) => setWorkingDirectory(e.target.value)}
-                  placeholder="/path/to/workspace"
+                  placeholder={defaultWorkspacePath}
                   className="flex-1 px-3 py-2 bg-bg-secondary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent"
                 />
                 <Button
@@ -180,12 +191,25 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
                   {loadingStatus ? '...' : 'Check'}
                 </Button>
               </div>
+              <div className="flex items-center gap-2 mt-1">
+                {workingDirectory === defaultWorkspacePath ? (
+                  <span className="text-xs text-text-tertiary">Using default workspace</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setWorkingDirectory(defaultWorkspacePath)}
+                    className="text-xs text-accent hover:underline"
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
               {gitStatus && (
                 <div className="mt-2 text-xs">
                   {gitStatus.isRepo ? (
                     <span className="text-status-success">✓ Git repository detected</span>
                   ) : (
-                    <span className="text-status-warning">Not a git repository</span>
+                    <span className="text-status-warning">Not a git repository (will be created)</span>
                   )}
                 </div>
               )}

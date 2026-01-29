@@ -50,7 +50,6 @@ const GIT_MODE_OPTIONS: { value: GitMode; label: string; description: string }[]
 
 export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: Props): JSX.Element {
   const { toast } = useToast();
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -63,6 +62,8 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
   const [workBranch, setWorkBranch] = useState(config.work_branch || '');
   const [autoCommit, setAutoCommit] = useState(config.auto_commit || false);
   const [createPr, setCreatePr] = useState(config.create_pr_on_complete || false);
+
+  const isConfigured = config.git_mode !== 'none' && config.working_directory;
 
   // Fetch git status for the working directory
   const fetchGitStatus = useCallback(async (path?: string) => {
@@ -86,12 +87,12 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
     }
   }, [workingDirectory, baseBranch]);
 
-  // Fetch status when expanded and have a working directory
+  // Fetch status when editing and have a working directory
   useEffect(() => {
-    if (isExpanded && workingDirectory) {
+    if (isEditing && workingDirectory) {
       fetchGitStatus();
     }
-  }, [isExpanded, fetchGitStatus, workingDirectory]);
+  }, [isEditing, fetchGitStatus, workingDirectory]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -143,8 +144,6 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
     setWorkBranch(`outcome/${slug}`);
   };
 
-  const isConfigured = config.git_mode !== 'none' && config.working_directory;
-
   return (
     <Card padding="md">
       <CardHeader>
@@ -156,23 +155,9 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
             <Badge variant="default">Not Set</Badge>
           )}
         </div>
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-text-tertiary hover:text-text-secondary text-sm"
-        >
-          {isExpanded ? '▼' : '▶'}
-        </button>
       </CardHeader>
       <CardContent>
-        {!isExpanded ? (
-          <div className="text-sm text-text-tertiary">
-            {isConfigured ? (
-              <span>Mode: {config.git_mode}, Branch: {config.work_branch || 'default'}</span>
-            ) : (
-              <span>Click to configure git integration</span>
-            )}
-          </div>
-        ) : isEditing ? (
+        {isEditing ? (
           /* Edit Mode */
           <div className="space-y-4">
             {/* Working Directory */}
@@ -326,66 +311,40 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
               </Button>
             </div>
           </div>
+        ) : isConfigured ? (
+          /* Configured View - show summary */
+          <div className="space-y-2">
+            <div className="text-sm">
+              <span className="text-text-tertiary">Mode: </span>
+              <span className="text-text-primary">
+                {config.git_mode === 'local' ? 'Local only' :
+                 config.git_mode === 'branch' ? 'Branch' :
+                 config.git_mode === 'worktree' ? 'Worktree' : config.git_mode}
+              </span>
+              {config.work_branch && (
+                <span className="text-text-secondary ml-1">({config.work_branch})</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {config.auto_commit && (
+                <Badge variant="default" className="text-[10px]">Auto-commit</Badge>
+              )}
+              {config.create_pr_on_complete && (
+                <Badge variant="info" className="text-[10px]">PR on complete</Badge>
+              )}
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)} className="mt-2">
+              Edit
+            </Button>
+          </div>
         ) : (
-          /* View Mode */
-          <div className="space-y-3">
-            {isConfigured ? (
-              <>
-                <div className="text-sm">
-                  <span className="text-text-tertiary">Directory: </span>
-                  <span className="text-text-secondary font-mono text-xs">{config.working_directory}</span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-text-tertiary">Mode: </span>
-                  <span className="text-text-primary">{GIT_MODE_OPTIONS.find(o => o.value === config.git_mode)?.label}</span>
-                </div>
-                {(config.git_mode === 'branch' || config.git_mode === 'worktree') && (
-                  <>
-                    <div className="text-sm">
-                      <span className="text-text-tertiary">Branch: </span>
-                      <span className="text-text-primary">{config.work_branch || '(not set)'}</span>
-                      {config.base_branch && (
-                        <span className="text-text-tertiary"> → {config.base_branch}</span>
-                      )}
-                    </div>
-                  </>
-                )}
-                {config.auto_commit && (
-                  <div className="text-xs text-text-tertiary">Auto-commit enabled</div>
-                )}
-                {config.create_pr_on_complete && (
-                  <div className="text-xs text-text-tertiary">Will create PR on completion</div>
-                )}
-
-                {/* Git Status */}
-                {gitStatus?.isRepo && (
-                  <div className="border-t border-border pt-3 mt-3 text-xs space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-text-tertiary">Status:</span>
-                      {gitStatus.isClean ? (
-                        <span className="text-status-success">Clean</span>
-                      ) : (
-                        <span className="text-status-warning">
-                          {gitStatus.hasUncommittedChanges ? 'Uncommitted changes' : 'Modified'}
-                        </span>
-                      )}
-                    </div>
-                    {gitStatus.unpushedCommits > 0 && (
-                      <div className="text-status-info">
-                        {gitStatus.unpushedCommits} unpushed commit{gitStatus.unpushedCommits !== 1 ? 's' : ''}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-text-tertiary">
-                Configure git integration to auto-commit work and create PRs.
-              </p>
-            )}
-
+          /* Not Configured - show configure button */
+          <div>
+            <p className="text-sm text-text-tertiary mb-3">
+              Configure where work is saved and how it's shared.
+            </p>
             <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
-              {isConfigured ? 'Edit' : 'Configure'}
+              Configure
             </Button>
           </div>
         )}

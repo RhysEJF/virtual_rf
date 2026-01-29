@@ -435,38 +435,6 @@ export default function OutcomeDetailPage(): JSX.Element {
               <p className="text-text-secondary text-sm max-w-2xl">{outcome.brief}</p>
             )}
           </div>
-          {/* Git Status Indicator */}
-          <div
-            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary rounded-lg border border-border cursor-pointer hover:border-accent transition-colors"
-            onClick={() => {
-              // Scroll to git config section
-              document.getElementById('git-config-section')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            title="Click to configure git integration"
-          >
-            {outcome.git_mode === 'none' ? (
-              <>
-                <span className="text-text-tertiary text-sm">Git:</span>
-                <span className="text-text-secondary text-sm">Not configured</span>
-                <span className="text-text-tertiary">→</span>
-              </>
-            ) : (
-              <>
-                <span className="w-2 h-2 rounded-full bg-status-success"></span>
-                <span className="text-text-secondary text-sm">
-                  {outcome.git_mode === 'local' ? 'Local only' :
-                   outcome.git_mode === 'branch' ? `Branch: ${outcome.work_branch || 'not set'}` :
-                   outcome.git_mode === 'worktree' ? 'Worktree' : 'Git'}
-                </span>
-                {outcome.auto_commit && (
-                  <Badge variant="default" className="text-[10px]">Auto-commit</Badge>
-                )}
-                {outcome.create_pr_on_complete && (
-                  <Badge variant="info" className="text-[10px]">PR</Badge>
-                )}
-              </>
-            )}
-          </div>
         </div>
       </div>
 

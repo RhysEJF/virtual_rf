@@ -60,9 +60,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 /**
- * Initiate GitHub auth login (opens browser)
+ * Initiate GitHub auth login - returns URL for user to open
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(): Promise<NextResponse> {
   try {
     // Check if gh is installed first
     try {
@@ -74,20 +74,60 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // Start gh auth login with web flow
-    // This will open a browser automatically
-    const child = spawn('gh', ['auth', 'login', '--web', '-p', 'https', '-h', 'github.com'], {
-      detached: true,
-      stdio: 'ignore',
-    });
+    // Start the device flow to get a code and URL
+    // gh auth login with --web outputs the URL and code to stderr
+    try {
+      // Use device flow which gives us a code to display
+      const result = execSync(
+        'gh auth login --git-protocol https --web 2>&1 || true',
+        {
+          encoding: 'utf-8',
+          timeout: 10000,
+          env: { ...process.env, GH_PROMPT_DISABLED: 'true' },
+        }
+      );
 
-    // Detach so it runs independently
-    child.unref();
+      // Parse the output for the URL and code
+      // Output looks like: "! First copy your one-time code: XXXX-XXXX"
+      // "Press Enter to open github.com in your browser..."
+      const codeMatch = result.match(/code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/i);
+      const code = codeMatch ? codeMatch[1] : null;
 
-    return NextResponse.json({
-      success: true,
-      message: 'Opening browser for GitHub authentication. Complete the login in your browser, then return here.',
-    });
+      if (code) {
+        return NextResponse.json({
+          success: true,
+          authUrl: 'https://github.com/login/device',
+          code: code,
+          message: `Enter code ${code} at github.com/login/device`,
+        });
+      }
+
+      // If already authenticated or other case
+      if (result.includes('Logged in') || result.includes('already logged in')) {
+        return NextResponse.json({
+          success: true,
+          alreadyAuthenticated: true,
+          message: 'Already authenticated with GitHub',
+        });
+      }
+
+      // Fallback - just direct them to the device page
+      return NextResponse.json({
+        success: true,
+        authUrl: 'https://github.com/login/device',
+        manualSteps: true,
+        message: 'Open github.com/login/device and run "gh auth login" in terminal',
+      });
+    } catch (cmdError) {
+      console.error('[GitHub Auth] Command error:', cmdError);
+      // Fallback approach
+      return NextResponse.json({
+        success: true,
+        authUrl: 'https://github.com/login/device',
+        manualSteps: true,
+        message: 'Open the link and run "gh auth login" in your terminal to complete setup',
+      });
+    }
   } catch (error) {
     console.error('[GitHub Auth] Error initiating login:', error);
     return NextResponse.json(

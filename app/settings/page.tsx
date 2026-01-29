@@ -66,13 +66,36 @@ export default function SettingsPage(): JSX.Element {
     }
   }, []);
 
+  // GitHub auth code state
+  const [authCode, setAuthCode] = useState<string | null>(null);
+
   const connectGithub = async () => {
     setConnectingGithub(true);
+    setAuthCode(null);
     try {
       const response = await fetch('/api/github/auth', { method: 'POST' });
       const data = await response.json();
+
       if (data.success) {
-        toast({ type: 'info', message: data.message });
+        if (data.alreadyAuthenticated) {
+          toast({ type: 'success', message: 'Already connected to GitHub' });
+          fetchGithubAuth();
+          setConnectingGithub(false);
+          return;
+        }
+
+        // Show the code if we got one
+        if (data.code) {
+          setAuthCode(data.code);
+        }
+
+        // Open the auth URL in a new tab
+        if (data.authUrl) {
+          window.open(data.authUrl, '_blank');
+        }
+
+        toast({ type: 'info', message: data.message || 'Complete authentication in the browser' });
+
         // Poll for auth completion
         const pollInterval = setInterval(async () => {
           const statusRes = await fetch('/api/github/auth');
@@ -81,6 +104,7 @@ export default function SettingsPage(): JSX.Element {
             clearInterval(pollInterval);
             setGithubAuth(status);
             setConnectingGithub(false);
+            setAuthCode(null);
             toast({ type: 'success', message: `Connected as ${status.username}` });
           }
         }, 2000);
@@ -440,12 +464,45 @@ export default function SettingsPage(): JSX.Element {
                 onClick={connectGithub}
                 disabled={connectingGithub}
               >
-                {connectingGithub ? 'Opening browser...' : 'Connect GitHub'}
+                {connectingGithub ? 'Waiting for authentication...' : 'Connect GitHub'}
               </Button>
               {connectingGithub && (
-                <p className="text-text-tertiary text-xs">
-                  Complete the login in your browser, then return here. This page will update automatically.
-                </p>
+                <div className="p-4 bg-bg-secondary rounded-lg border border-border">
+                  {authCode ? (
+                    <>
+                      <p className="text-text-secondary text-sm mb-2">
+                        Enter this code on GitHub:
+                      </p>
+                      <div className="text-2xl font-mono font-bold text-accent tracking-wider text-center py-2">
+                        {authCode}
+                      </div>
+                      <p className="text-text-tertiary text-xs mt-2">
+                        A browser tab should have opened. If not,{' '}
+                        <a
+                          href="https://github.com/login/device"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          click here
+                        </a>
+                        .
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-text-secondary text-sm">
+                        Complete authentication in your browser.
+                      </p>
+                      <p className="text-text-tertiary text-xs mt-2">
+                        If nothing opened, run <code className="text-accent">gh auth login</code> in your terminal.
+                      </p>
+                    </>
+                  )}
+                  <p className="text-text-tertiary text-xs mt-3">
+                    This page will update automatically when complete.
+                  </p>
+                </div>
               )}
             </div>
           )}

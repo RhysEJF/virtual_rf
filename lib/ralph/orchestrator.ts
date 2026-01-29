@@ -379,7 +379,9 @@ async function validateInfrastructure(outcomeId: string): Promise<{
 
 /**
  * Build skill context to inject into worker CLAUDE.md
- * Includes full skill content so workers have immediate access to methodologies
+ *
+ * Strategy: Include summaries with triggers, let Claude read full skill when relevant.
+ * This avoids context bloat while ensuring skills are discoverable.
  */
 function buildSkillContext(
   outcomeId: string,
@@ -390,23 +392,47 @@ function buildSkillContext(
   }
 
   const lines = ['## Available Skills\n'];
-  lines.push('The following skills have been built for this outcome. Use their methodologies when relevant to your task.\n');
+  lines.push('The following skills have been built for this outcome:\n');
 
   for (const skill of skills) {
     const content = getSkillContent(outcomeId, skill.name);
     if (content) {
+      // Extract purpose section for summary
+      const purposeMatch = content.match(/## Purpose\n([\s\S]*?)(?=\n##|$)/);
+      const purpose = purposeMatch
+        ? purposeMatch[1].trim().split('\n')[0]
+        : 'Skill for ' + skill.name;
+
+      // Extract methodology section headers for preview
+      const methodologyMatch = content.match(/## Methodology\n([\s\S]*?)(?=\n## |$)/);
+      let methodologyPreview = '';
+      if (methodologyMatch) {
+        const steps = methodologyMatch[1].match(/### Step \d+[^\n]*/g);
+        if (steps) {
+          methodologyPreview = steps.slice(0, 3).join(', ');
+          if (steps.length > 3) methodologyPreview += '...';
+        }
+      }
+
+      const kebabName = skill.name.toLowerCase().replace(/\s+/g, '-');
       lines.push(`### ${skill.name}`);
       lines.push(`**Triggers:** ${skill.triggers.join(', ') || 'N/A'}`);
-      lines.push('');
-      // Include full skill content so Claude has the complete methodology
-      lines.push('<skill-content>');
-      lines.push(content);
-      lines.push('</skill-content>');
-      lines.push('');
+      lines.push(`**Purpose:** ${purpose}`);
+      if (methodologyPreview) {
+        lines.push(`**Methodology:** ${methodologyPreview}`);
+      }
+      // Use ../ because worker runs in {outcomeId}/{taskId}/
+      lines.push(`**Read full skill:** \`../skills/${kebabName}.md\`\n`);
     }
   }
 
-  lines.push('\n**Instructions:** When working on tasks, check if any available skills are relevant and follow their methodology step-by-step.');
+  lines.push(`
+**How to use skills:**
+1. Check if your current task matches any skill triggers above
+2. If relevant, READ the full skill file using the path provided
+3. Follow the skill's methodology step-by-step
+4. Use the skill's output template for deliverables
+`);
 
   return lines.join('\n');
 }

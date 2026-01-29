@@ -340,19 +340,15 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
               </div>
             )}
 
-            {/* GitHub CLI Status */}
-            {gitStatus?.githubCli && (
+            {/* GitHub CLI Status - link to settings */}
+            {gitStatus?.githubCli && !gitStatus.githubCli.authenticated && (
               <div className="text-xs border-t border-border pt-3 mt-3">
-                <span className="text-text-tertiary">GitHub CLI: </span>
-                {gitStatus.githubCli.available ? (
-                  gitStatus.githubCli.authenticated ? (
-                    <span className="text-status-success">Authenticated</span>
-                  ) : (
-                    <span className="text-status-warning">Not authenticated (run: gh auth login)</span>
-                  )
-                ) : (
-                  <span className="text-text-tertiary">Not installed</span>
-                )}
+                <span className="text-text-tertiary">GitHub: </span>
+                <a href="/settings" className="text-accent hover:underline">
+                  {gitStatus.githubCli.available
+                    ? 'Connect in Settings to enable PRs'
+                    : 'Install GitHub CLI in Settings'}
+                </a>
               </div>
             )}
 
@@ -367,8 +363,8 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
             </div>
           </div>
         ) : isConfigured ? (
-          /* Configured View - show summary */
-          <div className="space-y-2">
+          /* Configured View - show summary and actions */
+          <div className="space-y-3">
             <div className="text-sm">
               <span className="text-text-tertiary">Mode: </span>
               <span className="text-text-primary">
@@ -388,9 +384,55 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
                 <Badge variant="info" className="text-[10px]">PR on complete</Badge>
               )}
             </div>
-            <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)} className="mt-2">
-              Edit
-            </Button>
+            {/* Manual actions */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/outcomes/${outcomeId}/git/commit`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                      toast({ type: 'success', message: data.message || 'Changes committed' });
+                    } else {
+                      toast({ type: 'error', message: data.error || 'Commit failed' });
+                    }
+                  } catch {
+                    toast({ type: 'error', message: 'Failed to commit' });
+                  }
+                }}
+              >
+                Commit Now
+              </Button>
+              {(config.git_mode === 'branch' || config.git_mode === 'worktree') && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/outcomes/${outcomeId}/git/pr`, { method: 'POST' });
+                      const data = await res.json();
+                      if (data.success) {
+                        toast({ type: 'success', message: 'PR created!' });
+                        if (data.url) {
+                          window.open(data.url, '_blank');
+                        }
+                      } else {
+                        toast({ type: 'error', message: data.error || 'Failed to create PR' });
+                      }
+                    } catch {
+                      toast({ type: 'error', message: 'Failed to create PR' });
+                    }
+                  }}
+                >
+                  Create PR
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+                Edit
+              </Button>
+            </div>
           </div>
         ) : (
           /* Not Configured - show configure button */

@@ -30,6 +30,18 @@ export default function SettingsPage(): JSX.Element {
   const [savingKey, setSavingKey] = useState(false);
   const [showAllKeys, setShowAllKeys] = useState(false);
 
+  // GitHub auth state
+  interface GitHubAuthStatus {
+    installed: boolean;
+    authenticated: boolean;
+    username?: string;
+    message: string;
+    installUrl?: string;
+  }
+  const [githubAuth, setGithubAuth] = useState<GitHubAuthStatus | null>(null);
+  const [loadingGithub, setLoadingGithub] = useState(true);
+  const [connectingGithub, setConnectingGithub] = useState(false);
+
   const fetchApiKeys = useCallback(async () => {
     try {
       const response = await fetch('/api/env-keys');
@@ -42,9 +54,56 @@ export default function SettingsPage(): JSX.Element {
     }
   }, []);
 
+  const fetchGithubAuth = useCallback(async () => {
+    try {
+      const response = await fetch('/api/github/auth');
+      const data = await response.json();
+      setGithubAuth(data);
+    } catch (error) {
+      console.error('Failed to fetch GitHub auth status:', error);
+    } finally {
+      setLoadingGithub(false);
+    }
+  }, []);
+
+  const connectGithub = async () => {
+    setConnectingGithub(true);
+    try {
+      const response = await fetch('/api/github/auth', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'info', message: data.message });
+        // Poll for auth completion
+        const pollInterval = setInterval(async () => {
+          const statusRes = await fetch('/api/github/auth');
+          const status = await statusRes.json();
+          if (status.authenticated) {
+            clearInterval(pollInterval);
+            setGithubAuth(status);
+            setConnectingGithub(false);
+            toast({ type: 'success', message: `Connected as ${status.username}` });
+          }
+        }, 2000);
+        // Stop polling after 2 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setConnectingGithub(false);
+        }, 120000);
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to connect GitHub' });
+        setConnectingGithub(false);
+      }
+    } catch (error) {
+      console.error('Failed to connect GitHub:', error);
+      toast({ type: 'error', message: 'Failed to connect GitHub' });
+      setConnectingGithub(false);
+    }
+  };
+
   useEffect(() => {
     fetchApiKeys();
-  }, [fetchApiKeys]);
+    fetchGithubAuth();
+  }, [fetchApiKeys, fetchGithubAuth]);
 
   const saveApiKey = async (name: string, value: string) => {
     setSavingKey(true);
@@ -327,16 +386,69 @@ export default function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      {/* Placeholder for future settings sections */}
-      <Card padding="md" className="opacity-50">
+      {/* GitHub Integration */}
+      <Card padding="md">
         <CardHeader>
-          <CardTitle>Git Integration</CardTitle>
-          <Badge variant="default">Coming Soon</Badge>
+          <div>
+            <CardTitle>GitHub Integration</CardTitle>
+            <p className="text-text-tertiary text-sm mt-1">
+              Connect GitHub to enable automatic PRs
+            </p>
+          </div>
+          {githubAuth?.authenticated && (
+            <Badge variant="success">Connected</Badge>
+          )}
         </CardHeader>
         <CardContent>
-          <p className="text-text-tertiary text-sm">
-            Configure how outcomes integrate with git repositories, branch workflows, and output destinations.
-          </p>
+          {loadingGithub ? (
+            <p className="text-text-tertiary text-sm">Checking GitHub status...</p>
+          ) : !githubAuth?.installed ? (
+            <div className="space-y-3">
+              <p className="text-text-secondary text-sm">
+                GitHub CLI is not installed. Install it to enable automatic PR creation.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.open('https://cli.github.com/', '_blank')}
+              >
+                Install GitHub CLI →
+              </Button>
+            </div>
+          ) : githubAuth?.authenticated ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-bg-secondary rounded-lg">
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-medium">
+                  {githubAuth.username?.[0]?.toUpperCase() || 'G'}
+                </div>
+                <div>
+                  <div className="text-text-primary font-medium">{githubAuth.username}</div>
+                  <div className="text-text-tertiary text-xs">Connected to GitHub</div>
+                </div>
+              </div>
+              <p className="text-text-tertiary text-xs">
+                Workers can now create PRs automatically when outcomes are achieved.
+                Configure git settings per-outcome on each outcome&apos;s detail page.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-text-secondary text-sm">
+                Connect your GitHub account to enable automatic PR creation when outcomes are achieved.
+              </p>
+              <Button
+                onClick={connectGithub}
+                disabled={connectingGithub}
+              >
+                {connectingGithub ? 'Opening browser...' : 'Connect GitHub'}
+              </Button>
+              {connectingGithub && (
+                <p className="text-text-tertiary text-xs">
+                  Complete the login in your browser, then return here. This page will update automatically.
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </main>

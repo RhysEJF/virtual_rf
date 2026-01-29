@@ -14,6 +14,8 @@ import { Badge } from './components/ui/Badge';
 
 type FilterStatus = 'all' | 'active' | 'dormant' | 'achieved';
 
+const FILTER_STORAGE_KEY = 'virtualrf_outcome_filter';
+
 export default function Dashboard(): JSX.Element {
   const router = useRouter();
   const [outcomes, setOutcomes] = useState<OutcomeWithCounts[]>([]);
@@ -21,6 +23,20 @@ export default function Dashboard(): JSX.Element {
   const [outcomesLoading, setOutcomesLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+
+  // Load filter from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (saved && ['all', 'active', 'dormant', 'achieved'].includes(saved)) {
+      setFilterStatus(saved as FilterStatus);
+    }
+  }, []);
+
+  // Save filter to localStorage when it changes
+  const handleFilterChange = (newFilter: FilterStatus) => {
+    setFilterStatus(newFilter);
+    localStorage.setItem(FILTER_STORAGE_KEY, newFilter);
+  };
 
   // Fetch outcomes on mount and poll for updates
   const fetchOutcomes = useCallback(async () => {
@@ -181,7 +197,7 @@ export default function Dashboard(): JSX.Element {
             </h2>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
+              onChange={(e) => handleFilterChange(e.target.value as FilterStatus)}
               className="text-xs bg-bg-secondary border border-border rounded px-2 py-1 text-text-secondary focus:outline-none focus:border-accent"
             >
               <option value="all">All</option>
@@ -274,7 +290,7 @@ export default function Dashboard(): JSX.Element {
                   </div>
                   {filterStatus === 'all' && achievedOutcomes.length > 4 && (
                     <button
-                      onClick={() => setFilterStatus('achieved')}
+                      onClick={() => handleFilterChange('achieved')}
                       className="text-xs text-accent hover:text-accent-hover"
                     >
                       View all {achievedOutcomes.length} achieved →

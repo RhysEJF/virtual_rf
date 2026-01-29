@@ -53,7 +53,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
   const {
     prompt,
     systemPrompt,
-    maxTurns = 1,
+    maxTurns = 5, // Default to 5 turns for clarifications and tool use
     allowedTools,
     timeout = 120000, // 2 minutes default
     outcomeId,
@@ -234,11 +234,13 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
 /**
  * Simple completion helper for quick tasks
+ * Default maxTurns is 5 to allow for clarifying questions and tool use
  */
 export async function complete(options: {
   system?: string;
   prompt: string;
   timeout?: number;
+  maxTurns?: number;
   outcomeId?: string;
   workerId?: string;
   description?: string;
@@ -246,7 +248,7 @@ export async function complete(options: {
   return claudeComplete({
     prompt: options.prompt,
     systemPrompt: options.system,
-    maxTurns: 1,
+    maxTurns: options.maxTurns ?? 5, // Allow multi-turn for clarifications/tools
     timeout: options.timeout,
     outcomeId: options.outcomeId,
     workerId: options.workerId,

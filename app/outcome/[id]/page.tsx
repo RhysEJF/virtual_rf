@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Ca
 import { Badge } from '@/app/components/ui/Badge';
 import { Button } from '@/app/components/ui/Button';
 import { Progress } from '@/app/components/ui/Progress';
+import { ProgressView } from '@/app/components/ProgressView';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker } from '@/lib/db/schema';
 
 // Types
@@ -508,6 +509,16 @@ export default function OutcomeDetailPage(): JSX.Element {
                   })}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Worker Progress (Episodic Memory) */}
+          <Card padding="md">
+            <CardHeader>
+              <CardTitle>Worker Progress</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProgressView outcomeId={outcomeId} />
             </CardContent>
           </Card>
         </div>

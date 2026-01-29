@@ -86,6 +86,14 @@ function runMigrations(database: Database.Database): void {
       console.log(`[DB Migration] Added ${col.name} column to outcomes`);
     }
   }
+
+  // Add full_output column to progress_entries for storing complete Claude output
+  const progressColumns = database.prepare(`PRAGMA table_info(progress_entries)`).all() as { name: string }[];
+  const hasFullOutput = progressColumns.some(col => col.name === 'full_output');
+  if (!hasFullOutput) {
+    database.exec(`ALTER TABLE progress_entries ADD COLUMN full_output TEXT`);
+    console.log('[DB Migration] Added full_output column to progress_entries');
+  }
 }
 
 /**

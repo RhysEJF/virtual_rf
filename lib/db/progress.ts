@@ -17,6 +17,7 @@ export interface CreateProgressEntryInput {
   worker_id: string;
   iteration: number;
   content: string;
+  full_output?: string;  // Complete Claude output (stdout/stderr)
 }
 
 export function createProgressEntry(input: CreateProgressEntryInput): ProgressEntry {
@@ -24,8 +25,8 @@ export function createProgressEntry(input: CreateProgressEntryInput): ProgressEn
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO progress_entries (outcome_id, worker_id, iteration, content, compacted, created_at)
-    VALUES (?, ?, ?, ?, 0, ?)
+    INSERT INTO progress_entries (outcome_id, worker_id, iteration, content, full_output, compacted, created_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?)
   `);
 
   const result = stmt.run(
@@ -33,6 +34,7 @@ export function createProgressEntry(input: CreateProgressEntryInput): ProgressEn
     input.worker_id,
     input.iteration,
     input.content,
+    input.full_output || null,
     timestamp
   );
 
@@ -50,6 +52,7 @@ export function getProgressEntryById(id: number): ProgressEntry | null {
   return {
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   };
 }
 
@@ -64,6 +67,7 @@ export function getProgressEntriesByWorker(workerId: string): ProgressEntry[] {
   return rows.map(row => ({
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   }));
 }
 
@@ -78,6 +82,7 @@ export function getUncompactedEntries(workerId: string): ProgressEntry[] {
   return rows.map(row => ({
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   }));
 }
 
@@ -103,6 +108,7 @@ export function getCompactedSummaries(workerId: string): ProgressEntry[] {
   return rows.map(row => ({
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   }));
 }
 
@@ -122,6 +128,7 @@ export function getRecentProgress(workerId: string, limit: number = 10): Progres
   return rows.map(row => ({
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   })).reverse(); // Return in chronological order
 }
 
@@ -257,6 +264,7 @@ export function getEntriesForCompaction(workerId: string, limit: number = COMPAC
   return rows.map(row => ({
     ...row,
     compacted: Boolean(row.compacted),
+    full_output: row.full_output || null,
   }));
 }
 

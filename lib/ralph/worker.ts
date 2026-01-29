@@ -450,23 +450,25 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           progress.completedTasks++;
           appendLog(`Task completed: ${task.title}`);
 
-          // Record progress entry
+          // Record progress entry with full output for auditing
           createProgressEntry({
             outcome_id: outcomeId,
             worker_id: workerId,
             iteration,
             content: `Completed: ${task.title}`,
+            full_output: taskResult.fullOutput,
           });
         } else {
           failTask(task.id);
           appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
 
-          // Record failure
+          // Record failure with full output for debugging
           createProgressEntry({
             outcome_id: outcomeId,
             worker_id: workerId,
             iteration,
             content: `Failed: ${task.title} - ${taskResult.error}`,
+            full_output: taskResult.fullOutput,
           });
 
           // Check if this is a critical error
@@ -527,6 +529,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
 /**
  * Execute a single task with Claude CLI
+ * Returns success status and captured full output for auditing
  */
 async function executeTask(
   taskWorkspace: string,
@@ -535,7 +538,7 @@ async function executeTask(
   workerId: string,
   task: Task,
   appendLog: (msg: string) => void
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; fullOutput?: string }> {
   return new Promise((resolve) => {
     try {
       const claudeProcess = spawn('claude', args, {
@@ -551,6 +554,11 @@ async function executeTask(
 
       let lastProgressContent = '';
       let checkInterval: NodeJS.Timeout;
+
+      // Collect full output for auditing
+      const outputChunks: string[] = [];
+      const MAX_OUTPUT_SIZE = 500000; // 500KB max to prevent memory issues
+      let totalOutputSize = 0;
 
       // Poll progress file
       const checkProgress = () => {
@@ -575,15 +583,28 @@ async function executeTask(
 
       checkInterval = setInterval(checkProgress, 2000);
 
-      // Handle output
+      // Handle stdout - capture full output
       claudeProcess.stdout?.on('data', (data: Buffer) => {
-        const output = data.toString().substring(0, 500);
-        appendLog(`stdout: ${output}`);
+        const output = data.toString();
+        // Log truncated version
+        appendLog(`stdout: ${output.substring(0, 500)}${output.length > 500 ? '...' : ''}`);
+        // Capture full output (up to limit)
+        if (totalOutputSize < MAX_OUTPUT_SIZE) {
+          outputChunks.push(`[stdout] ${output}`);
+          totalOutputSize += output.length;
+        }
       });
 
+      // Handle stderr - capture full output
       claudeProcess.stderr?.on('data', (data: Buffer) => {
-        const output = data.toString().substring(0, 500);
-        appendLog(`stderr: ${output}`);
+        const output = data.toString();
+        // Log truncated version
+        appendLog(`stderr: ${output.substring(0, 500)}${output.length > 500 ? '...' : ''}`);
+        // Capture full output (up to limit)
+        if (totalOutputSize < MAX_OUTPUT_SIZE) {
+          outputChunks.push(`[stderr] ${output}`);
+          totalOutputSize += output.length;
+        }
       });
 
       // Handle completion
@@ -593,27 +614,35 @@ async function executeTask(
         // Final progress check
         checkProgress();
 
+        // Combine all captured output
+        const fullOutput = outputChunks.join('\n');
+
         if (existsSync(progressPath)) {
           const content = readFileSync(progressPath, 'utf-8');
           const parsed = parseTaskProgress(content);
 
           if (parsed.done) {
-            resolve({ success: true });
+            resolve({ success: true, fullOutput });
           } else if (parsed.error) {
-            resolve({ success: false, error: parsed.error });
+            resolve({ success: false, error: parsed.error, fullOutput });
           } else if (code === 0) {
-            resolve({ success: true });
+            resolve({ success: true, fullOutput });
           } else {
-            resolve({ success: false, error: `Process exited with code ${code}` });
+            resolve({ success: false, error: `Process exited with code ${code}`, fullOutput });
           }
         } else {
-          resolve({ success: code === 0, error: code !== 0 ? `Exit code ${code}` : undefined });
+          resolve({
+            success: code === 0,
+            error: code !== 0 ? `Exit code ${code}` : undefined,
+            fullOutput
+          });
         }
       });
 
       claudeProcess.on('error', (err) => {
         clearInterval(checkInterval);
-        resolve({ success: false, error: err.message });
+        const fullOutput = outputChunks.join('\n');
+        resolve({ success: false, error: err.message, fullOutput });
       });
 
       // Timeout after 10 minutes per task
@@ -813,22 +842,25 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
       completeTask(task.id);
       appendLog(`Task completed: ${task.title}`);
 
-      // Record progress
+      // Record progress with full output for auditing
       createProgressEntry({
         outcome_id: outcomeId,
         worker_id: workerId,
         iteration,
         content: `Completed: ${task.title}`,
+        full_output: taskResult.fullOutput,
       });
     } else {
       failTask(task.id);
       appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
 
+      // Record failure with full output for debugging
       createProgressEntry({
         outcome_id: outcomeId,
         worker_id: workerId,
         iteration,
         content: `Failed: ${task.title} - ${taskResult.error}`,
+        full_output: taskResult.fullOutput,
       });
     }
 

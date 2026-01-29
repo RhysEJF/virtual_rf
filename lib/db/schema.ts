@@ -209,7 +209,8 @@ export interface ProgressEntry {
   outcome_id: string;
   worker_id: string;
   iteration: number;
-  content: string;                  // Raw progress text
+  content: string;                  // Summary/log message
+  full_output: string | null;       // Complete Claude output (stdout/stderr)
   compacted: boolean;               // Has this been compacted?
   compacted_into: number | null;    // ID of compacted summary entry
   created_at: number;

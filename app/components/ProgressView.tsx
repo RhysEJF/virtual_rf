@@ -119,13 +119,31 @@ function IterationDetailModal({ entry, workerName, onClose }: IterationDetailMod
               <p className="text-text-primary">{parsed.summary}</p>
             </div>
 
-            {/* Full Output */}
-            <div>
-              <h4 className="text-xs text-text-tertiary uppercase tracking-wide mb-2">Full Output</h4>
-              <pre className="text-text-secondary text-sm whitespace-pre-wrap bg-bg-secondary p-3 rounded-lg overflow-x-auto">
-                {entry.content}
-              </pre>
-            </div>
+            {/* Claude Full Output - if available */}
+            {entry.full_output ? (
+              <div>
+                <h4 className="text-xs text-text-tertiary uppercase tracking-wide mb-2">
+                  Claude Output
+                  <span className="ml-2 text-text-tertiary font-normal">
+                    ({Math.round(entry.full_output.length / 1024)}KB)
+                  </span>
+                </h4>
+                <pre className="text-text-secondary text-xs whitespace-pre-wrap bg-bg-secondary p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto font-mono">
+                  {entry.full_output}
+                </pre>
+              </div>
+            ) : (
+              <div>
+                <h4 className="text-xs text-text-tertiary uppercase tracking-wide mb-2">Log Entry</h4>
+                <pre className="text-text-secondary text-sm whitespace-pre-wrap bg-bg-secondary p-3 rounded-lg overflow-x-auto">
+                  {entry.content}
+                </pre>
+                <p className="text-text-tertiary text-xs mt-2 italic">
+                  Full Claude output not available for this entry.
+                  New iterations will capture complete output.
+                </p>
+              </div>
+            )}
 
             {/* Metadata */}
             <div className="pt-4 border-t border-border">

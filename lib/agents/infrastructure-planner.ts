@@ -331,10 +331,14 @@ export function createInfrastructureTasks(
     // Infrastructure tasks get low priority numbers (0-10) so they run first
     const priority = i + 1;
 
+    // Use ../ prefix because Claude runs in {outcomeId}/{taskId}/
+    // and needs to write to {outcomeId}/skills/ or {outcomeId}/tools/
+    const outputPath = `../${need.path}`;
+
     const task = createTask({
       outcome_id: outcomeId,
       title: `[Infrastructure] Build ${need.type}: ${need.name}`,
-      description: `${need.description}\n\nOutput path: ${need.path}\n\nSpecification:\n${need.specification}`,
+      description: `${need.description}\n\nOutput path: ${outputPath}\n\nSpecification:\n${need.specification}`,
       prd_context: JSON.stringify({
         type: 'infrastructure',
         infra_type: need.type,

@@ -1,31 +1,59 @@
 /**
- * Ralph Worker
+ * Ralph Worker (Task-Based Execution)
  *
- * Spawns an autonomous Claude Code CLI process that works through a PRD.
+ * Spawns an autonomous Claude Code CLI process that works through tasks.
  * Named after the "Ralph Wiggum" loop pattern.
+ *
+ * New Model:
+ * - Claims tasks atomically from the outcome's task pool
+ * - Executes one task at a time with full context
+ * - Sends heartbeats to prevent stale detection
+ * - Loops until all tasks complete or max iterations reached
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, watchFile, unwatchFile } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { PRDItem } from '../agents/briefer';
-import { updateProject } from '../db/projects';
-import { createWorker, updateWorker, startWorker } from '../db/workers';
+import {
+  createWorker,
+  updateWorker,
+  startWorker as startWorkerDb,
+  sendHeartbeat,
+  incrementIteration,
+  completeWorker,
+  failWorker,
+} from '../db/workers';
+import {
+  claimNextTask,
+  startTask,
+  completeTask,
+  failTask,
+  getTaskStats,
+  getPendingTasks,
+} from '../db/tasks';
+import type { Task, Intent } from '../db/schema';
+import { getOutcomeById } from '../db/outcomes';
+import { createProgressEntry } from '../db/progress';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface RalphConfig {
-  projectId: string;
-  projectName: string;
-  objective: string;
-  prd: PRDItem[];
-  workspacePath?: string; // Where to create the project, defaults to ./workspaces
+  outcomeId: string;
+  workspacePath?: string;
+  maxIterations?: number; // Default 50
+  heartbeatIntervalMs?: number; // Default 30000 (30 seconds)
 }
 
 export interface RalphProgress {
   workerId: string;
-  status: 'starting' | 'running' | 'completed' | 'failed' | 'stopped';
-  currentTask?: string;
+  status: 'starting' | 'claiming' | 'running' | 'completed' | 'failed' | 'stopped';
+  currentTaskId?: string;
+  currentTaskTitle?: string;
   completedTasks: number;
   totalTasks: number;
+  iteration: number;
   lastUpdate: number;
   error?: string;
 }
@@ -35,299 +63,469 @@ export interface RalphResult {
   workerId: string;
   completedTasks: number;
   totalTasks: number;
+  iterations: number;
   error?: string;
 }
 
 // Active workers map for tracking
 const activeWorkers = new Map<string, {
-  process: ChildProcess;
+  process: ChildProcess | null;
   config: RalphConfig;
   progress: RalphProgress;
+  heartbeatInterval?: NodeJS.Timeout;
+  running: boolean;
 }>();
 
+// ============================================================================
+// Instruction Generation
+// ============================================================================
+
 /**
- * Generate the CLAUDE.md instructions for the worker
+ * Generate CLAUDE.md instructions for the current task
  */
-function generateWorkerInstructions(config: RalphConfig): string {
-  const prdChecklist = config.prd
-    .map((item, i) => `- [ ] **${item.id}. ${item.title}**: ${item.description}`)
-    .join('\n');
+function generateTaskInstructions(
+  outcomeName: string,
+  intent: Intent | null,
+  task: Task
+): string {
+  const intentSummary = intent?.summary || 'No specific intent defined.';
 
-  return `# Project: ${config.projectName}
+  return `# Current Task
 
-## Objective
-${config.objective}
+## Outcome: ${outcomeName}
+${intentSummary}
 
-## Your Task
-Work through the PRD checklist below. For each item:
-1. Implement the task
-2. Update progress.txt with your status
-3. Move to the next item
+---
 
-## PRD Checklist
-${prdChecklist}
+## Your Current Task
 
-## Progress Tracking
-After completing each task, update \`progress.txt\` with:
+**ID:** ${task.id}
+**Title:** ${task.title}
+
+${task.description || 'No additional description provided.'}
+
+${task.prd_context ? `### PRD Context\n${task.prd_context}\n` : ''}
+${task.design_context ? `### Design Context\n${task.design_context}\n` : ''}
+
+---
+
+## Instructions
+
+1. Complete the task described above
+2. Write your progress to \`progress.txt\` as you work
+3. When finished, write \`DONE\` to progress.txt
+
+## Progress Format
 \`\`\`
-COMPLETED: [task number]
-CURRENT: [next task number or "DONE"]
-STATUS: [brief status message]
-\`\`\`
-
-## Completion
-When all tasks are done, write to progress.txt:
-\`\`\`
-COMPLETED: ALL
-CURRENT: DONE
-STATUS: Project complete
+STATUS: [what you're currently doing]
+DONE  (when complete, include this on its own line)
+ERROR: [if you hit a blocker, describe it]
 \`\`\`
 
 ## Rules
-- Work autonomously through the checklist
+- Focus only on this specific task
 - Create clean, well-structured code
-- Commit after each major task if this is a git repo
-- Keep going until all tasks are complete or you hit a blocker
-- If blocked, write BLOCKED: [reason] to progress.txt
+- Commit your work when making significant progress
+- If you hit a blocker you can't resolve, write ERROR: [reason]
+- When complete, write DONE and stop
+
+Start by understanding the task, then implement it.
 `;
 }
 
 /**
- * Generate initial progress.txt content
+ * Generate initial progress.txt
  */
-function generateInitialProgress(config: RalphConfig): string {
-  return `COMPLETED: 0
-CURRENT: 1
-STATUS: Starting project - ${config.projectName}
-TOTAL: ${config.prd.length}
+function generateInitialProgress(task: Task): string {
+  return `STATUS: Starting task - ${task.title}
 `;
 }
 
 /**
  * Parse progress.txt content
  */
-function parseProgress(content: string): { completed: number; current: string; status: string; blocked?: string } {
+function parseTaskProgress(content: string): {
+  status: string;
+  done: boolean;
+  error?: string;
+} {
   const lines = content.split('\n');
-  const result: { completed: number; current: string; status: string; blocked?: string } = {
-    completed: 0,
-    current: '1',
-    status: 'Unknown',
-  };
+  let status = 'Working';
+  let done = false;
+  let error: string | undefined;
 
   for (const line of lines) {
-    if (line.startsWith('COMPLETED:')) {
-      const val = line.replace('COMPLETED:', '').trim();
-      result.completed = val === 'ALL' ? -1 : parseInt(val, 10) || 0;
-    } else if (line.startsWith('CURRENT:')) {
-      result.current = line.replace('CURRENT:', '').trim();
-    } else if (line.startsWith('STATUS:')) {
-      result.status = line.replace('STATUS:', '').trim();
-    } else if (line.startsWith('BLOCKED:')) {
-      result.blocked = line.replace('BLOCKED:', '').trim();
+    const trimmed = line.trim();
+    if (trimmed.startsWith('STATUS:')) {
+      status = trimmed.replace('STATUS:', '').trim();
+    } else if (trimmed === 'DONE') {
+      done = true;
+    } else if (trimmed.startsWith('ERROR:')) {
+      error = trimmed.replace('ERROR:', '').trim();
     }
   }
 
-  return result;
+  return { status, done, error };
 }
 
+// ============================================================================
+// Main Worker Loop
+// ============================================================================
+
 /**
- * Start a Ralph worker for a project
+ * Start a Ralph worker for an outcome
  */
 export async function startRalphWorker(
   config: RalphConfig,
   onProgress?: (progress: RalphProgress) => void
 ): Promise<{ workerId: string; started: boolean; error?: string }> {
-  const baseWorkspace = config.workspacePath || join(process.cwd(), 'workspaces');
-  const projectWorkspace = join(baseWorkspace, config.projectId);
+  const {
+    outcomeId,
+    workspacePath = join(process.cwd(), 'workspaces'),
+    maxIterations = 50,
+    heartbeatIntervalMs = 30000,
+  } = config;
 
-  // Create workspace directory
-  if (!existsSync(baseWorkspace)) {
-    mkdirSync(baseWorkspace, { recursive: true });
+  // Verify outcome exists
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) {
+    return { workerId: '', started: false, error: 'Outcome not found' };
   }
-  if (!existsSync(projectWorkspace)) {
-    mkdirSync(projectWorkspace, { recursive: true });
+
+  // Parse intent if available
+  let intent: Intent | null = null;
+  if (outcome.intent) {
+    try {
+      intent = JSON.parse(outcome.intent) as Intent;
+    } catch {
+      // Intent might not be valid JSON
+    }
   }
 
-  // Write CLAUDE.md
-  const claudeMdPath = join(projectWorkspace, 'CLAUDE.md');
-  writeFileSync(claudeMdPath, generateWorkerInstructions(config));
+  // Create workspace
+  const outcomeWorkspace = join(workspacePath, outcomeId);
+  if (!existsSync(workspacePath)) {
+    mkdirSync(workspacePath, { recursive: true });
+  }
+  if (!existsSync(outcomeWorkspace)) {
+    mkdirSync(outcomeWorkspace, { recursive: true });
+  }
 
-  // Write initial progress.txt
-  const progressPath = join(projectWorkspace, 'progress.txt');
-  writeFileSync(progressPath, generateInitialProgress(config));
-
-  // Create worker in database (returns worker with auto-generated ID)
-  // Note: Using outcome_id (projectId maps to outcome in new schema)
+  // Create worker in database
   const dbWorker = createWorker({
-    outcome_id: config.projectId,
-    name: 'Ralph Worker',
+    outcome_id: outcomeId,
+    name: `Ralph Worker ${Date.now()}`,
   });
   const workerId = dbWorker.id;
 
-  // Initialize progress tracking
+  // Start the worker (sets status to 'running', started_at, heartbeat)
+  startWorkerDb(workerId);
+
+  // Get initial task stats
+  const stats = getTaskStats(outcomeId);
+
+  // Initialize progress
   const progress: RalphProgress = {
     workerId,
     status: 'starting',
-    completedTasks: 0,
-    totalTasks: config.prd.length,
+    completedTasks: stats.completed,
+    totalTasks: stats.total,
+    iteration: 0,
     lastUpdate: Date.now(),
   };
 
-  // Build the prompt for Ralph
-  const ralphPrompt = `You are working on: ${config.projectName}
+  // Track the worker
+  activeWorkers.set(workerId, {
+    process: null,
+    config,
+    progress,
+    running: true,
+  });
 
-Read CLAUDE.md for full instructions and the PRD checklist.
-Work through each task in order, updating progress.txt after each one.
-Keep going until all tasks are complete.
+  // Log file for all worker activity
+  const logPath = join(outcomeWorkspace, `worker-${workerId}.log`);
+  const appendLog = (message: string) => {
+    const timestamp = new Date().toISOString();
+    writeFileSync(logPath, `[${timestamp}] ${message}\n`, { flag: 'a' });
+  };
 
-Start by reading CLAUDE.md, then begin with task 1.`;
+  appendLog(`Worker started for outcome: ${outcome.name}`);
 
-  // Spawn Claude CLI
-  const args = [
-    '-p', ralphPrompt,
-    '--dangerously-skip-permissions',
-    '--max-turns', '50', // Allow up to 50 turns for complex projects
-  ];
+  // Heartbeat interval
+  const heartbeatInterval = setInterval(() => {
+    sendHeartbeat(workerId);
+  }, heartbeatIntervalMs);
 
-  console.log(`[Ralph] Starting worker ${workerId} in ${projectWorkspace}`);
-  console.log(`[Ralph] Command: claude ${args.join(' ')}`);
+  const workerState = activeWorkers.get(workerId)!;
+  workerState.heartbeatInterval = heartbeatInterval;
 
-  try {
-    const claudeProcess = spawn('claude', args, {
-      cwd: projectWorkspace,
-      env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin
-      detached: true, // Run independently of parent process
-    });
+  // Notify initial progress
+  if (onProgress) {
+    onProgress({ ...progress });
+  }
 
-    // Allow the parent process to exit independently
-    claudeProcess.unref();
+  // Start the work loop
+  (async () => {
+    let iteration = 0;
+    let hasError = false;
+    let errorMessage: string | undefined;
 
-    // Track the worker
-    activeWorkers.set(workerId, {
-      process: claudeProcess,
-      config,
-      progress,
-    });
+    try {
+      while (workerState.running && iteration < maxIterations) {
+        iteration++;
+        incrementIteration(workerId);
 
-    // Update status - use startWorker to set running status and timestamps
-    progress.status = 'running';
-    startWorker(workerId);
+        // Update progress
+        progress.status = 'claiming';
+        progress.iteration = iteration;
+        progress.lastUpdate = Date.now();
+        if (onProgress) onProgress({ ...progress });
 
-    // Watch progress.txt for changes
-    let lastProgressContent = '';
-    const checkProgress = () => {
-      if (existsSync(progressPath)) {
-        const content = readFileSync(progressPath, 'utf-8');
-        if (content !== lastProgressContent) {
-          lastProgressContent = content;
-          const parsed = parseProgress(content);
+        appendLog(`Iteration ${iteration}: Claiming next task...`);
 
-          progress.completedTasks = parsed.completed === -1 ? config.prd.length : parsed.completed;
-          progress.currentTask = parsed.current;
-          progress.lastUpdate = Date.now();
+        // Try to claim a task
+        const claimResult = claimNextTask(outcomeId, workerId);
 
-          if (parsed.blocked) {
-            progress.status = 'failed';
-            progress.error = parsed.blocked;
-          } else if (parsed.current === 'DONE') {
-            progress.status = 'completed';
-          }
+        if (!claimResult.success || !claimResult.task) {
+          // No more tasks available
+          appendLog(`No more pending tasks. Work complete.`);
+          break;
+        }
 
-          // Update database with progress summary
-          updateWorker(workerId, {
-            progress_summary: JSON.stringify({ completed: progress.completedTasks, total: progress.totalTasks }),
+        const task = claimResult.task;
+        appendLog(`Claimed task: ${task.title} (${task.id})`);
+
+        // Update progress
+        progress.status = 'running';
+        progress.currentTaskId = task.id;
+        progress.currentTaskTitle = task.title;
+        progress.lastUpdate = Date.now();
+        if (onProgress) onProgress({ ...progress });
+
+        // Mark task as running
+        startTask(task.id);
+
+        // Create task workspace
+        const taskWorkspace = join(outcomeWorkspace, task.id);
+        if (!existsSync(taskWorkspace)) {
+          mkdirSync(taskWorkspace, { recursive: true });
+        }
+
+        // Write CLAUDE.md and progress.txt
+        const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
+        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task));
+
+        const progressPath = join(taskWorkspace, 'progress.txt');
+        writeFileSync(progressPath, generateInitialProgress(task));
+
+        // Spawn Claude for this task
+        const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
+Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
+
+        const args = [
+          '-p', ralphPrompt,
+          '--dangerously-skip-permissions',
+          '--max-turns', '20',
+        ];
+
+        appendLog(`Spawning Claude for task: claude ${args.join(' ')}`);
+
+        const taskResult = await executeTask(
+          taskWorkspace,
+          args,
+          progressPath,
+          workerId,
+          task,
+          appendLog
+        );
+
+        if (taskResult.success) {
+          completeTask(task.id);
+          progress.completedTasks++;
+          appendLog(`Task completed: ${task.title}`);
+
+          // Record progress entry
+          createProgressEntry({
+            outcome_id: outcomeId,
+            worker_id: workerId,
+            iteration,
+            content: `Completed: ${task.title}`,
+          });
+        } else {
+          failTask(task.id);
+          appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
+
+          // Record failure
+          createProgressEntry({
+            outcome_id: outcomeId,
+            worker_id: workerId,
+            iteration,
+            content: `Failed: ${task.title} - ${taskResult.error}`,
           });
 
-          // Callback
-          if (onProgress) {
-            onProgress({ ...progress });
+          // Check if this is a critical error
+          if (taskResult.error?.includes('critical') || taskResult.error?.includes('blocked')) {
+            hasError = true;
+            errorMessage = taskResult.error;
+            break;
           }
         }
+
+        // Update stats
+        const newStats = getTaskStats(outcomeId);
+        progress.totalTasks = newStats.total;
+        progress.completedTasks = newStats.completed;
+        progress.lastUpdate = Date.now();
+
+        // Check if all done
+        if (newStats.pending === 0 && newStats.claimed === 0 && newStats.running === 0) {
+          appendLog(`All tasks completed!`);
+          break;
+        }
       }
-    };
+    } catch (err) {
+      hasError = true;
+      errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      appendLog(`Worker error: ${errorMessage}`);
+    }
 
-    // Poll progress every 2 seconds
-    const progressInterval = setInterval(checkProgress, 2000);
+    // Cleanup
+    clearInterval(heartbeatInterval);
 
-    // Write worker output to log file
-    const logPath = join(projectWorkspace, 'worker.log');
-    const appendLog = (prefix: string, data: Buffer) => {
-      const timestamp = new Date().toISOString();
-      const line = `[${timestamp}] ${prefix}: ${data.toString()}\n`;
-      writeFileSync(logPath, line, { flag: 'a' });
-    };
+    // Final status
+    if (hasError) {
+      failWorker(workerId);
+      progress.status = 'failed';
+      progress.error = errorMessage;
+    } else {
+      completeWorker(workerId);
+      progress.status = 'completed';
+    }
 
-    // Handle process output
-    claudeProcess.stdout?.on('data', (data: Buffer) => {
-      console.log(`[Ralph ${workerId}] stdout:`, data.toString().substring(0, 200));
-      appendLog('stdout', data);
-    });
+    progress.lastUpdate = Date.now();
+    activeWorkers.delete(workerId);
 
-    claudeProcess.stderr?.on('data', (data: Buffer) => {
-      console.error(`[Ralph ${workerId}] stderr:`, data.toString().substring(0, 200));
-      appendLog('stderr', data);
-    });
+    appendLog(`Worker finished: ${progress.status}`);
 
-    // Handle process completion
-    claudeProcess.on('close', (code) => {
-      clearInterval(progressInterval);
+    if (onProgress) {
+      onProgress({ ...progress });
+    }
+  })();
 
-      console.log(`[Ralph ${workerId}] Process exited with code ${code}`);
+  return { workerId, started: true };
+}
 
-      // Final progress check
-      checkProgress();
-
-      const finalStatus = progress.status === 'completed' ? 'completed' : (code === 0 ? 'completed' : 'failed');
-
-      updateWorker(workerId, {
-        status: finalStatus as import('../db/schema').WorkerStatus,
-        progress_summary: JSON.stringify({ completed: progress.completedTasks, total: progress.totalTasks }),
+/**
+ * Execute a single task with Claude CLI
+ */
+async function executeTask(
+  taskWorkspace: string,
+  args: string[],
+  progressPath: string,
+  workerId: string,
+  task: Task,
+  appendLog: (msg: string) => void
+): Promise<{ success: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    try {
+      const claudeProcess = spawn('claude', args, {
+        cwd: taskWorkspace,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      // Update project status if worker completed
-      if (finalStatus === 'completed') {
-        updateProject(config.projectId, { status: 'completed' });
+      const worker = activeWorkers.get(workerId);
+      if (worker) {
+        worker.process = claudeProcess;
       }
 
-      activeWorkers.delete(workerId);
+      let lastProgressContent = '';
+      let checkInterval: NodeJS.Timeout;
 
-      if (onProgress) {
-        onProgress({
-          ...progress,
-          status: finalStatus as RalphProgress['status'],
-        });
-      }
-    });
+      // Poll progress file
+      const checkProgress = () => {
+        if (existsSync(progressPath)) {
+          const content = readFileSync(progressPath, 'utf-8');
+          if (content !== lastProgressContent) {
+            lastProgressContent = content;
+            const parsed = parseTaskProgress(content);
 
-    claudeProcess.on('error', (err) => {
-      clearInterval(progressInterval);
-      console.error(`[Ralph ${workerId}] Process error:`, err);
+            appendLog(`Progress: ${parsed.status}`);
 
-      progress.status = 'failed';
-      progress.error = err.message;
+            if (parsed.done) {
+              appendLog(`Task signaled DONE`);
+              claudeProcess.kill('SIGTERM');
+            } else if (parsed.error) {
+              appendLog(`Task signaled ERROR: ${parsed.error}`);
+              claudeProcess.kill('SIGTERM');
+            }
+          }
+        }
+      };
 
-      updateWorker(workerId, { status: 'failed' });
-      activeWorkers.delete(workerId);
+      checkInterval = setInterval(checkProgress, 2000);
 
-      if (onProgress) {
-        onProgress({ ...progress });
-      }
-    });
+      // Handle output
+      claudeProcess.stdout?.on('data', (data: Buffer) => {
+        const output = data.toString().substring(0, 500);
+        appendLog(`stdout: ${output}`);
+      });
 
-    // Update project status
-    updateProject(config.projectId, { status: 'active' });
+      claudeProcess.stderr?.on('data', (data: Buffer) => {
+        const output = data.toString().substring(0, 500);
+        appendLog(`stderr: ${output}`);
+      });
 
-    return { workerId, started: true };
-  } catch (error) {
-    console.error('[Ralph] Failed to spawn process:', error);
-    return {
-      workerId,
-      started: false,
-      error: error instanceof Error ? error.message : 'Failed to start worker',
-    };
-  }
+      // Handle completion
+      claudeProcess.on('close', (code) => {
+        clearInterval(checkInterval);
+
+        // Final progress check
+        checkProgress();
+
+        if (existsSync(progressPath)) {
+          const content = readFileSync(progressPath, 'utf-8');
+          const parsed = parseTaskProgress(content);
+
+          if (parsed.done) {
+            resolve({ success: true });
+          } else if (parsed.error) {
+            resolve({ success: false, error: parsed.error });
+          } else if (code === 0) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: `Process exited with code ${code}` });
+          }
+        } else {
+          resolve({ success: code === 0, error: code !== 0 ? `Exit code ${code}` : undefined });
+        }
+      });
+
+      claudeProcess.on('error', (err) => {
+        clearInterval(checkInterval);
+        resolve({ success: false, error: err.message });
+      });
+
+      // Timeout after 10 minutes per task
+      setTimeout(() => {
+        if (!claudeProcess.killed) {
+          appendLog(`Task timeout - killing process`);
+          claudeProcess.kill('SIGTERM');
+        }
+      }, 10 * 60 * 1000);
+
+    } catch (err) {
+      resolve({
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to spawn process',
+      });
+    }
+  });
 }
+
+// ============================================================================
+// Worker Control
+// ============================================================================
 
 /**
  * Stop a running Ralph worker
@@ -338,7 +536,16 @@ export function stopRalphWorker(workerId: string): boolean {
     return false;
   }
 
-  worker.process.kill('SIGTERM');
+  worker.running = false;
+
+  if (worker.process) {
+    worker.process.kill('SIGTERM');
+  }
+
+  if (worker.heartbeatInterval) {
+    clearInterval(worker.heartbeatInterval);
+  }
+
   updateWorker(workerId, { status: 'paused' });
   activeWorkers.delete(workerId);
 
@@ -358,4 +565,12 @@ export function getRalphWorkerStatus(workerId: string): RalphProgress | null {
  */
 export function listActiveWorkers(): RalphProgress[] {
   return Array.from(activeWorkers.values()).map(w => ({ ...w.progress }));
+}
+
+/**
+ * Check if there are pending tasks for an outcome
+ */
+export function hasPendingTasks(outcomeId: string): boolean {
+  const pending = getPendingTasks(outcomeId);
+  return pending.length > 0;
 }

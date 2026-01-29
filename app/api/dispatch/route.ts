@@ -11,6 +11,7 @@ import { executeQuick } from '@/lib/agents/quick-executor';
 import { briefAndCreateProject } from '@/lib/agents/briefer';
 import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
+import { createTask } from '@/lib/db/tasks';
 
 interface DispatchRequest {
   input: string;
@@ -90,22 +91,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
         }
 
         const brief = briefResult.brief;
+        const projectId = briefResult.projectId!;
         const prdList = brief.prd
           .map((item, i) => `${i + 1}. [ ] ${item.title}`)
           .join('\n');
 
-        // Auto-start the Ralph worker
+        // Create tasks from PRD items for the worker to claim
+        // Note: briefer uses numeric priority (1 = highest)
+        for (const item of brief.prd) {
+          createTask({
+            outcome_id: projectId, // Using project ID as outcome ID for legacy compat
+            title: item.title,
+            description: item.description,
+            prd_context: JSON.stringify(item),
+            priority: item.priority * 10, // Convert 1-10 scale to 10-100 range
+          });
+        }
+
+        // Auto-start the Ralph worker with new task-based config
         let workerStatus = '';
         try {
           const workerResult = await startRalphWorker({
-            projectId: briefResult.projectId!,
-            projectName: brief.title,
-            objective: brief.objective,
-            prd: brief.prd,
+            outcomeId: projectId,
           });
 
           if (workerResult.started) {
-            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the PRD. Check the \`workspaces/${briefResult.projectId}\` folder for progress.`;
+            workerStatus = `\n\n**Worker Started!** (ID: ${workerResult.workerId})\nRalph is now working through the tasks. Check the \`workspaces/${projectId}\` folder for progress.`;
           } else {
             workerStatus = `\n\n**Worker failed to start:** ${workerResult.error}`;
           }
@@ -115,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
 
         return NextResponse.json({
           type: 'deep',
-          projectId: briefResult.projectId,
+          projectId: projectId,
           response: `**Project Created: ${brief.title}**
 
 **Objective:** ${brief.objective}

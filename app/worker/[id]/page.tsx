@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Badge } from '@/app/components/ui/Badge';
@@ -17,14 +17,6 @@ const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'defaul
   failed: { label: 'Failed', variant: 'error' },
 };
 
-const taskStatusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'error' }> = {
-  pending: { label: 'Pending', variant: 'default' },
-  claimed: { label: 'Claimed', variant: 'info' },
-  running: { label: 'Running', variant: 'info' },
-  completed: { label: 'Done', variant: 'success' },
-  failed: { label: 'Failed', variant: 'error' },
-};
-
 interface WorkerWithLiveStatus extends Worker {
   liveStatus?: {
     status: string;
@@ -37,24 +29,15 @@ interface WorkerWithLiveStatus extends Worker {
   };
 }
 
-interface ProgressEntry {
-  id: number;
-  iteration: number;
-  content: string;
-  created_at: number;
-  compacted: boolean;
-}
-
 export default function WorkerDetailPage(): JSX.Element {
   const params = useParams();
   const router = useRouter();
   const workerId = params.id as string;
-  const logContainerRef = useRef<HTMLDivElement>(null);
 
   const [worker, setWorker] = useState<WorkerWithLiveStatus | null>(null);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
-  const [progressEntries, setProgressEntries] = useState<ProgressEntry[]>([]);
+  const [totalTasks, setTotalTasks] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -62,39 +45,17 @@ export default function WorkerDetailPage(): JSX.Element {
   // Fetch worker data
   const fetchWorker = useCallback(async () => {
     try {
-      // Get worker from outcome's workers list
-      const response = await fetch(`/api/outcomes/${workerId}/workers`);
+      const response = await fetch(`/api/workers/${workerId}`);
       if (!response.ok) {
-        // Worker ID might be the actual worker ID, not outcome ID
-        // Try to get from a different endpoint or show error
-        throw new Error('Worker not found');
+        const data = await response.json();
+        throw new Error(data.error || 'Worker not found');
       }
       const data = await response.json();
-      const foundWorker = data.workers?.find((w: Worker) => w.id === workerId);
-
-      if (!foundWorker) {
-        throw new Error('Worker not found');
-      }
-
-      setWorker(foundWorker);
+      setWorker(data.worker);
+      setCurrentTask(data.currentTask || null);
+      setCompletedTasks(data.completedTasks || []);
+      setTotalTasks(data.totalTasks || 0);
       setError(null);
-
-      // Get tasks for the outcome
-      const tasksResponse = await fetch(`/api/outcomes/${foundWorker.outcome_id}/tasks`);
-      if (tasksResponse.ok) {
-        const tasksData = await tasksResponse.json();
-        const tasks = tasksData.tasks || [];
-
-        // Find current task
-        const current = tasks.find((t: Task) => t.id === foundWorker.current_task_id);
-        setCurrentTask(current || null);
-
-        // Get completed tasks for this worker
-        const completed = tasks.filter((t: Task) =>
-          t.status === 'completed' && t.claimed_by === workerId
-        );
-        setCompletedTasks(completed);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load worker');
     } finally {
@@ -107,13 +68,6 @@ export default function WorkerDetailPage(): JSX.Element {
     const interval = setInterval(fetchWorker, 3000); // Poll more frequently
     return () => clearInterval(interval);
   }, [fetchWorker]);
-
-  // Auto-scroll log to bottom
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [progressEntries]);
 
   // Actions
   const handleStopWorker = async () => {
@@ -160,8 +114,8 @@ export default function WorkerDetailPage(): JSX.Element {
 
   // Calculate progress
   const completedCount = liveStatus?.completedTasks ?? completedTasks.length;
-  const totalCount = liveStatus?.totalTasks ?? (completedCount + 1);
-  const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const total = liveStatus?.totalTasks ?? totalTasks;
+  const progressPercent = total > 0 ? (completedCount / total) * 100 : 0;
 
   // Format duration
   const startedAt = worker.started_at ? new Date(worker.started_at) : null;
@@ -228,11 +182,6 @@ export default function WorkerDetailPage(): JSX.Element {
                   {currentTask?.description && (
                     <p className="text-text-secondary text-sm mb-4">{currentTask.description}</p>
                   )}
-                  {currentTask?.prd_context && (
-                    <div className="text-xs text-text-tertiary bg-bg-secondary p-2 rounded">
-                      PRD: {currentTask.prd_context}
-                    </div>
-                  )}
                 </div>
               ) : isRunning ? (
                 <p className="text-text-tertiary text-sm">Claiming next task...</p>
@@ -247,7 +196,7 @@ export default function WorkerDetailPage(): JSX.Element {
             <CardHeader>
               <CardTitle>Progress</CardTitle>
               <span className="text-text-tertiary text-sm">
-                {completedCount}/{totalCount} tasks
+                {completedCount}/{total} tasks
               </span>
             </CardHeader>
             <CardContent>

@@ -78,6 +78,12 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Ramble input states
+  const [intentRamble, setIntentRamble] = useState('');
+  const [approachRamble, setApproachRamble] = useState('');
+  const [optimizingIntent, setOptimizingIntent] = useState(false);
+  const [optimizingApproach, setOptimizingApproach] = useState(false);
+
   // Fetch outcome data
   const fetchOutcome = useCallback(async () => {
     try {
@@ -154,6 +160,60 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  const handleOptimizeIntent = async () => {
+    if (!intentRamble.trim()) {
+      alert('Please enter your thoughts in the ramble box first');
+      return;
+    }
+    setOptimizingIntent(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/optimize-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ramble: intentRamble }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setIntentRamble('');
+        fetchOutcome();
+        alert('Intent updated successfully!');
+      } else {
+        alert(data.error || 'Failed to optimize intent');
+      }
+    } catch (err) {
+      alert('Failed to optimize intent');
+    } finally {
+      setOptimizingIntent(false);
+    }
+  };
+
+  const handleOptimizeApproach = async () => {
+    if (!approachRamble.trim()) {
+      alert('Please enter your thoughts in the ramble box first');
+      return;
+    }
+    setOptimizingApproach(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/optimize-approach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ramble: approachRamble }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setApproachRamble('');
+        fetchOutcome();
+        alert('Approach updated successfully!');
+      } else {
+        alert(data.error || 'Failed to optimize approach');
+      }
+    } catch (err) {
+      alert('Failed to optimize approach');
+    } finally {
+      setOptimizingApproach(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="max-w-5xl mx-auto p-6">
@@ -185,7 +245,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const hasPendingTasks = taskStats ? taskStats.pending > 0 : false;
 
   // Parse intent if available
-  let intent: { summary?: string; items?: { id: string; title: string; status: string }[] } | null = null;
+  let intent: { summary?: string; items?: { id: string; title: string; status: string }[]; success_criteria?: string[] } | null = null;
   if (outcome.intent) {
     try {
       intent = JSON.parse(outcome.intent);
@@ -310,49 +370,111 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardContent>
           </Card>
 
-          {/* Intent (PRD) */}
-          {intent && (
-            <Card padding="md">
-              <CardHeader>
-                <CardTitle>Intent (What)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {intent.summary && (
-                  <p className="text-text-secondary text-sm mb-4">{intent.summary}</p>
-                )}
-                {intent.items && intent.items.length > 0 && (
-                  <div className="space-y-2">
-                    {intent.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 text-sm">
-                        <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs
-                          ${item.status === 'done' ? 'bg-status-success/20 border-status-success text-status-success' : 'border-border'}`}>
-                          {item.status === 'done' ? '✓' : ''}
-                        </span>
-                        <span className={item.status === 'done' ? 'text-text-tertiary line-through' : 'text-text-primary'}>
-                          {item.title}
-                        </span>
-                      </div>
+          {/* Intent (PRD) with Ramble Box */}
+          <Card padding="md">
+            <CardHeader>
+              <CardTitle>Intent (What)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Current Intent Display */}
+              {intent?.summary && (
+                <p className="text-text-secondary text-sm mb-4">{intent.summary}</p>
+              )}
+              {intent?.items && intent.items.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {intent.items.map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm">
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs
+                        ${item.status === 'done' ? 'bg-status-success/20 border-status-success text-status-success' : 'border-border'}`}>
+                        {item.status === 'done' ? '✓' : ''}
+                      </span>
+                      <span className={item.status === 'done' ? 'text-text-tertiary line-through' : 'text-text-primary'}>
+                        {item.title}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {intent?.success_criteria && intent.success_criteria.length > 0 && (
+                <div className="mb-4 p-3 bg-bg-secondary rounded-lg">
+                  <p className="text-xs text-text-tertiary uppercase tracking-wide mb-2">Success Criteria</p>
+                  <ul className="text-sm text-text-secondary space-y-1">
+                    {intent.success_criteria.map((criterion, i) => (
+                      <li key={i}>• {criterion}</li>
                     ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                  </ul>
+                </div>
+              )}
 
-          {/* Approach (Design Doc) */}
-          {outcome.design_doc && (
-            <Card padding="md">
-              <CardHeader>
-                <CardTitle>Approach (How)</CardTitle>
+              {/* Ramble Input Box */}
+              <div className="border-t border-border pt-4 mt-4">
+                <textarea
+                  value={intentRamble}
+                  onChange={(e) => setIntentRamble(e.target.value)}
+                  placeholder="Ramble your thoughts here... What should this outcome achieve? What does success look like?"
+                  className="w-full h-24 p-3 text-sm bg-bg-secondary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleOptimizeIntent}
+                    disabled={optimizingIntent || !intentRamble.trim()}
+                  >
+                    {optimizingIntent ? 'Optimizing...' : 'Optimize Intent'}
+                  </Button>
+                  <span className="text-xs text-text-tertiary">
+                    AI will polish your ramble into a structured PRD
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Approach (Design Doc) with Ramble Box */}
+          <Card padding="md">
+            <CardHeader>
+              <CardTitle>Approach (How)</CardTitle>
+              {outcome.design_doc && (
                 <Badge variant="default">v{outcome.design_doc.version}</Badge>
-              </CardHeader>
-              <CardContent>
-                <p className="text-text-secondary text-sm whitespace-pre-wrap">
+              )}
+            </CardHeader>
+            <CardContent>
+              {/* Current Approach Display */}
+              {outcome.design_doc ? (
+                <p className="text-text-secondary text-sm whitespace-pre-wrap mb-4">
                   {outcome.design_doc.approach}
                 </p>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-text-tertiary text-sm mb-4">
+                  No design doc yet. Add your thoughts below to generate one.
+                </p>
+              )}
+
+              {/* Ramble Input Box */}
+              <div className="border-t border-border pt-4 mt-4">
+                <textarea
+                  value={approachRamble}
+                  onChange={(e) => setApproachRamble(e.target.value)}
+                  placeholder="Add thoughts on approach... What technologies? What architecture? Any constraints?"
+                  className="w-full h-24 p-3 text-sm bg-bg-secondary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleOptimizeApproach}
+                    disabled={optimizingApproach || !approachRamble.trim()}
+                  >
+                    {optimizingApproach ? 'Optimizing...' : 'Optimize Approach'}
+                  </Button>
+                  <span className="text-xs text-text-tertiary">
+                    AI will create/update the design doc based on your notes
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Tasks */}
           <Card padding="md">

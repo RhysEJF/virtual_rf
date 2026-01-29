@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dispatch, type DispatchResult } from '@/lib/agents/dispatcher';
 import { executeQuick } from '@/lib/agents/quick-executor';
 import { generateBrief } from '@/lib/agents/briefer';
+import { executeResearch, formatResearchPlan } from '@/lib/agents/research-handler';
 import { startRalphWorker } from '@/lib/ralph/worker';
 import { isClaudeAvailable } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
@@ -74,10 +75,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       }
 
       case 'research': {
-        // TODO: Implement research agent
+        const result = await executeResearch(input, true);
+
+        if (!result.success) {
+          return NextResponse.json({
+            type: 'research',
+            error: result.error || 'Failed to start research',
+          });
+        }
+
+        let response = formatResearchPlan(result.plan!);
+
+        if (result.workerStarted) {
+          response += `\n\n**Worker Started!** Ralph is now researching. Check the outcome detail for progress.`;
+        } else {
+          response += `\n\n**Outcome created.** Start a worker to begin the research.`;
+        }
+
         return NextResponse.json({
           type: 'research',
-          response: `**Research request received:** "${classification.summary || input}"\n\nResearch agent coming soon. For now, I'll treat this as a quick task and do my best to help.`,
+          projectId: result.outcomeId,
+          response,
         });
       }
 

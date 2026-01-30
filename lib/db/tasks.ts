@@ -556,6 +556,8 @@ export interface UpdateTaskInput {
   // Enriched task context
   task_intent?: string | null;
   task_approach?: string | null;
+  // Skill dependencies
+  required_skills?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -600,6 +602,10 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.task_approach !== undefined) {
     updates.push('task_approach = ?');
     values.push(input.task_approach);
+  }
+  if (input.required_skills !== undefined) {
+    updates.push('required_skills = ?');
+    values.push(input.required_skills);
   }
 
   values.push(id);

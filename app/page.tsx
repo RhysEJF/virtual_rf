@@ -68,6 +68,7 @@ export default function Dashboard(): JSX.Element {
   const [viewMode, setViewMode] = useState<ViewMode>('flat');
   const [lastResponse, setLastResponse] = useState<string | null>(null);
   const [matchState, setMatchState] = useState<MatchState | null>(null);
+  const [skillsCount, setSkillsCount] = useState(0);
 
   // Load filter and view mode from localStorage on mount
   useEffect(() => {
@@ -93,6 +94,17 @@ export default function Dashboard(): JSX.Element {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, newMode);
   };
 
+  // Fetch skills count
+  const fetchSkillsCount = useCallback(async () => {
+    try {
+      const response = await fetch('/api/skills');
+      const data = await response.json();
+      setSkillsCount(data.total || 0);
+    } catch (error) {
+      console.error('Failed to fetch skills count:', error);
+    }
+  }, []);
+
   // Fetch outcomes on mount and poll for updates
   const fetchOutcomes = useCallback(async () => {
     try {
@@ -114,10 +126,11 @@ export default function Dashboard(): JSX.Element {
 
   useEffect(() => {
     fetchOutcomes();
+    fetchSkillsCount();
     // Poll for updates every 5 seconds
     const interval = setInterval(fetchOutcomes, 5000);
     return () => clearInterval(interval);
-  }, [fetchOutcomes]);
+  }, [fetchOutcomes, fetchSkillsCount]);
 
   const handleSubmit = useCallback(async (input: string, mode: RequestMode, skipMatching?: boolean) => {
     setLoading(true);
@@ -532,7 +545,7 @@ export default function Dashboard(): JSX.Element {
       {/* System Status */}
       <SystemStatus
         activeAgents={activeWorkerCount}
-        skillsLoaded={totalPendingTasks}
+        skillsLoaded={skillsCount}
       />
     </main>
   );

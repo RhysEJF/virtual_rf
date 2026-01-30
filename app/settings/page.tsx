@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Button } from '@/app/components/ui/Button';
 import { Badge } from '@/app/components/ui/Badge';
@@ -16,9 +16,16 @@ interface ApiKey {
   usedBy?: string[];
 }
 
-export default function SettingsPage(): JSX.Element {
+// Wrapper component to handle useSearchParams
+function SettingsContent(): JSX.Element {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+
+  // Check if we should show missing keys (coming from skills page)
+  const showMissingParam = searchParams.get('showMissing');
+  const highlightKeysParam = searchParams.get('highlight');
+  const highlightKeys = highlightKeysParam ? highlightKeysParam.split(',') : [];
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -28,7 +35,7 @@ export default function SettingsPage(): JSX.Element {
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
   const [savingKey, setSavingKey] = useState(false);
-  const [showAllKeys, setShowAllKeys] = useState(false);
+  const [showAllKeys, setShowAllKeys] = useState(showMissingParam === 'true');
 
   // GitHub auth state
   interface GitHubAuthStatus {
@@ -205,13 +212,31 @@ export default function SettingsPage(): JSX.Element {
         </div>
       </div>
 
+      {/* Missing Keys Notice (when coming from Skills page) */}
+      {showMissingParam && highlightKeys.length > 0 && (
+        <div className="mb-6 p-4 bg-status-warning/10 border border-status-warning/30 rounded-lg">
+          <div className="flex items-start gap-3">
+            <span className="text-status-warning text-xl">⚠</span>
+            <div>
+              <p className="text-text-primary font-medium">
+                Skills need API keys
+              </p>
+              <p className="text-text-secondary text-sm mt-1">
+                {highlightKeys.length} API key{highlightKeys.length !== 1 ? 's are' : ' is'} required by skills in your workspace.
+                Configure them below to enable full functionality.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* API Keys Section */}
       <Card padding="md" className="mb-6">
         <CardHeader>
           <div>
             <CardTitle>API Keys</CardTitle>
             <p className="text-text-tertiary text-sm mt-1">
-              {configuredCount} configured
+              {configuredCount} configured{highlightKeys.length > 0 && `, ${highlightKeys.filter(k => !apiKeys.find(ak => ak.name === k && ak.isSet)).length} needed by skills`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -348,54 +373,63 @@ export default function SettingsPage(): JSX.Element {
             <p className="text-text-tertiary text-sm">Loading API keys...</p>
           ) : (
             <div className="space-y-2">
-              {displayedKeys.map((key) => (
-                <div
-                  key={key.name}
-                  className="flex items-center justify-between p-3 bg-bg-secondary rounded-lg hover:bg-bg-tertiary transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-text-primary text-sm font-medium">{key.label}</span>
-                      {key.isSet ? (
-                        <Badge variant="success" className="text-[10px]">Configured</Badge>
-                      ) : (
-                        <Badge variant="warning" className="text-[10px]">Not Set</Badge>
+              {displayedKeys.map((key) => {
+                const isHighlighted = highlightKeys.includes(key.name);
+                return (
+                  <div
+                    key={key.name}
+                    className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                      isHighlighted && !key.isSet
+                        ? 'bg-status-warning/10 border border-status-warning/30 hover:bg-status-warning/20'
+                        : 'bg-bg-secondary hover:bg-bg-tertiary'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary text-sm font-medium">{key.label}</span>
+                        {key.isSet ? (
+                          <Badge variant="success" className="text-[10px]">Configured</Badge>
+                        ) : isHighlighted ? (
+                          <Badge variant="error" className="text-[10px]">Required by Skills</Badge>
+                        ) : (
+                          <Badge variant="warning" className="text-[10px]">Not Set</Badge>
+                        )}
+                      </div>
+                      <div className="text-text-tertiary text-xs mt-0.5">
+                        {key.description}
+                      </div>
+                      {key.preview && (
+                        <div className="text-text-secondary text-xs font-mono mt-1">
+                          {key.preview}
+                        </div>
                       )}
                     </div>
-                    <div className="text-text-tertiary text-xs mt-0.5">
-                      {key.description}
-                    </div>
-                    {key.preview && (
-                      <div className="text-text-secondary text-xs font-mono mt-1">
-                        {key.preview}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-1 ml-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setEditingKey(key.name);
-                        setNewKeyValue('');
-                        setShowAddKeyForm(false);
-                      }}
-                    >
-                      {key.isSet ? 'Update' : 'Add'}
-                    </Button>
-                    {key.isSet && (
+                    <div className="flex gap-1 ml-4">
                       <Button
-                        variant="ghost"
+                        variant={isHighlighted && !key.isSet ? 'primary' : 'ghost'}
                         size="sm"
-                        onClick={() => deleteApiKey(key.name)}
-                        className="text-status-error hover:text-status-error hover:bg-status-error/10"
+                        onClick={() => {
+                          setEditingKey(key.name);
+                          setNewKeyValue('');
+                          setShowAddKeyForm(false);
+                        }}
                       >
-                        Remove
+                        {key.isSet ? 'Update' : 'Add'}
                       </Button>
-                    )}
+                      {key.isSet && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteApiKey(key.name)}
+                          className="text-status-error hover:text-status-error hover:bg-status-error/10"
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {displayedKeys.length === 0 && (
                 <p className="text-text-tertiary text-sm text-center py-8">
                   {showAllKeys
@@ -509,5 +543,27 @@ export default function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+// Loading fallback for Suspense
+function SettingsLoading(): JSX.Element {
+  return (
+    <main className="max-w-4xl mx-auto p-6 pb-20">
+      <div className="mb-6">
+        <div className="text-text-tertiary text-sm mb-4">← Back to Dashboard</div>
+        <h1 className="text-2xl font-semibold text-text-primary">Settings</h1>
+        <p className="text-text-secondary mt-1">Loading...</p>
+      </div>
+    </main>
+  );
+}
+
+// Export with Suspense boundary for useSearchParams
+export default function SettingsPage(): JSX.Element {
+  return (
+    <Suspense fallback={<SettingsLoading />}>
+      <SettingsContent />
+    </Suspense>
   );
 }

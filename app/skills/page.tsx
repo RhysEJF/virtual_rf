@@ -49,6 +49,7 @@ interface ApiKeyStatus {
   configured: number;
   total: number;
   missing: string[];
+  missingKeyNames: string[];  // Actual env var names (e.g., OPENAI_API_KEY)
 }
 
 export default function SkillsLibraryPage(): JSX.Element {
@@ -109,11 +110,14 @@ export default function SkillsLibraryPage(): JSX.Element {
       const data = await response.json();
       const keys = data.keys || [];
       const configured = keys.filter((k: { isSet: boolean }) => k.isSet).length;
-      const missing = keys.filter((k: { isSet: boolean; label: string }) => !k.isSet).map((k: { label: string }) => k.label);
+      const missingKeys = keys.filter((k: { isSet: boolean }) => !k.isSet);
+      const missing = missingKeys.map((k: { label: string }) => k.label);
+      const missingKeyNames = missingKeys.map((k: { name: string }) => k.name);
       setApiKeyStatus({
         configured,
         total: keys.length,
         missing,
+        missingKeyNames,
       });
     } catch (error) {
       console.error('Failed to fetch API key status:', error);
@@ -232,6 +236,11 @@ export default function SkillsLibraryPage(): JSX.Element {
   const categories = Object.keys(skills).sort();
   const outcomeNames = Object.keys(outcomeSkills).sort();
   const totalOutcomeSkills = Object.values(outcomeSkills).flat().length;
+
+  // Helper to get missing key names for settings navigation
+  const getMissingKeyNames = (): string[] => {
+    return apiKeyStatus?.missingKeyNames || [];
+  };
 
   return (
     <main className="max-w-6xl mx-auto p-6 pb-20">
@@ -626,7 +635,15 @@ export default function SkillsLibraryPage(): JSX.Element {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => router.push('/settings')}
+              onClick={() => {
+                // Pass missing keys as query params so settings page can highlight them
+                const missingKeyNames = getMissingKeyNames();
+                const params = new URLSearchParams({
+                  showMissing: 'true',
+                  highlight: missingKeyNames.join(','),
+                });
+                router.push(`/settings?${params.toString()}`);
+              }}
             >
               Configure in Settings →
             </Button>

@@ -11,6 +11,7 @@ import { InterventionForm } from '@/app/components/InterventionForm';
 import { OutputsSection } from '@/app/components/OutputsSection';
 import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { SkillsSection } from '@/app/components/SkillsSection';
+import { IterateSection } from '@/app/components/IterateSection';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -870,7 +871,7 @@ export default function OutcomeDetailPage(): JSX.Element {
             />
           </div>
 
-          {/* Intervention Form */}
+          {/* Intervention Form - while workers running */}
           {hasRunningWorker && (
             <Card padding="md">
               <CardHeader>
@@ -885,6 +886,11 @@ export default function OutcomeDetailPage(): JSX.Element {
                 />
               </CardContent>
             </Card>
+          )}
+
+          {/* Iterate/Feedback Form - when no workers running but work has been done */}
+          {!hasRunningWorker && hasEverHadWorker && (
+            <IterateSection outcomeId={outcomeId} onSuccess={fetchOutcome} />
           )}
 
           {/* Quick Actions */}

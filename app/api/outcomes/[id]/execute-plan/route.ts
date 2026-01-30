@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOutcomeById, updateOutcome, getDesignDoc, upsertDesignDoc } from '@/lib/db/outcomes';
+import { getOutcomeById, updateOutcome, getDesignDoc, upsertDesignDoc, hasChildren } from '@/lib/db/outcomes';
 import { createTask } from '@/lib/db/tasks';
 import { getWorkersByOutcome } from '@/lib/db/workers';
 import { startRalphWorker, stopAllWorkersForOutcome } from '@/lib/ralph/worker';
@@ -220,6 +220,16 @@ export async function POST(
           }
 
           case 'start_worker': {
+            // Only leaf outcomes can have workers
+            if (hasChildren(outcomeId)) {
+              results.push({
+                actionId: action.id,
+                success: false,
+                message: 'Cannot start workers on parent outcomes',
+              });
+              break;
+            }
+
             // Check if there's already a running worker
             const workers = getWorkersByOutcome(outcomeId);
             const hasRunning = workers.some((w: Worker) => w.status === 'running');

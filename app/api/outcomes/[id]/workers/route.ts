@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorkersByOutcome } from '@/lib/db/workers';
-import { getOutcomeById } from '@/lib/db/outcomes';
+import { getOutcomeById, hasChildren } from '@/lib/db/outcomes';
 import { getPendingTasks } from '@/lib/db/tasks';
 import { startRalphWorker, stopRalphWorker, stopAllWorkersForOutcome, getRalphWorkerStatus } from '@/lib/ralph/worker';
 import { isGitRepo } from '@/lib/worktree/manager';
@@ -81,6 +81,14 @@ export async function POST(
       return NextResponse.json(
         { error: 'Outcome not found' },
         { status: 404 }
+      );
+    }
+
+    // Only leaf outcomes (no children) can have workers
+    if (hasChildren(id)) {
+      return NextResponse.json(
+        { error: 'Cannot start workers on parent outcomes. Workers can only run on leaf outcomes (those without children).' },
+        { status: 400 }
       );
     }
 

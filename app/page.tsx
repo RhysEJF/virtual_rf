@@ -9,13 +9,41 @@ import { ActivityFeed } from './components/ActivityFeed';
 import { SupervisorAlerts } from './components/SupervisorAlerts';
 import { ImprovementSuggestions } from './components/ImprovementSuggestions';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
+import { OutcomeTreeView, type OutcomeTreeNode } from './components/OutcomeTreeView';
 import { Card, CardContent } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 
+// Simple SVG icons for view mode toggle
+function ListIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
+function TreeIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  );
+}
+
 type FilterStatus = 'all' | 'active' | 'dormant' | 'achieved';
+type ViewMode = 'flat' | 'tree';
 
 const FILTER_STORAGE_KEY = 'virtualrf_outcome_filter';
+const VIEW_MODE_STORAGE_KEY = 'virtualrf_view_mode';
 
 interface MatchedOutcome {
   id: string;
@@ -33,17 +61,23 @@ interface MatchState {
 export default function Dashboard(): JSX.Element {
   const router = useRouter();
   const [outcomes, setOutcomes] = useState<OutcomeWithCounts[]>([]);
+  const [treeOutcomes, setTreeOutcomes] = useState<OutcomeTreeNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [outcomesLoading, setOutcomesLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('flat');
   const [lastResponse, setLastResponse] = useState<string | null>(null);
   const [matchState, setMatchState] = useState<MatchState | null>(null);
 
-  // Load filter from localStorage on mount
+  // Load filter and view mode from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem(FILTER_STORAGE_KEY);
-    if (saved && ['all', 'active', 'dormant', 'achieved'].includes(saved)) {
-      setFilterStatus(saved as FilterStatus);
+    const savedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (savedFilter && ['all', 'active', 'dormant', 'achieved'].includes(savedFilter)) {
+      setFilterStatus(savedFilter as FilterStatus);
+    }
+    const savedViewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (savedViewMode && ['flat', 'tree'].includes(savedViewMode)) {
+      setViewMode(savedViewMode as ViewMode);
     }
   }, []);
 
@@ -53,12 +87,24 @@ export default function Dashboard(): JSX.Element {
     localStorage.setItem(FILTER_STORAGE_KEY, newFilter);
   };
 
+  // Save view mode to localStorage when it changes
+  const handleViewModeChange = (newMode: ViewMode) => {
+    setViewMode(newMode);
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, newMode);
+  };
+
   // Fetch outcomes on mount and poll for updates
   const fetchOutcomes = useCallback(async () => {
     try {
-      const response = await fetch('/api/outcomes?counts=true');
-      const data = await response.json();
-      setOutcomes(data.outcomes || []);
+      // Fetch both flat and tree views
+      const [flatResponse, treeResponse] = await Promise.all([
+        fetch('/api/outcomes?counts=true'),
+        fetch('/api/outcomes?tree=true'),
+      ]);
+      const flatData = await flatResponse.json();
+      const treeData = await treeResponse.json();
+      setOutcomes(flatData.outcomes || []);
+      setTreeOutcomes(treeData.outcomes || []);
     } catch (error) {
       console.error('Failed to fetch outcomes:', error);
     } finally {
@@ -310,11 +356,38 @@ export default function Dashboard(): JSX.Element {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         {/* Left Column: Outcomes (main area) */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Section Header with Filter */}
+          {/* Section Header with View Toggle and Filter */}
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
-              Outcomes
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
+                Outcomes
+              </h2>
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-1 bg-bg-secondary rounded-md p-0.5 border border-border">
+                <button
+                  onClick={() => handleViewModeChange('flat')}
+                  className={`p-1.5 rounded transition-colors ${
+                    viewMode === 'flat'
+                      ? 'bg-bg-primary text-text-primary shadow-sm'
+                      : 'text-text-tertiary hover:text-text-secondary'
+                  }`}
+                  title="Flat view"
+                >
+                  <ListIcon className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => handleViewModeChange('tree')}
+                  className={`p-1.5 rounded transition-colors ${
+                    viewMode === 'tree'
+                      ? 'bg-bg-primary text-text-primary shadow-sm'
+                      : 'text-text-tertiary hover:text-text-secondary'
+                  }`}
+                  title="Tree view"
+                >
+                  <TreeIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
             <select
               value={filterStatus}
               onChange={(e) => handleFilterChange(e.target.value as FilterStatus)}
@@ -333,6 +406,15 @@ export default function Dashboard(): JSX.Element {
                 <p className="text-text-tertiary text-sm">Loading outcomes...</p>
               </CardContent>
             </Card>
+          ) : viewMode === 'tree' ? (
+            /* Tree View */
+            <OutcomeTreeView
+              outcomes={treeOutcomes}
+              onOutcomeClick={(id) => router.push(`/outcome/${id}`)}
+              onStartWorker={handleStartWorker}
+              onPause={handlePauseOutcome}
+              filterStatus={filterStatus}
+            />
           ) : filteredOutcomes.length === 0 ? (
             <Card padding="lg" className="text-center">
               <CardContent>
@@ -349,6 +431,7 @@ export default function Dashboard(): JSX.Element {
               </CardContent>
             </Card>
           ) : (
+            /* Flat View */
             <div className="space-y-6">
               {/* Active Outcomes */}
               {activeOutcomes.length > 0 && (filterStatus === 'all' || filterStatus === 'active') && (

@@ -150,6 +150,24 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE tasks ADD COLUMN required_skills TEXT`);
     console.log('[DB Migration] Added required_skills column to tasks');
   }
+
+  // Add hierarchy columns to outcomes for nested outcomes
+  const hierarchyColumns = [
+    { name: 'parent_id', sql: 'ALTER TABLE outcomes ADD COLUMN parent_id TEXT REFERENCES outcomes(id) ON DELETE CASCADE' },
+    { name: 'depth', sql: 'ALTER TABLE outcomes ADD COLUMN depth INTEGER NOT NULL DEFAULT 0' },
+  ];
+  const outcomesColsHierarchy = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  for (const col of hierarchyColumns) {
+    const exists = outcomesColsHierarchy.some(c => c.name === col.name);
+    if (!exists) {
+      database.exec(col.sql);
+      console.log(`[DB Migration] Added ${col.name} column to outcomes`);
+    }
+  }
+
+  // Add hierarchy indexes if they don't exist
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_parent ON outcomes(parent_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_depth ON outcomes(depth)`);
 }
 
 /**

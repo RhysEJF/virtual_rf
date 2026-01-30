@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOutcomeById } from '@/lib/db/outcomes';
+import { getOutcomeById, hasChildren } from '@/lib/db/outcomes';
 import {
   runOrchestrated,
   getOrchestrationState,
@@ -31,6 +31,14 @@ export async function POST(
       return NextResponse.json(
         { error: 'Outcome not found' },
         { status: 404 }
+      );
+    }
+
+    // Only leaf outcomes (no children) can be orchestrated
+    if (hasChildren(outcomeId)) {
+      return NextResponse.json(
+        { error: 'Cannot orchestrate parent outcomes. Only leaf outcomes (those without children) can be executed.' },
+        { status: 400 }
       );
     }
 

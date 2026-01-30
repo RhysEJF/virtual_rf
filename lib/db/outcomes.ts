@@ -29,6 +29,8 @@ export interface CreateOutcomeInput {
   intent?: string;
   timeline?: string;
   is_ongoing?: boolean;
+  // Hierarchy
+  parent_id?: string;
   // Git configuration
   working_directory?: string;
   git_mode?: GitMode;
@@ -43,13 +45,23 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
   const timestamp = now();
   const id = generateId('out');
 
+  // Compute depth based on parent
+  let depth = 0;
+  if (input.parent_id) {
+    const parent = getOutcomeById(input.parent_id);
+    if (parent) {
+      depth = parent.depth + 1;
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO outcomes (
       id, name, status, is_ongoing, brief, intent, timeline,
+      parent_id, depth,
       working_directory, git_mode, base_branch, work_branch, auto_commit, create_pr_on_complete,
       created_at, updated_at, last_activity_at
     )
-    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -59,6 +71,8 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
     input.brief || null,
     input.intent || null,
     input.timeline || null,
+    input.parent_id || null,
+    depth,
     input.working_directory || null,
     input.git_mode || 'none',
     input.base_branch || null,
@@ -96,6 +110,8 @@ function mapOutcomeRow(row: Outcome): Outcome {
     auto_commit: Boolean(row.auto_commit),
     create_pr_on_complete: Boolean(row.create_pr_on_complete),
     git_mode: (row.git_mode || 'none') as GitMode,
+    parent_id: row.parent_id || null,
+    depth: row.depth ?? 0,
   };
 }
 
@@ -247,6 +263,8 @@ export interface UpdateOutcomeInput {
   intent?: string;
   timeline?: string;
   infrastructure_ready?: number;
+  // Hierarchy
+  parent_id?: string | null;  // Set to null to make root, or ID to re-parent
   // Git configuration
   working_directory?: string | null;
   git_mode?: GitMode;
@@ -291,6 +309,21 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
     updates.push('infrastructure_ready = ?');
     values.push(input.infrastructure_ready);
   }
+  // Hierarchy - handle parent_id changes
+  if (input.parent_id !== undefined) {
+    updates.push('parent_id = ?');
+    values.push(input.parent_id);
+    // Compute new depth
+    let newDepth = 0;
+    if (input.parent_id) {
+      const parent = getOutcomeById(input.parent_id);
+      if (parent) {
+        newDepth = parent.depth + 1;
+      }
+    }
+    updates.push('depth = ?');
+    values.push(newDepth);
+  }
   // Git configuration fields
   if (input.working_directory !== undefined) {
     updates.push('working_directory = ?');
@@ -321,7 +354,28 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
 
   db.prepare(`UPDATE outcomes SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
+  // If parent changed, update depths of all descendants
+  if (input.parent_id !== undefined) {
+    updateDescendantDepths(id);
+  }
+
   return getOutcomeById(id);
+}
+
+/**
+ * Recursively update depths of all descendants after a parent change
+ */
+function updateDescendantDepths(outcomeId: string): void {
+  const db = getDb();
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) return;
+
+  const children = getChildOutcomes(outcomeId);
+  for (const child of children) {
+    const newDepth = outcome.depth + 1;
+    db.prepare('UPDATE outcomes SET depth = ? WHERE id = ?').run(newDepth, child.id);
+    updateDescendantDepths(child.id);
+  }
 }
 
 export function touchOutcome(id: string): void {
@@ -361,6 +415,93 @@ export function achieveOutcome(id: string): Outcome | null {
 
 export function archiveOutcome(id: string): Outcome | null {
   return updateOutcome(id, { status: 'archived' });
+}
+
+// ============================================================================
+// Infrastructure Status (Computed)
+// ============================================================================
+
+/**
+ * Evaluate what infrastructure_ready should be based on actual task state.
+ * Returns:
+ *   0 = Infrastructure needed but not started (pending infra tasks, none completed)
+ *   1 = Infrastructure in progress (some completed, some pending)
+ *   2 = Infrastructure complete (all infra tasks completed, or no infra tasks)
+ */
+export function evaluateInfrastructureStatus(outcomeId: string): 0 | 1 | 2 {
+  const db = getDb();
+
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN status IN ('claimed', 'running') THEN 1 ELSE 0 END) as in_progress,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+    FROM tasks
+    WHERE outcome_id = ? AND phase = 'infrastructure'
+  `).get(outcomeId) as {
+    total: number;
+    pending: number;
+    in_progress: number;
+    completed: number;
+    failed: number;
+  };
+
+  // No infrastructure tasks = infrastructure is ready
+  if (stats.total === 0) {
+    return 2;
+  }
+
+  // All infrastructure tasks completed (or failed but none pending)
+  if (stats.pending === 0 && stats.in_progress === 0) {
+    return 2;
+  }
+
+  // Some completed or in progress = building
+  if (stats.completed > 0 || stats.in_progress > 0) {
+    return 1;
+  }
+
+  // All pending, none started = not started
+  return 0;
+}
+
+/**
+ * Sync outcome's infrastructure_ready with actual task state.
+ * Call this after startup cleanup or when resuming work.
+ * Returns true if the status was changed.
+ */
+export function syncInfrastructureStatus(outcomeId: string): boolean {
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) return false;
+
+  const computed = evaluateInfrastructureStatus(outcomeId);
+
+  if (outcome.infrastructure_ready !== computed) {
+    updateOutcome(outcomeId, { infrastructure_ready: computed });
+    console.log(`[DB Sync] Updated infrastructure_ready for ${outcomeId}: ${outcome.infrastructure_ready} → ${computed}`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Sync infrastructure status for all active outcomes.
+ * Call this during startup cleanup.
+ */
+export function syncAllInfrastructureStatus(): number {
+  const activeOutcomes = getActiveOutcomes();
+  let updated = 0;
+
+  for (const outcome of activeOutcomes) {
+    if (syncInfrastructureStatus(outcome.id)) {
+      updated++;
+    }
+  }
+
+  return updated;
 }
 
 // Design Doc helpers
@@ -414,4 +555,315 @@ export function upsertDesignDoc(outcomeId: string, approach: string, version?: n
       updated_at: now,
     };
   }
+}
+
+// ============================================================================
+// Hierarchy / Tree Operations
+// ============================================================================
+
+/**
+ * Get all direct children of an outcome
+ */
+export function getChildOutcomes(parentId: string): Outcome[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM outcomes
+    WHERE parent_id = ?
+    ORDER BY last_activity_at DESC
+  `).all(parentId) as Outcome[];
+
+  return rows.map(mapOutcomeRow);
+}
+
+/**
+ * Get all root outcomes (those without a parent)
+ */
+export function getRootOutcomes(): Outcome[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM outcomes
+    WHERE parent_id IS NULL
+    ORDER BY last_activity_at DESC
+  `).all() as Outcome[];
+
+  return rows.map(mapOutcomeRow);
+}
+
+/**
+ * Check if an outcome has any children
+ */
+export function hasChildren(outcomeId: string): boolean {
+  const db = getDb();
+  const result = db.prepare(`
+    SELECT COUNT(*) as count FROM outcomes WHERE parent_id = ?
+  `).get(outcomeId) as { count: number };
+  return result.count > 0;
+}
+
+/**
+ * Get the count of direct children for an outcome
+ */
+export function getChildCount(outcomeId: string): number {
+  const db = getDb();
+  const result = db.prepare(`
+    SELECT COUNT(*) as count FROM outcomes WHERE parent_id = ?
+  `).get(outcomeId) as { count: number };
+  return result.count;
+}
+
+/**
+ * Get all descendants of an outcome (recursive)
+ */
+export function getAllDescendants(outcomeId: string): Outcome[] {
+  const db = getDb();
+
+  // Use recursive CTE to get all descendants
+  const rows = db.prepare(`
+    WITH RECURSIVE descendants AS (
+      SELECT * FROM outcomes WHERE parent_id = ?
+      UNION ALL
+      SELECT o.* FROM outcomes o
+      INNER JOIN descendants d ON o.parent_id = d.id
+    )
+    SELECT * FROM descendants
+    ORDER BY depth ASC, last_activity_at DESC
+  `).all(outcomeId) as Outcome[];
+
+  return rows.map(mapOutcomeRow);
+}
+
+/**
+ * Get the breadcrumb path from root to the given outcome
+ * Returns array from root to the outcome (inclusive)
+ */
+export function getBreadcrumbs(outcomeId: string): { id: string; name: string }[] {
+  const db = getDb();
+
+  // Use recursive CTE to get ancestors
+  const rows = db.prepare(`
+    WITH RECURSIVE ancestors AS (
+      SELECT id, name, parent_id, depth FROM outcomes WHERE id = ?
+      UNION ALL
+      SELECT o.id, o.name, o.parent_id, o.depth FROM outcomes o
+      INNER JOIN ancestors a ON o.id = a.parent_id
+    )
+    SELECT id, name FROM ancestors
+    ORDER BY depth ASC
+  `).all(outcomeId) as { id: string; name: string }[];
+
+  return rows;
+}
+
+/**
+ * Aggregated stats for an outcome and all its descendants
+ */
+export interface AggregatedStats {
+  total_tasks: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  active_workers: number;
+  total_descendants: number;
+}
+
+/**
+ * Get aggregated statistics across an outcome and all its descendants
+ */
+export function getAggregatedStats(outcomeId: string): AggregatedStats {
+  const db = getDb();
+
+  // Get all outcome IDs (self + descendants)
+  const outcomeIds = db.prepare(`
+    WITH RECURSIVE tree AS (
+      SELECT id FROM outcomes WHERE id = ?
+      UNION ALL
+      SELECT o.id FROM outcomes o
+      INNER JOIN tree t ON o.parent_id = t.id
+    )
+    SELECT id FROM tree
+  `).all(outcomeId) as { id: string }[];
+
+  if (outcomeIds.length === 0) {
+    return {
+      total_tasks: 0,
+      pending_tasks: 0,
+      completed_tasks: 0,
+      failed_tasks: 0,
+      active_workers: 0,
+      total_descendants: 0,
+    };
+  }
+
+  const ids = outcomeIds.map(r => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  // Get task stats
+  const taskStats = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+    FROM tasks
+    WHERE outcome_id IN (${placeholders})
+  `).get(...ids) as {
+    total: number;
+    pending: number;
+    completed: number;
+    failed: number;
+  };
+
+  // Get worker stats
+  const workerStats = db.prepare(`
+    SELECT COUNT(*) as active
+    FROM workers
+    WHERE outcome_id IN (${placeholders}) AND status = 'running'
+  `).get(...ids) as { active: number };
+
+  return {
+    total_tasks: taskStats.total || 0,
+    pending_tasks: taskStats.pending || 0,
+    completed_tasks: taskStats.completed || 0,
+    failed_tasks: taskStats.failed || 0,
+    active_workers: workerStats.active || 0,
+    total_descendants: ids.length - 1, // Exclude self
+  };
+}
+
+/**
+ * Tree node for hierarchical display
+ */
+export interface OutcomeTreeNode extends OutcomeListItem {
+  children: OutcomeTreeNode[];
+  child_count: number;
+}
+
+/**
+ * Build a tree structure from all outcomes
+ */
+export function getOutcomeTree(): OutcomeTreeNode[] {
+  const outcomes = getOutcomesWithCounts();
+
+  // Create a map for quick lookup
+  const outcomeMap = new Map<string, OutcomeTreeNode>();
+  for (const o of outcomes) {
+    outcomeMap.set(o.id, { ...o, children: [], child_count: 0 });
+  }
+
+  // Build tree structure
+  const roots: OutcomeTreeNode[] = [];
+  outcomeMap.forEach((node) => {
+    if (node.parent_id && outcomeMap.has(node.parent_id)) {
+      const parent = outcomeMap.get(node.parent_id)!;
+      parent.children.push(node);
+      parent.child_count++;
+    } else {
+      roots.push(node);
+    }
+  });
+
+  // Sort children by last_activity_at descending
+  const sortChildren = (nodes: OutcomeTreeNode[]): void => {
+    nodes.sort((a, b) => b.last_activity_at - a.last_activity_at);
+    for (const node of nodes) {
+      sortChildren(node.children);
+    }
+  };
+  sortChildren(roots);
+
+  return roots;
+}
+
+/**
+ * Child outcome info for parent detail page
+ */
+export interface ChildOutcomeInfo {
+  id: string;
+  name: string;
+  status: OutcomeStatus;
+  total_tasks: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  active_workers: number;
+}
+
+/**
+ * Get children with task/worker counts for displaying in parent outcome detail
+ */
+export function getChildrenWithCounts(parentId: string): ChildOutcomeInfo[] {
+  const db = getDb();
+
+  const rows = db.prepare(`
+    SELECT
+      o.id,
+      o.name,
+      o.status,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id) as total_tasks,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id AND status = 'pending') as pending_tasks,
+      (SELECT COUNT(*) FROM tasks WHERE outcome_id = o.id AND status = 'completed') as completed_tasks,
+      (SELECT COUNT(*) FROM workers WHERE outcome_id = o.id AND status = 'running') as active_workers
+    FROM outcomes o
+    WHERE o.parent_id = ?
+    ORDER BY o.last_activity_at DESC
+  `).all(parentId) as ChildOutcomeInfo[];
+
+  return rows;
+}
+
+// ============================================================================
+// Re-parenting / Hierarchy Management
+// ============================================================================
+
+/**
+ * Check if setting outcomeId's parent to newParentId would create a cycle.
+ * Returns true if it would create a cycle (invalid), false if safe.
+ */
+export function wouldCreateCycle(outcomeId: string, newParentId: string): boolean {
+  if (outcomeId === newParentId) return true;
+
+  // Check if newParentId is a descendant of outcomeId
+  const descendants = getAllDescendants(outcomeId);
+  return descendants.some(d => d.id === newParentId);
+}
+
+/**
+ * Get all outcomes that could be valid parents for the given outcome.
+ * Excludes: the outcome itself, its descendants (would create cycle)
+ */
+export function getValidParentOptions(outcomeId: string): Outcome[] {
+  const allOutcomes = getAllOutcomes();
+  const descendants = getAllDescendants(outcomeId);
+  const descendantIds = new Set(descendants.map(d => d.id));
+
+  return allOutcomes.filter(o =>
+    o.id !== outcomeId && !descendantIds.has(o.id)
+  );
+}
+
+/**
+ * Get all outcomes that could be valid children for the given outcome.
+ * Excludes: the outcome itself, its ancestors (would create cycle), outcomes that already have this as ancestor
+ */
+export function getValidChildOptions(outcomeId: string): Outcome[] {
+  const allOutcomes = getAllOutcomes();
+  const breadcrumbs = getBreadcrumbs(outcomeId);
+  const ancestorIds = new Set(breadcrumbs.map(b => b.id));
+
+  // Also exclude outcomes that are already children
+  const currentChildren = getChildOutcomes(outcomeId);
+  const childIds = new Set(currentChildren.map(c => c.id));
+
+  return allOutcomes.filter(o =>
+    o.id !== outcomeId && !ancestorIds.has(o.id) && !childIds.has(o.id)
+  );
+}
+
+/**
+ * Simple outcome info for dropdowns
+ */
+export interface OutcomeOption {
+  id: string;
+  name: string;
+  depth: number;
+  status: OutcomeStatus;
 }

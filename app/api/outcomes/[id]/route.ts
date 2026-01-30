@@ -2,8 +2,9 @@
  * Single Outcome API Route
  *
  * GET /api/outcomes/[id] - Get outcome details with relations
+ *   Includes: parent, children, breadcrumbs, aggregated_stats (if has children)
  * PATCH /api/outcomes/[id] - Update outcome
- * DELETE /api/outcomes/[id] - Delete outcome
+ * DELETE /api/outcomes/[id] - Delete outcome (cascades to children)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,6 +17,10 @@ import {
   pauseOutcome,
   achieveOutcome,
   archiveOutcome,
+  getBreadcrumbs,
+  getChildrenWithCounts,
+  getAggregatedStats,
+  hasChildren,
 } from '@/lib/db/outcomes';
 import { getConvergenceStatus } from '@/lib/db/review-cycles';
 import { getTaskStats } from '@/lib/db/tasks';
@@ -43,10 +48,33 @@ export async function GET(
       const convergence = getConvergenceStatus(id);
       const taskStats = getTaskStats(id);
 
+      // Add hierarchy data
+      const breadcrumbs = getBreadcrumbs(id);
+      const children = getChildrenWithCounts(id);
+      const isParent = children.length > 0;
+
+      // Get parent info if exists
+      let parent: { id: string; name: string } | null = null;
+      if (outcome.parent_id) {
+        const parentOutcome = getOutcomeById(outcome.parent_id);
+        if (parentOutcome) {
+          parent = { id: parentOutcome.id, name: parentOutcome.name };
+        }
+      }
+
+      // Get aggregated stats if this outcome has children
+      const aggregatedStats = isParent ? getAggregatedStats(id) : null;
+
       return NextResponse.json({
         outcome,
         convergence,
         taskStats,
+        // Hierarchy data
+        parent,
+        children,
+        breadcrumbs,
+        aggregatedStats,
+        isParent,
       });
     }
 

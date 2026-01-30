@@ -14,6 +14,9 @@ import { SkillsSection } from '@/app/components/SkillsSection';
 import { IterateSection } from '@/app/components/IterateSection';
 import { OutcomeCommandBar } from '@/app/components/OutcomeCommandBar';
 import { DocumentsSection } from '@/app/components/DocumentsSection';
+import { OutcomeBreadcrumbs } from '@/app/components/OutcomeBreadcrumbs';
+import { ChildOutcomesList } from '@/app/components/ChildOutcomesList';
+import { CreateChildModal } from '@/app/components/CreateChildModal';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -33,6 +36,9 @@ interface OutcomeDetail {
   design_doc: { approach: string; version: number } | null;
   tasks: Task[];
   workers: Worker[];
+  // Hierarchy
+  parent_id: string | null;
+  depth: number;
   // Git configuration
   working_directory: string | null;
   git_mode: GitMode;
@@ -40,6 +46,30 @@ interface OutcomeDetail {
   work_branch: string | null;
   auto_commit: boolean;
   create_pr_on_complete: boolean;
+}
+
+interface ChildOutcomeInfo {
+  id: string;
+  name: string;
+  status: OutcomeStatus;
+  total_tasks: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  active_workers: number;
+}
+
+interface AggregatedStats {
+  total_tasks: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  active_workers: number;
+  total_descendants: number;
+}
+
+interface Breadcrumb {
+  id: string;
+  name: string;
 }
 
 interface TaskStats {
@@ -114,6 +144,14 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Hierarchy state
+  const [parent, setParent] = useState<{ id: string; name: string } | null>(null);
+  const [children, setChildren] = useState<ChildOutcomeInfo[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [aggregatedStats, setAggregatedStats] = useState<AggregatedStats | null>(null);
+  const [isParent, setIsParent] = useState(false);
+  const [showCreateChildModal, setShowCreateChildModal] = useState(false);
+
   // Ramble input states
   const [intentRamble, setIntentRamble] = useState('');
   const [approachRamble, setApproachRamble] = useState('');
@@ -143,6 +181,12 @@ export default function OutcomeDetailPage(): JSX.Element {
       setOutcome(data.outcome);
       setTaskStats(data.taskStats);
       setConvergence(data.convergence);
+      // Hierarchy data
+      setParent(data.parent || null);
+      setChildren(data.children || []);
+      setBreadcrumbs(data.breadcrumbs || []);
+      setAggregatedStats(data.aggregatedStats || null);
+      setIsParent(data.isParent || false);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load outcome');
@@ -431,25 +475,37 @@ export default function OutcomeDetailPage(): JSX.Element {
     <main className="max-w-5xl mx-auto p-6">
       {/* Header */}
       <div className="mb-6">
+        {/* Back button - goes to parent if exists, otherwise dashboard */}
         <button
-          onClick={() => router.push('/')}
-          className="text-text-tertiary hover:text-text-secondary text-sm mb-4 flex items-center gap-1"
+          onClick={() => parent ? router.push(`/outcome/${parent.id}`) : router.push('/')}
+          className="text-text-tertiary hover:text-text-secondary text-sm mb-2 flex items-center gap-1"
         >
-          ← Back
+          ← {parent ? `Back to "${parent.name}"` : 'Back'}
         </button>
+
+        {/* Breadcrumbs - only show if we have a parent (depth > 0) */}
+        {breadcrumbs.length > 1 && (
+          <div className="mb-4">
+            <OutcomeBreadcrumbs breadcrumbs={breadcrumbs} currentName={outcome.name} />
+          </div>
+        )}
+
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-semibold text-text-primary">{outcome.name}</h1>
               {outcome.is_ongoing && <Badge variant="info">Ongoing</Badge>}
               <Badge variant={status.variant}>{status.label}</Badge>
-              {needsInfrastructure && (
+              {isParent && (
+                <Badge variant="default">{children.length} {children.length === 1 ? 'child' : 'children'}</Badge>
+              )}
+              {!isParent && needsInfrastructure && (
                 <Badge variant="warning">Infrastructure Needed</Badge>
               )}
-              {infrastructureInProgress && (
+              {!isParent && infrastructureInProgress && (
                 <Badge variant="info">Building Infrastructure</Badge>
               )}
-              {infrastructureReady && outcome.infrastructure_ready !== 0 && (
+              {!isParent && infrastructureReady && outcome.infrastructure_ready !== 0 && (
                 <Badge variant="success">Infrastructure Ready</Badge>
               )}
             </div>
@@ -478,10 +534,33 @@ export default function OutcomeDetailPage(): JSX.Element {
         )}
       </div>
 
+      {/* Create Child Modal */}
+      {showCreateChildModal && (
+        <CreateChildModal
+          parentId={outcomeId}
+          parentName={outcome.name}
+          currentParentId={outcome.parent_id}
+          currentParentName={parent?.name}
+          onClose={() => setShowCreateChildModal(false)}
+          onSuccess={fetchOutcome}
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Progress Overview */}
+          {/* Show Children List for parent outcomes */}
+          {isParent && (
+            <ChildOutcomesList
+              children={children}
+              aggregatedStats={aggregatedStats}
+              parentId={outcomeId}
+              onCreateChild={() => setShowCreateChildModal(true)}
+            />
+          )}
+
+          {/* Progress Overview - only show for leaf outcomes or when there are local tasks */}
+          {(!isParent || outcome.tasks.length > 0) && (
           <Card padding="md">
             <CardHeader>
               <CardTitle>Progress</CardTitle>
@@ -588,6 +667,7 @@ export default function OutcomeDetailPage(): JSX.Element {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Intent (PRD) with Ramble Box */}
           <Card padding="md">
@@ -809,7 +889,8 @@ export default function OutcomeDetailPage(): JSX.Element {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Workers */}
+          {/* Workers - only show for leaf outcomes */}
+          {!isParent && (
           <Card padding="md">
             <CardHeader>
               <CardTitle>Workers</CardTitle>
@@ -848,6 +929,7 @@ export default function OutcomeDetailPage(): JSX.Element {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Skills */}
           <SkillsSection outcomeId={outcomeId} />
@@ -901,7 +983,17 @@ export default function OutcomeDetailPage(): JSX.Element {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {canStartWorker && (
+                {/* Hierarchy button - for any outcome */}
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => setShowCreateChildModal(true)}
+                >
+                  Manage Hierarchy
+                </Button>
+
+                {/* Worker actions - only for leaf outcomes */}
+                {!isParent && canStartWorker && (
                   <Button
                     variant="primary"
                     className="w-full"
@@ -915,7 +1007,7 @@ export default function OutcomeDetailPage(): JSX.Element {
                       : 'Start Another Worker'}
                   </Button>
                 )}
-                {hasEverHadWorker && (
+                {!isParent && hasEverHadWorker && (
                   <Button variant="secondary" className="w-full" onClick={handleRunReview} disabled={actionLoading}>
                     Run Review
                   </Button>

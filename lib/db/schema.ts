@@ -73,6 +73,9 @@ export interface Outcome {
   created_at: number;
   updated_at: number;
   last_activity_at: number;         // For recency-based sorting
+  // Hierarchy (for nested outcomes)
+  parent_id: string | null;         // Parent outcome ID (null = root)
+  depth: number;                    // 0 = root, 1 = child, 2 = grandchild, etc.
   // Git configuration
   working_directory: string | null; // Path to workspace/repo
   git_mode: GitMode;                // 'none' | 'local' | 'branch' | 'worktree'
@@ -415,6 +418,9 @@ CREATE TABLE IF NOT EXISTS outcomes (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   last_activity_at INTEGER NOT NULL,
+  -- Hierarchy (for nested outcomes)
+  parent_id TEXT REFERENCES outcomes(id) ON DELETE CASCADE,
+  depth INTEGER NOT NULL DEFAULT 0,
   -- Git configuration
   working_directory TEXT,
   git_mode TEXT NOT NULL DEFAULT 'none',
@@ -661,6 +667,8 @@ CREATE TABLE IF NOT EXISTS supervisor_alerts (
 -- Outcomes
 CREATE INDEX IF NOT EXISTS idx_outcomes_status ON outcomes(status);
 CREATE INDEX IF NOT EXISTS idx_outcomes_last_activity ON outcomes(last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_outcomes_parent ON outcomes(parent_id);
+CREATE INDEX IF NOT EXISTS idx_outcomes_depth ON outcomes(depth);
 
 -- Design Docs
 CREATE INDEX IF NOT EXISTS idx_design_docs_outcome ON design_docs(outcome_id);

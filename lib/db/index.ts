@@ -94,6 +94,14 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE progress_entries ADD COLUMN full_output TEXT`);
     console.log('[DB Migration] Added full_output column to progress_entries');
   }
+
+  // Add pid column to workers for process tracking (proper pause/stop)
+  const workersColumns = database.prepare(`PRAGMA table_info(workers)`).all() as { name: string }[];
+  const hasPid = workersColumns.some(col => col.name === 'pid');
+  if (!hasPid) {
+    database.exec(`ALTER TABLE workers ADD COLUMN pid INTEGER`);
+    console.log('[DB Migration] Added pid column to workers');
+  }
 }
 
 /**

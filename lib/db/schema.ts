@@ -130,6 +130,8 @@ export interface Worker {
   // Parallel worker support
   worktree_path: string | null;     // Path to git worktree
   branch_name: string | null;       // Git branch name for this worker
+  // Process tracking for proper pause/stop
+  pid: number | null;               // Process ID of spawned Claude CLI
 }
 
 export type MergeQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'conflicted';

@@ -26,7 +26,7 @@ import {
 import { validateSkill, loadOutcomeSkills, getSkillContent } from '../agents/skill-builder';
 import { validateToolSyntax, loadOutcomeTools } from '../agents/tool-builder';
 import { getWorkspacePath, ensureWorkspaceExists } from '../workspace/detector';
-import { runWorkerLoop } from './worker';
+import { runWorkerLoop, isWorkerPaused } from './worker';
 import { loadEnvKeysIntoProcess, hasAnyApiKeys, listConfiguredKeys } from '../utils/env-keys';
 import type { Outcome, Task, TaskPhase } from '../db/schema';
 
@@ -241,6 +241,12 @@ async function runInfrastructureWorker(
   try {
     // Process tasks until none remain
     while (true) {
+      // Check if worker has been paused
+      if (isWorkerPaused(worker.id)) {
+        console.log(`[Orchestrator] Worker ${workerIndex}: Paused - stopping`);
+        break;
+      }
+
       // Claim next infrastructure task
       const claimResult = claimNextTask(outcomeId, worker.id, 'infrastructure');
 

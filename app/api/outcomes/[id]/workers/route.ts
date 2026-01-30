@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getWorkersByOutcome } from '@/lib/db/workers';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { getPendingTasks } from '@/lib/db/tasks';
-import { startRalphWorker, stopRalphWorker, getRalphWorkerStatus } from '@/lib/ralph/worker';
+import { startRalphWorker, stopRalphWorker, stopAllWorkersForOutcome, getRalphWorkerStatus } from '@/lib/ralph/worker';
 import { isGitRepo } from '@/lib/worktree/manager';
 
 export async function GET(
@@ -154,10 +154,22 @@ export async function DELETE(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const workerId = searchParams.get('workerId');
+    const stopAll = searchParams.get('all') === 'true';
 
+    // Stop all workers for this outcome
+    if (stopAll) {
+      const stoppedCount = stopAllWorkersForOutcome(id);
+      return NextResponse.json({
+        success: true,
+        message: `Stopped ${stoppedCount} workers`,
+        stoppedCount,
+      });
+    }
+
+    // Stop a specific worker
     if (!workerId) {
       return NextResponse.json(
-        { error: 'workerId is required' },
+        { error: 'workerId is required (or use ?all=true to stop all)' },
         { status: 400 }
       );
     }

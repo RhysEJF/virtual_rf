@@ -17,6 +17,7 @@ import { join } from 'path';
 import {
   createWorker,
   updateWorker,
+  getWorkerById,
   startWorker as startWorkerDb,
   sendHeartbeat,
   incrementIteration,
@@ -322,6 +323,13 @@ export async function startRalphWorker(
         iteration++;
         incrementIteration(workerId);
 
+        // Check if worker has been paused via API
+        if (isWorkerPaused(workerId)) {
+          appendLog(`Worker paused via API - stopping loop`);
+          workerState.running = false;
+          break;
+        }
+
         // Check for pending interventions before claiming next task
         const interventions = getPendingInterventionsForWorker(workerId, outcomeId);
         for (const intervention of interventions) {
@@ -547,6 +555,13 @@ async function executeTask(
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
+      // Store PID in database for proper pause/stop functionality
+      const pid = claudeProcess.pid;
+      if (pid) {
+        updateWorker(workerId, { pid });
+        appendLog(`Spawned Claude process with PID: ${pid}`);
+      }
+
       const worker = activeWorkers.get(workerId);
       if (worker) {
         worker.process = claudeProcess;
@@ -611,6 +626,9 @@ async function executeTask(
       claudeProcess.on('close', (code) => {
         clearInterval(checkInterval);
 
+        // Clear PID from database since process has exited
+        updateWorker(workerId, { pid: null });
+
         // Final progress check
         checkProgress();
 
@@ -668,12 +686,14 @@ async function executeTask(
 
 /**
  * Stop a running Ralph worker
- * Always updates the database status, even if the process is already dead
+ * Kills the process by PID (from database) and updates status
  */
 export function stopRalphWorker(workerId: string): boolean {
-  const worker = activeWorkers.get(workerId);
+  // First, get the worker from database to find its PID
+  const dbWorker = getWorkerById(workerId);
 
-  // If worker is in activeWorkers, clean it up properly
+  // If worker is in activeWorkers (in-memory), clean it up
+  const worker = activeWorkers.get(workerId);
   if (worker) {
     worker.running = false;
 
@@ -688,9 +708,22 @@ export function stopRalphWorker(workerId: string): boolean {
     activeWorkers.delete(workerId);
   }
 
-  // Always try to update the database status
-  // This handles cases where the process died but DB still shows 'running'
-  const result = updateWorker(workerId, { status: 'paused' });
+  // Kill the process by PID from database (handles orphaned processes)
+  if (dbWorker?.pid) {
+    try {
+      process.kill(dbWorker.pid, 'SIGTERM');
+      console.log(`[Worker] Killed process with PID: ${dbWorker.pid}`);
+    } catch (err) {
+      // Process might already be dead, that's OK
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ESRCH') {
+        console.error(`[Worker] Error killing PID ${dbWorker.pid}:`, err);
+      }
+    }
+  }
+
+  // Update the database status and clear the PID
+  const result = updateWorker(workerId, { status: 'paused', pid: null });
 
   // Resolve any active alerts for this worker since it's been explicitly stopped
   resolveAlertsForWorker(workerId);
@@ -707,6 +740,15 @@ export function getRalphWorkerStatus(workerId: string): RalphProgress | null {
 }
 
 /**
+ * Check if a worker has been paused (from database)
+ * This is used by worker loops to check if they should stop
+ */
+export function isWorkerPaused(workerId: string): boolean {
+  const dbWorker = getWorkerById(workerId);
+  return dbWorker?.status === 'paused';
+}
+
+/**
  * List all active workers
  */
 export function listActiveWorkers(): RalphProgress[] {
@@ -719,6 +761,26 @@ export function listActiveWorkers(): RalphProgress[] {
 export function hasPendingTasks(outcomeId: string): boolean {
   const pending = getPendingTasks(outcomeId);
   return pending.length > 0;
+}
+
+/**
+ * Stop all workers for an outcome by killing their processes
+ */
+export function stopAllWorkersForOutcome(outcomeId: string): number {
+  const { getWorkersByOutcome } = require('../db/workers');
+  const workers = getWorkersByOutcome(outcomeId);
+  let stopped = 0;
+
+  for (const worker of workers) {
+    if (worker.status === 'running') {
+      if (stopRalphWorker(worker.id)) {
+        stopped++;
+      }
+    }
+  }
+
+  console.log(`[Worker] Stopped ${stopped} workers for outcome ${outcomeId}`);
+  return stopped;
 }
 
 // ============================================================================
@@ -786,6 +848,12 @@ export async function runWorkerLoop(
 
   while (iteration < maxIterations) {
     iteration++;
+
+    // Check if worker has been paused before claiming next task
+    if (isWorkerPaused(workerId)) {
+      appendLog(`Worker paused - stopping loop`);
+      break;
+    }
 
     // Try to claim a task (with optional phase filter)
     const claimResult = claimNextTask(outcomeId, workerId, phase);

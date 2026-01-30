@@ -91,6 +91,7 @@ export interface UpdateWorkerInput {
   cost?: number;
   worktree_path?: string | null;
   branch_name?: string | null;
+  pid?: number | null;
 }
 
 export function updateWorker(id: string, input: UpdateWorkerInput): Worker | null {
@@ -131,6 +132,10 @@ export function updateWorker(id: string, input: UpdateWorkerInput): Worker | nul
   if (input.branch_name !== undefined) {
     updates.push('branch_name = ?');
     values.push(input.branch_name);
+  }
+  if (input.pid !== undefined) {
+    updates.push('pid = ?');
+    values.push(input.pid);
   }
 
   values.push(id);

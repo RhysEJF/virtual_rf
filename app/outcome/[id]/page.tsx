@@ -13,6 +13,7 @@ import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { SkillsSection } from '@/app/components/SkillsSection';
 import { IterateSection } from '@/app/components/IterateSection';
 import { OutcomeCommandBar } from '@/app/components/OutcomeCommandBar';
+import { DocumentsSection } from '@/app/components/DocumentsSection';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -850,6 +851,9 @@ export default function OutcomeDetailPage(): JSX.Element {
 
           {/* Skills */}
           <SkillsSection outcomeId={outcomeId} />
+
+          {/* Documents */}
+          <DocumentsSection outcomeId={outcomeId} />
 
           {/* Git Configuration - prominent position */}
           <div id="git-config-section">

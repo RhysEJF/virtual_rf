@@ -454,6 +454,66 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  // Delete task handler
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setOutcome(prev => prev ? {
+          ...prev,
+          tasks: prev.tasks.filter(t => t.id !== taskId),
+        } : null);
+        toast({ type: 'success', message: 'Task deleted' });
+      } else {
+        toast({ type: 'error', message: 'Failed to delete task' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to delete task' });
+    }
+  };
+
+  // Reorder task handler (swap priorities)
+  const handleMoveTask = async (taskId: string, direction: 'up' | 'down') => {
+    if (!outcome) return;
+
+    const taskIndex = outcome.tasks.findIndex(t => t.id === taskId);
+    if (taskIndex === -1) return;
+
+    const swapIndex = direction === 'up' ? taskIndex - 1 : taskIndex + 1;
+    if (swapIndex < 0 || swapIndex >= outcome.tasks.length) return;
+
+    const task = outcome.tasks[taskIndex];
+    const swapTask = outcome.tasks[swapIndex];
+
+    // Swap priorities
+    try {
+      await Promise.all([
+        fetch(`/api/tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priority: swapTask.priority }),
+        }),
+        fetch(`/api/tasks/${swapTask.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priority: task.priority }),
+        }),
+      ]);
+
+      // Update local state by swapping positions
+      const newTasks = [...outcome.tasks];
+      newTasks[taskIndex] = swapTask;
+      newTasks[swapIndex] = task;
+
+      setOutcome(prev => prev ? { ...prev, tasks: newTasks } : null);
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to reorder task' });
+    }
+  };
+
   if (loading) {
     return (
       <main className="max-w-5xl mx-auto p-6">
@@ -963,6 +1023,11 @@ export default function OutcomeDetailPage(): JSX.Element {
                           ),
                         } : null);
                       }}
+                      onDelete={handleDeleteTask}
+                      onMoveUp={(taskId) => handleMoveTask(taskId, 'up')}
+                      onMoveDown={(taskId) => handleMoveTask(taskId, 'down')}
+                      isFirst={index === 0}
+                      isLast={index === outcome.tasks.length - 1}
                     />
                   ))}
                 </div>

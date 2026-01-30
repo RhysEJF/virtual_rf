@@ -8,6 +8,11 @@ import type { Task, TaskStatus } from '@/lib/db/schema';
 interface ExpandableTaskCardProps {
   task: Task;
   onUpdate?: (task: Task) => void;
+  onDelete?: (taskId: string) => void;
+  onMoveUp?: (taskId: string) => void;
+  onMoveDown?: (taskId: string) => void;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
 const statusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'error' }> = {
@@ -18,8 +23,17 @@ const statusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'su
   failed: { label: 'Failed', variant: 'error' },
 };
 
-export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps): JSX.Element {
+export function ExpandableTaskCard({
+  task,
+  onUpdate,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  isFirst = false,
+  isLast = false,
+}: ExpandableTaskCardProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [taskIntent, setTaskIntent] = useState(task.task_intent || '');
   const [taskApproach, setTaskApproach] = useState(task.task_approach || '');
   const [optimizingIntent, setOptimizingIntent] = useState(false);
@@ -66,6 +80,26 @@ export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps):
     }
   };
 
+  // Delete task
+  const handleDelete = async () => {
+    if (!confirm('Delete this task?')) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok && onDelete) {
+        onDelete(task.id);
+      }
+    } catch (err) {
+      console.error('Failed to delete:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Optimize a specific field
   const handleOptimize = async (field: 'intent' | 'approach') => {
     const content = field === 'intent' ? taskIntent : taskApproach;
@@ -97,17 +131,44 @@ export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps):
   return (
     <div className="border border-border rounded-lg bg-bg-secondary overflow-hidden">
       {/* Collapsed Header - Always visible */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full p-3 flex items-center justify-between text-left hover:bg-bg-tertiary transition-colors"
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {/* Chevron */}
-          <span className={`text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-              <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
-            </svg>
-          </span>
+      <div className="flex items-center">
+        {/* Reorder buttons */}
+        {(onMoveUp || onMoveDown) && (
+          <div className="flex flex-col px-1 border-r border-border">
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.(task.id); }}
+              disabled={isFirst}
+              className={`p-0.5 ${isFirst ? 'text-text-tertiary/30' : 'text-text-tertiary hover:text-text-secondary'}`}
+              title="Move up"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 8L6 4L10 8" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.(task.id); }}
+              disabled={isLast}
+              className={`p-0.5 ${isLast ? 'text-text-tertiary/30' : 'text-text-tertiary hover:text-text-secondary'}`}
+              title="Move down"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 4L6 8L10 4" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex-1 p-3 flex items-center justify-between text-left hover:bg-bg-tertiary transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {/* Chevron */}
+            <span className={`text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              </svg>
+            </span>
 
           {/* Task info */}
           <div className="min-w-0 flex-1">
@@ -137,10 +198,11 @@ export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps):
           </div>
         </div>
 
-        <Badge variant={status.variant} className="shrink-0 ml-2">
-          {status.label}
-        </Badge>
-      </button>
+          <Badge variant={status.variant} className="shrink-0 ml-2">
+            {status.label}
+          </Badge>
+        </button>
+      </div>
 
       {/* Expanded Content */}
       {expanded && (
@@ -200,31 +262,46 @@ export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps):
             />
           </div>
 
-          {/* Save button - only show if there are changes */}
-          {hasChanges && (
-            <div className="flex items-center gap-2 pt-2 border-t border-border">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
+          {/* Save/Delete buttons */}
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <div className="flex items-center gap-2">
+              {hasChanges && (
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setTaskIntent(task.task_intent || '');
+                      setTaskApproach(task.task_approach || '');
+                      setHasChanges(false);
+                    }}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </div>
+            {onDelete && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setTaskIntent(task.task_intent || '');
-                  setTaskApproach(task.task_approach || '');
-                  setHasChanges(false);
-                }}
-                disabled={saving}
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-status-error hover:text-status-error/80"
               >
-                Cancel
+                {deleting ? 'Deleting...' : 'Delete'}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

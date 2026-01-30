@@ -1,0 +1,213 @@
+/**
+ * Interpret API - Parse user input and suggest actions for an outcome
+ *
+ * POST /api/outcomes/[id]/interpret
+ * Body: { input: string, previousPlan?: ActionPlan, originalInput?: string }
+ *
+ * Returns: { success: true, plan: ActionPlan }
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { getOutcomeById, getDesignDoc } from '@/lib/db/outcomes';
+import { getTasksByOutcome } from '@/lib/db/tasks';
+import { getWorkersByOutcome } from '@/lib/db/workers';
+import type { Task, Worker } from '@/lib/db/schema';
+import { claudeComplete } from '@/lib/claude/client';
+
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
+
+interface SuggestedAction {
+  id: string;
+  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'start_worker' | 'pause_workers' | 'run_review';
+  description: string;
+  details: string;
+  data?: Record<string, unknown>;
+  enabled: boolean;
+}
+
+interface ActionPlan {
+  summary: string;
+  reasoning: string;
+  actions: SuggestedAction[];
+  warnings?: string[];
+}
+
+export async function POST(
+  request: NextRequest,
+  context: RouteContext
+): Promise<NextResponse> {
+  try {
+    const { id: outcomeId } = await context.params;
+    const { input, previousPlan, originalInput } = await request.json();
+
+    if (!input?.trim()) {
+      return NextResponse.json(
+        { success: false, error: 'Input is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get outcome context
+    const outcome = getOutcomeById(outcomeId);
+    if (!outcome) {
+      return NextResponse.json(
+        { success: false, error: 'Outcome not found' },
+        { status: 404 }
+      );
+    }
+
+    // Get related data for context
+    const tasks = getTasksByOutcome(outcomeId);
+    const workers = getWorkersByOutcome(outcomeId);
+    const designDoc = getDesignDoc(outcomeId);
+
+    // Parse intent
+    let intentSummary = outcome.brief || '';
+    let intentItems: { title: string; status: string }[] = [];
+    let successCriteria: string[] = [];
+    if (outcome.intent) {
+      try {
+        const parsed = JSON.parse(outcome.intent);
+        intentSummary = parsed.summary || intentSummary;
+        intentItems = parsed.items || [];
+        successCriteria = parsed.success_criteria || [];
+      } catch {
+        // Use brief
+      }
+    }
+
+    // Parse approach
+    let approach = '';
+    if (designDoc) {
+      approach = designDoc.approach || '';
+    }
+
+    // Build context for Claude
+    const taskSummary = tasks.length > 0
+      ? tasks.map(t => `- [${t.status}] ${t.title}`).join('\n')
+      : 'No tasks yet';
+
+    const workerSummary = workers.length > 0
+      ? workers.map(w => `- ${w.name}: ${w.status}`).join('\n')
+      : 'No workers yet';
+
+    const previousPlanContext = previousPlan
+      ? `\n\nPREVIOUS PLAN (user wants to refine):\n${JSON.stringify(previousPlan, null, 2)}\n\nOriginal request: "${originalInput}"\nRefinement: "${input}"`
+      : '';
+
+    const prompt = `You are helping manage an AI project/outcome. The user has made a request that may modify the outcome.
+
+OUTCOME: ${outcome.name}
+STATUS: ${outcome.status}
+INFRASTRUCTURE: ${outcome.infrastructure_ready === 2 ? 'Ready' : outcome.infrastructure_ready === 1 ? 'Building' : 'Not started'}
+
+CURRENT INTENT (What):
+${intentSummary}
+Items: ${intentItems.length > 0 ? intentItems.map(i => `- [${i.status}] ${i.title}`).join('\n') : 'None'}
+Success Criteria: ${successCriteria.length > 0 ? successCriteria.map(c => `- ${c}`).join('\n') : 'None'}
+
+CURRENT APPROACH (How):
+${approach || 'Not defined yet'}
+
+TASKS:
+${taskSummary}
+
+WORKERS:
+${workerSummary}
+${previousPlanContext}
+
+USER REQUEST:
+"${input}"
+
+Analyze this request and suggest appropriate actions. Consider:
+1. Does the user want to change the intent/scope?
+2. Does the user want to change the approach/implementation?
+3. Should new tasks be created?
+4. Should workers be started, paused, or is a review needed?
+
+IMPORTANT: Be conservative. If the request is ambiguous, ask for clarification in the summary rather than making assumptions.
+
+Respond with ONLY valid JSON (no markdown, no code blocks):
+{
+  "summary": "Brief description of what you understand the user wants",
+  "reasoning": "Why you're suggesting these specific actions",
+  "actions": [
+    {
+      "id": "unique_id",
+      "type": "update_intent|update_approach|create_tasks|start_worker|pause_workers|run_review",
+      "description": "Short human-readable description",
+      "details": "More specific details about what will change",
+      "data": { "any": "relevant data for execution" },
+      "enabled": true
+    }
+  ],
+  "warnings": ["Any concerns or risks the user should know about"]
+}
+
+Action types:
+- update_intent: Modify the PRD/intent. Include "new_summary" and/or "new_items" and/or "new_success_criteria" in data
+- update_approach: Modify the design doc. Include "new_approach" in data
+- create_tasks: Add new tasks. Include "tasks" array in data with {title, description, priority}
+- start_worker: Start a worker to execute tasks
+- pause_workers: Pause all running workers
+- run_review: Trigger a review cycle
+
+Keep actions minimal and focused. Don't suggest actions unless the user's request clearly implies them.`;
+
+    const result = await claudeComplete({ prompt, timeout: 60000 });
+
+    // Parse the response
+    let plan: ActionPlan;
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        plan = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON found in response');
+      }
+
+      // Validate and ensure required fields
+      if (!plan.summary) plan.summary = 'I understood your request but need clarification.';
+      if (!plan.reasoning) plan.reasoning = '';
+      if (!plan.actions) plan.actions = [];
+      if (!plan.warnings) plan.warnings = [];
+
+      // Ensure all actions have required fields
+      plan.actions = plan.actions.map((action, i) => ({
+        id: action.id || `action_${i}`,
+        type: action.type,
+        description: action.description || 'Action',
+        details: action.details || '',
+        data: action.data || {},
+        enabled: action.enabled !== false,
+      }));
+
+    } catch (parseError) {
+      console.error('[Interpret] Failed to parse Claude response:', parseError);
+      console.error('[Interpret] Raw response:', result.text);
+
+      // Return a clarification plan
+      plan = {
+        summary: 'I had trouble understanding your request. Could you be more specific?',
+        reasoning: 'The request was ambiguous or I encountered an error processing it.',
+        actions: [],
+        warnings: ['Please try rephrasing your request with more detail.'],
+      };
+    }
+
+    return NextResponse.json({
+      success: true,
+      plan,
+    });
+
+  } catch (error) {
+    console.error('[Interpret API] Error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to interpret request' },
+      { status: 500 }
+    );
+  }
+}

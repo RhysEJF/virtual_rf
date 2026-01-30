@@ -12,6 +12,7 @@ import { OutputsSection } from '@/app/components/OutputsSection';
 import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { SkillsSection } from '@/app/components/SkillsSection';
 import { IterateSection } from '@/app/components/IterateSection';
+import { OutcomeCommandBar } from '@/app/components/OutcomeCommandBar';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -440,55 +441,21 @@ export default function OutcomeDetailPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Draft State Banner */}
-      {isDraft && (
-        <Card padding="md" className="mb-6 border-accent/30 bg-accent/5">
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-text-primary font-medium mb-1">Ready to Start</h3>
-                <p className="text-text-secondary text-sm">
-                  Review the intent and approach below. When you're ready, start a worker to begin execution.
-                </p>
-                {needsInfrastructure && (
-                  <p className="text-text-tertiary text-xs mt-1">
-                    Infrastructure (skills/tools) will be built first before main execution.
-                  </p>
-                )}
-              </div>
-              <Button
-                onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
-                disabled={actionLoading || !hasPendingTasks}
-                className="ml-4"
-              >
-                {actionLoading ? 'Starting...' : needsInfrastructure ? 'Build & Run' : 'Start Worker'}
-              </Button>
-            </div>
-            {!hasPendingTasks && (
-              <p className="text-status-warning text-xs mt-2">
-                No pending tasks yet. The outcome needs tasks before a worker can start.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Infrastructure In Progress Banner */}
-      {infrastructureInProgress && (
-        <Card padding="md" className="mb-6 border-status-info/30 bg-status-info/5">
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="animate-spin h-5 w-5 border-2 border-status-info border-t-transparent rounded-full"></div>
-              <div>
-                <h3 className="text-text-primary font-medium">Building Infrastructure</h3>
-                <p className="text-text-secondary text-sm">
-                  Workers are building skills and tools. Execution will begin automatically when ready.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Outcome Command Bar - Primary interaction point */}
+      <div className="mb-6">
+        <OutcomeCommandBar
+          outcomeId={outcomeId}
+          outcomeName={outcome.name}
+          onSuccess={fetchOutcome}
+        />
+        {/* Infrastructure status indicator */}
+        {infrastructureInProgress && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-status-info">
+            <div className="animate-spin h-3 w-3 border-2 border-status-info border-t-transparent rounded-full" />
+            <span>Building infrastructure (skills/tools)...</span>
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -529,9 +496,19 @@ export default function OutcomeDetailPage(): JSX.Element {
                       ? `${taskStats.total} task${taskStats.total !== 1 ? 's' : ''} ready to execute`
                       : 'No tasks generated yet'}
                   </p>
-                  <p className="text-text-tertiary text-xs">
-                    Review the intent and approach, then start a worker to begin
+                  <p className="text-text-tertiary text-xs mb-3">
+                    Use the command bar above to make changes, or start execution below.
                   </p>
+                  {hasPendingTasks && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? 'Starting...' : needsInfrastructure ? 'Build & Run' : 'Start Worker'}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <>

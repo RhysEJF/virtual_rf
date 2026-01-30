@@ -362,3 +362,56 @@ export function achieveOutcome(id: string): Outcome | null {
 export function archiveOutcome(id: string): Outcome | null {
   return updateOutcome(id, { status: 'archived' });
 }
+
+// Design Doc helpers
+export function getDesignDoc(outcomeId: string): DesignDoc | null {
+  const db = getDb();
+  const doc = db.prepare(`
+    SELECT * FROM design_docs
+    WHERE outcome_id = ?
+    ORDER BY version DESC
+    LIMIT 1
+  `).get(outcomeId) as DesignDoc | undefined;
+  return doc || null;
+}
+
+export function upsertDesignDoc(outcomeId: string, approach: string, version?: number): DesignDoc {
+  const db = getDb();
+  const now = Date.now();
+  const existing = getDesignDoc(outcomeId);
+
+  if (existing) {
+    // Update existing
+    const newVersion = version ?? (existing.version + 1);
+    db.prepare(`
+      UPDATE design_docs
+      SET approach = ?, version = ?, updated_at = ?
+      WHERE outcome_id = ?
+    `).run(approach, newVersion, now, outcomeId);
+
+    return {
+      ...existing,
+      approach,
+      version: newVersion,
+      updated_at: now,
+    };
+  } else {
+    // Insert new
+    const id = `dd_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+    const newVersion = version ?? 1;
+
+    db.prepare(`
+      INSERT INTO design_docs (id, outcome_id, version, approach, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, outcomeId, newVersion, approach, now, now);
+
+    return {
+      id,
+      outcome_id: outcomeId,
+      version: newVersion,
+      approach,
+      created_at: now,
+      updated_at: now,
+    };
+  }
+}

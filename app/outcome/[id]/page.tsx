@@ -17,6 +17,7 @@ import { DocumentsSection } from '@/app/components/DocumentsSection';
 import { OutcomeBreadcrumbs } from '@/app/components/OutcomeBreadcrumbs';
 import { ChildOutcomesList } from '@/app/components/ChildOutcomesList';
 import { CreateChildModal } from '@/app/components/CreateChildModal';
+import { ExpandableTaskCard } from '@/app/components/ExpandableTaskCard';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -95,14 +96,6 @@ const outcomeStatusConfig: Record<OutcomeStatus, { label: string; variant: 'defa
   dormant: { label: 'Dormant', variant: 'warning' },
   achieved: { label: 'Achieved', variant: 'success' },
   archived: { label: 'Archived', variant: 'default' },
-};
-
-const taskStatusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'error' }> = {
-  pending: { label: 'Pending', variant: 'default' },
-  claimed: { label: 'Claimed', variant: 'info' },
-  running: { label: 'Running', variant: 'info' },
-  completed: { label: 'Done', variant: 'success' },
-  failed: { label: 'Failed', variant: 'error' },
 };
 
 const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'info' | 'error' }> = {
@@ -849,26 +842,22 @@ export default function OutcomeDetailPage(): JSX.Element {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {outcome.tasks.map((task) => {
-                    const taskStatus = taskStatusConfig[task.status];
-                    return (
-                      <div key={task.id} className="flex items-center justify-between p-2 rounded bg-bg-secondary">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-text-primary text-sm truncate">{task.title}</span>
-                            {task.from_review && (
-                              <Badge variant="warning" className="text-[10px]">From Review</Badge>
-                            )}
-                          </div>
-                          {task.description && (
-                            <p className="text-text-tertiary text-xs truncate">{task.description}</p>
-                          )}
-                        </div>
-                        <Badge variant={taskStatus.variant}>{taskStatus.label}</Badge>
-                      </div>
-                    );
-                  })}
+                <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                  {outcome.tasks.map((task) => (
+                    <ExpandableTaskCard
+                      key={task.id}
+                      task={task}
+                      onUpdate={(updatedTask) => {
+                        // Update task in local state
+                        setOutcome(prev => prev ? {
+                          ...prev,
+                          tasks: prev.tasks.map(t =>
+                            t.id === updatedTask.id ? updatedTask : t
+                          ),
+                        } : null);
+                      }}
+                    />
+                  ))}
                 </div>
               )}
             </CardContent>

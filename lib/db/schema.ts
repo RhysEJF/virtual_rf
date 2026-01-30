@@ -136,6 +136,9 @@ export interface Task {
   infra_type: InfraType | null;     // 'skill' | 'tool' | 'config' | null
   // Skill dependencies
   required_skills: string | null;   // JSON array of skill names this task requires
+  // Enriched task context (optional per-task PRD/approach)
+  task_intent: string | null;       // Mini-PRD: what this task should achieve
+  task_approach: string | null;     // How to execute: methodology, tools, constraints
 }
 
 export interface Worker {
@@ -477,6 +480,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   phase TEXT NOT NULL DEFAULT 'execution',
   infra_type TEXT,
   required_skills TEXT,
+  -- Enriched task context (optional per-task PRD/approach)
+  task_intent TEXT,
+  task_approach TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
 );

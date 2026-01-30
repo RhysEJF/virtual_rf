@@ -27,6 +27,9 @@ export interface CreateTaskInput {
   phase?: TaskPhase;
   infra_type?: InfraType;
   required_skills?: string[];
+  // Enriched task context
+  task_intent?: string;
+  task_approach?: string;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -41,9 +44,10 @@ export function createTask(input: CreateTaskInput): Task {
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
-      from_review, review_cycle, phase, infra_type, required_skills, created_at, updated_at
+      from_review, review_cycle, phase, infra_type, required_skills,
+      task_intent, task_approach, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -59,6 +63,8 @@ export function createTask(input: CreateTaskInput): Task {
     input.phase || 'execution',
     input.infra_type || null,
     requiredSkillsJson,
+    input.task_intent || null,
+    input.task_approach || null,
     timestamp,
     timestamp
   );
@@ -547,6 +553,9 @@ export interface UpdateTaskInput {
   priority?: number;
   score?: number;
   max_attempts?: number;
+  // Enriched task context
+  task_intent?: string | null;
+  task_approach?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -583,6 +592,14 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.max_attempts !== undefined) {
     updates.push('max_attempts = ?');
     values.push(input.max_attempts);
+  }
+  if (input.task_intent !== undefined) {
+    updates.push('task_intent = ?');
+    values.push(input.task_intent);
+  }
+  if (input.task_approach !== undefined) {
+    updates.push('task_approach = ?');
+    values.push(input.task_approach);
   }
 
   values.push(id);

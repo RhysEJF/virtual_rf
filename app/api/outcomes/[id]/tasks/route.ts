@@ -89,6 +89,8 @@ export async function POST(
         priority: task.priority,
         from_review: task.from_review,
         review_cycle: task.review_cycle,
+        task_intent: task.task_intent,
+        task_approach: task.task_approach,
       }));
 
       const tasks = createTasksBatch(inputs);
@@ -112,6 +114,8 @@ export async function POST(
       priority: body.priority,
       from_review: body.from_review,
       review_cycle: body.review_cycle,
+      task_intent: body.task_intent,
+      task_approach: body.task_approach,
     });
 
     return NextResponse.json({ task }, { status: 201 });

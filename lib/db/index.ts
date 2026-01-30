@@ -168,6 +168,20 @@ function runMigrations(database: Database.Database): void {
   // Add hierarchy indexes if they don't exist
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_parent ON outcomes(parent_id)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_depth ON outcomes(depth)`);
+
+  // Add enriched task columns (task_intent, task_approach) for per-task PRD/approach
+  const enrichedTaskColumns = [
+    { name: 'task_intent', sql: 'ALTER TABLE tasks ADD COLUMN task_intent TEXT' },
+    { name: 'task_approach', sql: 'ALTER TABLE tasks ADD COLUMN task_approach TEXT' },
+  ];
+  const tasksColsEnriched = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  for (const col of enrichedTaskColumns) {
+    const exists = tasksColsEnriched.some(c => c.name === col.name);
+    if (!exists) {
+      database.exec(col.sql);
+      console.log(`[DB Migration] Added ${col.name} column to tasks`);
+    }
+  }
 }
 
 /**

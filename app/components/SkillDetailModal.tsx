@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -52,9 +53,21 @@ export function SkillDetailModal({
   onClose,
 }: SkillDetailModalProps): JSX.Element {
   const router = useRouter();
+  const [copied, setCopied] = useState(false);
   const hasRequirements = skill.keyStatus && skill.keyStatus.requiredKeys.length > 0;
   const hasMissingKeys = skill.keyStatus && !skill.keyStatus.allMet;
   const global = isGlobalSkill(skill);
+
+  const handleCopy = async () => {
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   return (
     <div
@@ -166,9 +179,21 @@ export function SkillDetailModal({
 
           {/* Skill Content Section */}
           <div>
-            <h3 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">
-              Skill Instructions
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
+                Skill Instructions
+              </h3>
+              {content && !loading && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="text-xs"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </Button>
+              )}
+            </div>
             {loading ? (
               <div className="bg-bg-secondary rounded-lg p-4 text-text-tertiary">
                 Loading skill content...

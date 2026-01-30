@@ -144,6 +144,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [aggregatedStats, setAggregatedStats] = useState<AggregatedStats | null>(null);
   const [isParent, setIsParent] = useState(false);
   const [showCreateChildModal, setShowCreateChildModal] = useState(false);
+  const [briefExpanded, setBriefExpanded] = useState(false);
 
   // Ramble input states
   const [intentRamble, setIntentRamble] = useState('');
@@ -503,7 +504,19 @@ export default function OutcomeDetailPage(): JSX.Element {
               )}
             </div>
             {outcome.brief && (
-              <p className="text-text-secondary text-sm max-w-2xl">{outcome.brief}</p>
+              <div className="max-w-3xl">
+                <p className={`text-text-secondary text-sm ${!briefExpanded ? 'line-clamp-2' : ''}`}>
+                  {outcome.brief}
+                </p>
+                {outcome.brief.length > 150 && (
+                  <button
+                    onClick={() => setBriefExpanded(!briefExpanded)}
+                    className="text-accent hover:text-accent/80 text-xs mt-1"
+                  >
+                    {briefExpanded ? 'Show less' : 'Show more'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>

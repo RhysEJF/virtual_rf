@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Badge } from '@/app/components/ui/Badge';
 import { Button } from '@/app/components/ui/Button';
@@ -85,8 +85,26 @@ const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'defaul
 export default function OutcomeDetailPage(): JSX.Element {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const outcomeId = params.id as string;
+
+  // Check for refinement input from dispatcher
+  const [refinementInput, setRefinementInput] = useState<string | undefined>(() => {
+    const refinement = searchParams.get('refinement');
+    return refinement ? decodeURIComponent(refinement) : undefined;
+  });
+
+  // Clear the URL param after reading (to avoid re-triggering on refresh)
+  const handleRefinementConsumed = useCallback(() => {
+    if (refinementInput) {
+      // Remove the query param from URL without triggering navigation
+      const url = new URL(window.location.href);
+      url.searchParams.delete('refinement');
+      window.history.replaceState({}, '', url.toString());
+      setRefinementInput(undefined);
+    }
+  }, [refinementInput]);
 
   const [outcome, setOutcome] = useState<OutcomeDetail | null>(null);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
@@ -447,6 +465,8 @@ export default function OutcomeDetailPage(): JSX.Element {
           outcomeId={outcomeId}
           outcomeName={outcome.name}
           onSuccess={fetchOutcome}
+          initialInput={refinementInput}
+          onInitialInputConsumed={handleRefinementConsumed}
         />
         {/* Infrastructure status indicator */}
         {infrastructureInProgress && (

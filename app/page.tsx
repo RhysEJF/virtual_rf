@@ -119,9 +119,16 @@ export default function Dashboard(): JSX.Element {
 
   // Handle user choosing to add to an existing outcome
   const handleAddToOutcome = useCallback((outcomeId: string) => {
+    const originalInput = matchState?.originalInput;
     setMatchState(null);
-    router.push(`/outcome/${outcomeId}`);
-  }, [router]);
+    // Pass the original input as a query param so the outcome page can auto-trigger refinement
+    if (originalInput) {
+      const encoded = encodeURIComponent(originalInput);
+      router.push(`/outcome/${outcomeId}?refinement=${encoded}`);
+    } else {
+      router.push(`/outcome/${outcomeId}`);
+    }
+  }, [router, matchState]);
 
   // Handle user choosing to create a new outcome anyway
   const handleCreateNew = useCallback(() => {

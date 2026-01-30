@@ -27,9 +27,13 @@ interface OutcomeCommandBarProps {
   outcomeId: string;
   outcomeName: string;
   onSuccess?: () => void;
+  /** Optional initial input to auto-populate and process (e.g., from dispatcher) */
+  initialInput?: string;
+  /** Callback when initial input has been consumed */
+  onInitialInputConsumed?: () => void;
 }
 
-export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: OutcomeCommandBarProps): JSX.Element {
+export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialInput, onInitialInputConsumed }: OutcomeCommandBarProps): JSX.Element {
   const { toast } = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,6 +42,8 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
   const [plan, setPlan] = useState<ActionPlan | null>(null);
   const [editedPlan, setEditedPlan] = useState<ActionPlan | null>(null);
   const [refineInput, setRefineInput] = useState('');
+  const [fromDispatcher, setFromDispatcher] = useState(false);
+  const initialInputProcessedRef = useRef(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -47,8 +53,25 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
     }
   }, [input, refineInput]);
 
-  const handleSubmit = async () => {
-    if (!input.trim()) return;
+  // Process initial input from dispatcher (auto-populate and auto-submit)
+  useEffect(() => {
+    if (initialInput && !initialInputProcessedRef.current && state === 'idle') {
+      initialInputProcessedRef.current = true;
+      setInput(initialInput);
+      setFromDispatcher(true);
+      onInitialInputConsumed?.();
+
+      // Auto-trigger the interpret flow after a short delay for UX
+      const timer = setTimeout(() => {
+        handleSubmitWithInput(initialInput);
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }
+  }, [initialInput, state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSubmitWithInput = async (inputText: string) => {
+    if (!inputText.trim()) return;
 
     setState('interpreting');
 
@@ -56,7 +79,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
       const response = await fetch(`/api/outcomes/${outcomeId}/interpret`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: input.trim() }),
+        body: JSON.stringify({ input: inputText.trim() }),
       });
 
       const data = await response.json();
@@ -74,6 +97,8 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
       setState('idle');
     }
   };
+
+  const handleSubmit = () => handleSubmitWithInput(input);
 
   const handleRefine = async () => {
     if (!refineInput.trim()) return;
@@ -165,6 +190,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
     setPlan(null);
     setEditedPlan(null);
     setRefineInput('');
+    setFromDispatcher(false);
     setState('idle');
   };
 
@@ -210,10 +236,18 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess }: Outcome
 
       {/* Interpreting State */}
       {state === 'interpreting' && (
-        <div className="p-6 text-center">
-          <div className="flex items-center justify-center gap-3">
-            <div className="animate-spin h-5 w-5 border-2 border-accent border-t-transparent rounded-full" />
-            <span className="text-text-secondary">Interpreting your request...</span>
+        <div className="p-6">
+          {fromDispatcher && (
+            <div className="mb-4 p-3 bg-accent/10 border border-accent/30 rounded-lg">
+              <p className="text-sm text-accent font-medium">Continuing from dashboard...</p>
+              <p className="text-xs text-text-secondary mt-1 line-clamp-2">{input}</p>
+            </div>
+          )}
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin h-5 w-5 border-2 border-accent border-t-transparent rounded-full" />
+              <span className="text-text-secondary">Interpreting your request...</span>
+            </div>
           </div>
         </div>
       )}

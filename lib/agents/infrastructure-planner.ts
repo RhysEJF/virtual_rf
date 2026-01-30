@@ -8,6 +8,7 @@
 import { claudeComplete } from '../claude/client';
 import { createTask } from '../db/tasks';
 import { updateOutcome } from '../db/outcomes';
+import { getWorkspacePath } from '../workspace/detector';
 import type { Task, Intent, InfraType } from '../db/schema';
 
 // ============================================================================
@@ -325,15 +326,18 @@ export function createInfrastructureTasks(
 ): Task[] {
   const tasks: Task[] = [];
 
+  // Get absolute workspace path for this outcome
+  const workspacePath = getWorkspacePath(outcomeId);
+
   for (let i = 0; i < plan.needs.length; i++) {
     const need = plan.needs[i];
 
     // Infrastructure tasks get low priority numbers (0-10) so they run first
     const priority = i + 1;
 
-    // Use ../ prefix because Claude runs in {outcomeId}/{taskId}/
-    // and needs to write to {outcomeId}/skills/ or {outcomeId}/tools/
-    const outputPath = `../${need.path}`;
+    // Use ABSOLUTE path to avoid confusion with project root directories
+    // e.g., /Users/.../workspaces/out_xxx/skills/persona-research.md
+    const outputPath = `${workspacePath}/${need.path}`;
 
     const task = createTask({
       outcome_id: outcomeId,

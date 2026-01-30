@@ -10,6 +10,7 @@ import { ProgressView } from '@/app/components/ProgressView';
 import { InterventionForm } from '@/app/components/InterventionForm';
 import { OutputsSection } from '@/app/components/OutputsSection';
 import { GitConfigSection } from '@/app/components/GitConfigSection';
+import { SkillsSection } from '@/app/components/SkillsSection';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -848,6 +849,9 @@ export default function OutcomeDetailPage(): JSX.Element {
               )}
             </CardContent>
           </Card>
+
+          {/* Skills */}
+          <SkillsSection outcomeId={outcomeId} />
 
           {/* Git Configuration - prominent position */}
           <div id="git-config-section">

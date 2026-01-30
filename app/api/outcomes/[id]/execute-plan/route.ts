@@ -108,10 +108,19 @@ export async function POST(
             }
 
             updateOutcome(outcomeId, { intent: JSON.stringify(currentIntent) });
+
+            // Reset infrastructure_ready when intent changes significantly - new requirements may need different skills
+            // Only reset if summary or success criteria changed (not just item status updates)
+            if (data.new_summary || data.new_success_criteria) {
+              updateOutcome(outcomeId, { infrastructure_ready: 0 });
+            }
+
             results.push({
               actionId: action.id,
               success: true,
-              message: 'Intent updated',
+              message: (data.new_summary || data.new_success_criteria)
+                ? 'Intent updated (infrastructure will be re-evaluated)'
+                : 'Intent updated',
             });
             break;
           }
@@ -127,12 +136,16 @@ export async function POST(
             if (data.new_approach) {
               const newApproach = data.new_approach as string;
               upsertDesignDoc(outcomeId, newApproach, currentVersion + 1);
+
+              // Reset infrastructure_ready when approach changes - new approach may need different skills
+              // This forces the system to re-evaluate infrastructure needs before next worker run
+              updateOutcome(outcomeId, { infrastructure_ready: 0 });
             }
 
             results.push({
               actionId: action.id,
               success: true,
-              message: 'Approach updated',
+              message: 'Approach updated (infrastructure will be re-evaluated)',
             });
             break;
           }

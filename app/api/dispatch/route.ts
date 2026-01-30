@@ -3,6 +3,8 @@
  *
  * Main entry point for user requests. Classifies and routes to appropriate handler.
  * Uses Claude Code CLI (your existing subscription) - no API costs.
+ *
+ * Smart Dispatcher: Checks for matching outcomes before creating new ones.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,9 +12,9 @@ import { dispatch, type DispatchResult } from '@/lib/agents/dispatcher';
 import { executeQuick } from '@/lib/agents/quick-executor';
 import { generateBrief } from '@/lib/agents/briefer';
 import { executeResearch, formatResearchPlan } from '@/lib/agents/research-handler';
-import { isClaudeAvailable } from '@/lib/claude/client';
+import { isClaudeAvailable, claudeComplete } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
-import { createOutcome } from '@/lib/db/outcomes';
+import { createOutcome, getActiveOutcomes } from '@/lib/db/outcomes';
 import { logOutcomeCreated } from '@/lib/db/activity';
 
 type ModeHint = 'smart' | 'quick' | 'long';
@@ -21,22 +23,123 @@ interface DispatchRequest {
   input: string;
   modeHint?: ModeHint; // User can override AI classification
   projectContext?: string; // For interventions on existing projects
+  skipMatching?: boolean; // Skip outcome matching (user explicitly wants new)
+}
+
+interface MatchedOutcome {
+  id: string;
+  name: string;
+  brief: string | null;
+  confidence: 'high' | 'medium';
+  reason: string;
 }
 
 interface DispatchResponse {
-  type: DispatchResult['type'] | 'outcome';
+  type: DispatchResult['type'] | 'outcome' | 'match_found';
   response?: string;
   questions?: string[];
   projectId?: string; // Deprecated, use outcomeId
   outcomeId?: string;
   navigateTo?: string;
   error?: string;
+  // For match_found type
+  matchedOutcomes?: MatchedOutcome[];
+  originalInput?: string;
+}
+
+/**
+ * Check if user input might relate to existing active outcomes
+ */
+async function checkForMatchingOutcomes(input: string): Promise<MatchedOutcome[] | null> {
+  try {
+    const activeOutcomes = getActiveOutcomes();
+
+    // No active outcomes to match against
+    if (activeOutcomes.length === 0) {
+      return null;
+    }
+
+    // Build context for Claude
+    const outcomesContext = activeOutcomes.map(o => {
+      let intentSummary = o.brief || '';
+      if (o.intent) {
+        try {
+          const parsed = JSON.parse(o.intent);
+          intentSummary = parsed.summary || intentSummary;
+        } catch {
+          // Use brief
+        }
+      }
+      return `- ID: ${o.id}\n  Name: "${o.name}"\n  About: ${intentSummary.substring(0, 200)}`;
+    }).join('\n\n');
+
+    const prompt = `You are helping route user requests to the right place.
+
+ACTIVE OUTCOMES (existing projects):
+${outcomesContext}
+
+USER'S NEW REQUEST:
+"${input}"
+
+Does this request clearly relate to any of the existing outcomes above?
+
+Rules:
+- Only match if there's a CLEAR relationship (same topic, follow-up work, refinement, bug fix, etc.)
+- Do NOT match if it's just vaguely similar or in the same general domain
+- When in doubt, return empty matches (user can always choose to create new)
+
+Respond with ONLY valid JSON (no markdown):
+{
+  "matches": [
+    {
+      "outcomeId": "the_id",
+      "confidence": "high or medium",
+      "reason": "brief explanation of why this matches"
+    }
+  ]
+}
+
+Return empty matches array [] if no clear relationship exists.`;
+
+    const result = await claudeComplete({ prompt, timeout: 30000 });
+
+    // Parse response
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const matches = parsed.matches || [];
+
+    if (matches.length === 0) return null;
+
+    // Enrich matches with outcome details
+    const enrichedMatches: MatchedOutcome[] = [];
+    for (const match of matches) {
+      const outcome = activeOutcomes.find(o => o.id === match.outcomeId);
+      if (outcome) {
+        enrichedMatches.push({
+          id: outcome.id,
+          name: outcome.name,
+          brief: outcome.brief,
+          confidence: match.confidence || 'medium',
+          reason: match.reason || 'Potentially related',
+        });
+      }
+    }
+
+    return enrichedMatches.length > 0 ? enrichedMatches : null;
+
+  } catch (error) {
+    console.error('[Smart Dispatcher] Matching error:', error);
+    // On error, proceed without matching (don't block the user)
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<DispatchResponse>> {
   try {
     const body = (await request.json()) as DispatchRequest;
-    const { input, modeHint } = body;
+    const { input, modeHint, skipMatching } = body;
 
     if (!input || typeof input !== 'string') {
       return NextResponse.json(
@@ -55,6 +158,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
         },
         { status: 500 }
       );
+    }
+
+    // SMART DISPATCHER: Check for matching outcomes (unless skipped or quick mode)
+    if (!skipMatching && modeHint !== 'quick') {
+      const matchResult = await checkForMatchingOutcomes(input);
+      if (matchResult && matchResult.length > 0) {
+        return NextResponse.json({
+          type: 'match_found',
+          matchedOutcomes: matchResult,
+          originalInput: input,
+          response: `This might be related to an existing outcome. Would you like to add to one of these, or create a new outcome?`,
+        });
+      }
     }
 
     // Determine request type based on mode hint or AI classification

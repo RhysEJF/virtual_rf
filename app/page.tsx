@@ -11,10 +11,24 @@ import { ImprovementSuggestions } from './components/ImprovementSuggestions';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
 import { Card, CardContent } from './components/ui/Card';
 import { Badge } from './components/ui/Badge';
+import { Button } from './components/ui/Button';
 
 type FilterStatus = 'all' | 'active' | 'dormant' | 'achieved';
 
 const FILTER_STORAGE_KEY = 'virtualrf_outcome_filter';
+
+interface MatchedOutcome {
+  id: string;
+  name: string;
+  brief: string | null;
+  confidence: 'high' | 'medium';
+  reason: string;
+}
+
+interface MatchState {
+  matches: MatchedOutcome[];
+  originalInput: string;
+}
 
 export default function Dashboard(): JSX.Element {
   const router = useRouter();
@@ -23,6 +37,7 @@ export default function Dashboard(): JSX.Element {
   const [outcomesLoading, setOutcomesLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const [matchState, setMatchState] = useState<MatchState | null>(null);
 
   // Load filter from localStorage on mount
   useEffect(() => {
@@ -58,18 +73,28 @@ export default function Dashboard(): JSX.Element {
     return () => clearInterval(interval);
   }, [fetchOutcomes]);
 
-  const handleSubmit = useCallback(async (input: string, mode: RequestMode) => {
+  const handleSubmit = useCallback(async (input: string, mode: RequestMode, skipMatching?: boolean) => {
     setLoading(true);
     setLastResponse(null);
+    setMatchState(null);
 
     try {
       const response = await fetch('/api/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, modeHint: mode }),
+        body: JSON.stringify({ input, modeHint: mode, skipMatching }),
       });
 
       const data = await response.json();
+
+      // Smart Dispatcher: matches found - show options to user
+      if (data.type === 'match_found' && data.matchedOutcomes?.length > 0) {
+        setMatchState({
+          matches: data.matchedOutcomes,
+          originalInput: data.originalInput || input,
+        });
+        return;
+      }
 
       // For outcomes (research/deep work), navigate to the detail page
       if (data.type === 'outcome' && data.navigateTo) {
@@ -91,6 +116,27 @@ export default function Dashboard(): JSX.Element {
       setLoading(false);
     }
   }, [fetchOutcomes, router]);
+
+  // Handle user choosing to add to an existing outcome
+  const handleAddToOutcome = useCallback((outcomeId: string) => {
+    setMatchState(null);
+    router.push(`/outcome/${outcomeId}`);
+  }, [router]);
+
+  // Handle user choosing to create a new outcome anyway
+  const handleCreateNew = useCallback(() => {
+    if (matchState) {
+      const { originalInput } = matchState;
+      setMatchState(null);
+      // Re-dispatch with skipMatching flag
+      handleSubmit(originalInput, 'smart', true);
+    }
+  }, [matchState, handleSubmit]);
+
+  // Handle user dismissing the match dialog
+  const handleDismissMatch = useCallback(() => {
+    setMatchState(null);
+  }, []);
 
   const handleStartWorker = async (outcomeId: string) => {
     try {
@@ -192,8 +238,59 @@ export default function Dashboard(): JSX.Element {
 
       {/* Command Bar */}
       <div className="mb-6">
-        <CommandBar onSubmit={handleSubmit} loading={loading} />
-        {lastResponse && (
+        <CommandBar onSubmit={(input, mode) => handleSubmit(input, mode)} loading={loading} />
+
+        {/* Match Found - Show Options */}
+        {matchState && (
+          <Card padding="md" className="mt-3 border-accent/30">
+            <CardContent>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="text-text-primary font-medium text-sm">Related outcome found</h3>
+                  <p className="text-text-tertiary text-xs mt-1">
+                    Would you like to add to an existing outcome or create a new one?
+                  </p>
+                </div>
+                <button
+                  onClick={handleDismissMatch}
+                  className="text-text-tertiary hover:text-text-secondary text-xs"
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                {matchState.matches.map((match) => (
+                  <button
+                    key={match.id}
+                    onClick={() => handleAddToOutcome(match.id)}
+                    className="w-full text-left p-3 rounded-lg border border-border hover:border-accent hover:bg-accent/5 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-text-primary text-sm font-medium">{match.name}</span>
+                      <Badge variant={match.confidence === 'high' ? 'success' : 'info'} className="text-[10px]">
+                        {match.confidence}
+                      </Badge>
+                    </div>
+                    <p className="text-text-tertiary text-xs mt-1">{match.reason}</p>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-border">
+                <p className="text-text-tertiary text-xs">
+                  Your request: "{matchState.originalInput.substring(0, 50)}{matchState.originalInput.length > 50 ? '...' : ''}"
+                </p>
+                <Button variant="secondary" size="sm" onClick={handleCreateNew}>
+                  Create New Outcome
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Regular Response */}
+        {lastResponse && !matchState && (
           <Card padding="sm" className="mt-3">
             <CardContent>
               <p className="text-text-secondary text-sm whitespace-pre-wrap">{lastResponse}</p>

@@ -7,7 +7,7 @@ import { useToast } from '@/app/hooks/useToast';
 // Action types the AI can suggest
 export interface SuggestedAction {
   id: string;
-  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'start_worker' | 'pause_workers' | 'run_review';
+  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'build_infrastructure' | 'start_worker' | 'pause_workers' | 'run_review';
   description: string;
   details: string;
   data?: Record<string, unknown>;

@@ -18,7 +18,7 @@ interface RouteContext {
 
 interface SuggestedAction {
   id: string;
-  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'start_worker' | 'pause_workers' | 'run_review';
+  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'build_infrastructure' | 'start_worker' | 'pause_workers' | 'run_review';
   description: string;
   details: string;
   data?: Record<string, unknown>;
@@ -158,6 +158,51 @@ export async function POST(
               success: true,
               message: `Created ${created} task${created !== 1 ? 's' : ''}`,
             });
+            break;
+          }
+
+          case 'build_infrastructure': {
+            // Trigger infrastructure building (skills/tools) before execution
+            const data = action.data || {};
+            const skillNames = (data.skill_names || []) as string[];
+
+            try {
+              // Start orchestrated execution which builds infrastructure first
+              const orchResponse = await fetch(
+                `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/outcomes/${outcomeId}/orchestrate`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    async: true,
+                    suggestedSkills: skillNames,
+                  }),
+                }
+              );
+              const orchData = await orchResponse.json();
+
+              if (orchData.success) {
+                results.push({
+                  actionId: action.id,
+                  success: true,
+                  message: skillNames.length > 0
+                    ? `Building infrastructure with skills: ${skillNames.join(', ')}`
+                    : 'Building infrastructure (analyzing what skills are needed)',
+                });
+              } else {
+                results.push({
+                  actionId: action.id,
+                  success: false,
+                  message: orchData.error || 'Failed to start infrastructure build',
+                });
+              }
+            } catch (orchError) {
+              results.push({
+                actionId: action.id,
+                success: false,
+                message: 'Failed to trigger infrastructure build',
+              });
+            }
             break;
           }
 

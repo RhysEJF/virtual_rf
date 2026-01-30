@@ -11,7 +11,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById, getDesignDoc } from '@/lib/db/outcomes';
 import { getTasksByOutcome } from '@/lib/db/tasks';
 import { getWorkersByOutcome } from '@/lib/db/workers';
+import { getWorkspacePath } from '@/lib/workspace/detector';
 import type { Task, Worker } from '@/lib/db/schema';
+import fs from 'fs';
+import path from 'path';
 import { claudeComplete } from '@/lib/claude/client';
 
 interface RouteContext {
@@ -93,15 +96,56 @@ export async function POST(
       ? workers.map(w => `- ${w.name}: ${w.status}`).join('\n')
       : 'No workers yet';
 
-    const previousPlanContext = previousPlan
-      ? `\n\nPREVIOUS PLAN (user wants to refine):\n${JSON.stringify(previousPlan, null, 2)}\n\nOriginal request: "${originalInput}"\nRefinement: "${input}"`
-      : '';
+    // Check for existing skills in this outcome's workspace
+    const workspacePath = getWorkspacePath(outcomeId);
+    const skillsPath = path.join(workspacePath, 'skills');
+    let existingSkills: string[] = [];
+    try {
+      if (fs.existsSync(skillsPath)) {
+        existingSkills = fs.readdirSync(skillsPath)
+          .filter(f => f.endsWith('.md'))
+          .map(f => f.replace('.md', ''));
+      }
+    } catch {
+      // No skills yet
+    }
+
+    const skillsSummary = existingSkills.length > 0
+      ? `Existing skills: ${existingSkills.join(', ')}`
+      : 'No skills built yet for this outcome';
+
+    // Build refinement context - this is CRITICAL for conversational flow
+    let conversationContext = '';
+    if (previousPlan && originalInput) {
+      conversationContext = `
+---
+CONVERSATION CONTEXT (This is a REFINEMENT - ADD to the previous plan, don't replace it):
+
+Original request: "${originalInput}"
+
+Previous plan you suggested:
+${JSON.stringify(previousPlan, null, 2)}
+
+User's refinement/addition: "${input}"
+
+IMPORTANT: The user is BUILDING ON the previous plan. You should:
+1. KEEP all the actions from the previous plan
+2. ADD new actions based on their refinement
+3. MODIFY existing actions if they explicitly asked for changes
+4. DO NOT remove actions unless specifically asked
+
+Think of this as a conversation where you're collaboratively building a plan together.
+---`;
+    }
 
     const prompt = `You are helping manage an AI project/outcome. The user has made a request that may modify the outcome.
 
 OUTCOME: ${outcome.name}
 STATUS: ${outcome.status}
-INFRASTRUCTURE: ${outcome.infrastructure_ready === 2 ? 'Ready' : outcome.infrastructure_ready === 1 ? 'Building' : 'Not started'}
+INFRASTRUCTURE STATUS: ${outcome.infrastructure_ready === 2 ? 'Ready (skills built)' : outcome.infrastructure_ready === 1 ? 'Building (skills in progress)' : 'Not started (no skills yet)'}
+
+SKILLS FOR THIS OUTCOME:
+${skillsSummary}
 
 CURRENT INTENT (What):
 ${intentSummary}
@@ -116,16 +160,26 @@ ${taskSummary}
 
 WORKERS:
 ${workerSummary}
-${previousPlanContext}
+${conversationContext}
 
 USER REQUEST:
 "${input}"
+
+SYSTEM ARCHITECTURE - Skills-First Pattern:
+This system uses a TWO-PHASE approach:
+1. INFRASTRUCTURE PHASE: Build skills (reusable knowledge/instructions) before executing work
+2. EXECUTION PHASE: Workers use the skills to complete tasks
+
+If the user asks about skills or if the work would benefit from building skills first:
+- Suggest "build_infrastructure" action to create skills before execution
+- Skills are markdown files that teach the AI how to do specific tasks for this project
 
 Analyze this request and suggest appropriate actions. Consider:
 1. Does the user want to change the intent/scope?
 2. Does the user want to change the approach/implementation?
 3. Should new tasks be created?
-4. Should workers be started, paused, or is a review needed?
+4. Would skills help? Should we build infrastructure first?
+5. Should workers be started, paused, or is a review needed?
 
 IMPORTANT: Be conservative. If the request is ambiguous, ask for clarification in the summary rather than making assumptions.
 
@@ -136,7 +190,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   "actions": [
     {
       "id": "unique_id",
-      "type": "update_intent|update_approach|create_tasks|start_worker|pause_workers|run_review",
+      "type": "action_type",
       "description": "Short human-readable description",
       "details": "More specific details about what will change",
       "data": { "any": "relevant data for execution" },
@@ -150,11 +204,12 @@ Action types:
 - update_intent: Modify the PRD/intent. Include "new_summary" and/or "new_items" and/or "new_success_criteria" in data
 - update_approach: Modify the design doc. Include "new_approach" in data
 - create_tasks: Add new tasks. Include "tasks" array in data with {title, description, priority}
-- start_worker: Start a worker to execute tasks
+- build_infrastructure: Build skills/tools first. Include "skill_names" array with suggested skills to build
+- start_worker: Start a worker to execute tasks (will build infrastructure first if needed)
 - pause_workers: Pause all running workers
 - run_review: Trigger a review cycle
 
-Keep actions minimal and focused. Don't suggest actions unless the user's request clearly implies them.`;
+Keep actions focused. If this is a refinement, MERGE with the previous plan.`;
 
     const result = await claudeComplete({ prompt, timeout: 60000 });
 

@@ -44,6 +44,11 @@ import {
 import { resolveAlertsForWorker } from '../db/supervisor-alerts';
 import { updateWorker as updateWorkerDb } from '../db/workers';
 import { createWorktree, removeWorktree, isGitRepo } from '../worktree/manager';
+import { startSupervisor, stopSupervisor } from '../supervisor';
+import {
+  areSkillDependenciesMet,
+  resolveSkillDependencies,
+} from '../agents/skill-dependency-resolver';
 
 // ============================================================================
 // Types
@@ -312,6 +317,30 @@ export async function startRalphWorker(
     onProgress({ ...progress });
   }
 
+  // Start supervisor BEFORE the work loop (critical for security)
+  const supervisorResult = await startSupervisor(outcomeId, workerId);
+  if (!supervisorResult.success) {
+    appendLog(`Warning: Supervisor failed to start - ${supervisorResult.error}`);
+    // Continue anyway, but log the warning
+  } else {
+    appendLog(`Supervisor started and monitoring workspace`);
+  }
+
+  // Check skill dependencies and create infrastructure tasks if needed
+  const skillDepsCheck = areSkillDependenciesMet(outcomeId);
+  if (!skillDepsCheck.allMet) {
+    appendLog(`Warning: Missing skills detected: ${skillDepsCheck.missingSkills.join(', ')}`);
+
+    // Resolve by creating infrastructure tasks
+    const resolution = resolveSkillDependencies(outcomeId);
+    if (resolution.tasksCreated > 0) {
+      appendLog(`Created ${resolution.tasksCreated} infrastructure tasks for missing skills`);
+    }
+
+    // Note: Worker continues - claimNextTask will skip tasks with unsatisfied dependencies
+    // This allows infrastructure tasks to be processed first
+  }
+
   // Start the work loop
   (async () => {
     let iteration = 0;
@@ -507,6 +536,10 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
     // Cleanup
     clearInterval(heartbeatInterval);
+
+    // Stop supervisor (saves final change snapshot)
+    stopSupervisor(outcomeId, workerId);
+    appendLog(`Supervisor stopped`);
 
     // Final status - check if paused by intervention or stopped manually
     const wasPaused = !workerState.running && !hasError;
@@ -720,6 +753,12 @@ export function stopRalphWorker(workerId: string): boolean {
         console.error(`[Worker] Error killing PID ${dbWorker.pid}:`, err);
       }
     }
+  }
+
+  // Stop supervisor for this worker (if running)
+  if (dbWorker?.outcome_id) {
+    stopSupervisor(dbWorker.outcome_id, workerId);
+    console.log(`[Worker] Stopped supervisor for worker ${workerId}`);
   }
 
   // Update the database status and clear the PID

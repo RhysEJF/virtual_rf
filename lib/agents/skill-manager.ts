@@ -30,6 +30,7 @@ interface SkillMetadata {
   name: string;
   description: string;
   triggers: string[];
+  requires: string[];
   category: string;
   path: string;
   content: string;
@@ -40,6 +41,7 @@ interface ParsedSkillFile {
     name?: string;
     description?: string;
     triggers?: string[];
+    requires?: string[];
   };
   content: string;
 }
@@ -71,6 +73,14 @@ function parseSkillFile(filePath: string): ParsedSkillFile | null {
       const triggersMatch = frontmatter.match(/^triggers:\s*\[(.*)\]$/m);
       if (triggersMatch) {
         metadata.triggers = triggersMatch[1]
+          .split(',')
+          .map(t => t.trim().replace(/['"]/g, ''))
+          .filter(t => t.length > 0);
+      }
+
+      const requiresMatch = frontmatter.match(/^requires:\s*\[(.*)\]$/m);
+      if (requiresMatch) {
+        metadata.requires = requiresMatch[1]
           .split(',')
           .map(t => t.trim().replace(/['"]/g, ''))
           .filter(t => t.length > 0);
@@ -126,6 +136,7 @@ export function loadSkills(): SkillMetadata[] {
         name: parsed.metadata.name || skillDir.replace(/-/g, ' '),
         description: parsed.metadata.description || '',
         triggers: parsed.metadata.triggers || [],
+        requires: parsed.metadata.requires || [],
         category,
         path: skillFilePath,
         content: parsed.content,
@@ -154,6 +165,7 @@ export function syncSkillsToDatabase(): { loaded: number; updated: number } {
       category: skill.category,
       description: skill.description,
       path: skill.path,
+      requires: skill.requires,
     });
 
     if (existing) {

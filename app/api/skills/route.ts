@@ -6,20 +6,50 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllSkills, getSkillCategories, getSkillCount } from '@/lib/db/skills';
+import { getAllSkills, getSkillCategories, getSkillCount, getAllSkillsWithKeyStatus } from '@/lib/db/skills';
 import { syncSkillsToDatabase, getSkillStats, getSkillsByCategory } from '@/lib/agents/skill-manager';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const groupBy = searchParams.get('groupBy');
+    const includeKeyStatus = searchParams.get('includeKeyStatus') === 'true';
 
     if (groupBy === 'category') {
-      const grouped = getSkillsByCategory();
+      if (includeKeyStatus) {
+        // Get skills with key status and group by category
+        const skillsWithStatus = getAllSkillsWithKeyStatus();
+        const grouped: Record<string, typeof skillsWithStatus> = {};
+        for (const skill of skillsWithStatus) {
+          if (!grouped[skill.category]) {
+            grouped[skill.category] = [];
+          }
+          grouped[skill.category].push(skill);
+        }
+        return NextResponse.json({
+          skills: grouped,
+          categories: Object.keys(grouped),
+          total: skillsWithStatus.length,
+        });
+      } else {
+        const grouped = getSkillsByCategory();
+        return NextResponse.json({
+          skills: grouped,
+          categories: Object.keys(grouped),
+          total: Object.values(grouped).flat().length,
+        });
+      }
+    }
+
+    if (includeKeyStatus) {
+      const skillsWithStatus = getAllSkillsWithKeyStatus();
+      const categories = getSkillCategories();
+      const stats = getSkillStats();
       return NextResponse.json({
-        skills: grouped,
-        categories: Object.keys(grouped),
-        total: Object.values(grouped).flat().length,
+        skills: skillsWithStatus,
+        categories,
+        total: skillsWithStatus.length,
+        stats,
       });
     }
 

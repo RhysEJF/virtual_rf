@@ -10,6 +10,7 @@ export interface CreateSkillInput {
   category: string;
   description?: string;
   path: string;
+  requires?: string[];
 }
 
 export interface UpdateSkillInput {
@@ -17,6 +18,7 @@ export interface UpdateSkillInput {
   category?: string;
   description?: string;
   path?: string;
+  requires?: string[];
   usage_count?: number;
   avg_cost?: number;
 }
@@ -34,10 +36,13 @@ export function upsertSkill(input: CreateSkillInput): Skill {
 
   const id = generateSkillId();
   const timestamp = now();
+  const requiresJson = input.requires && input.requires.length > 0
+    ? JSON.stringify(input.requires)
+    : null;
 
   const stmt = db.prepare(`
-    INSERT INTO skills (id, name, category, description, path, usage_count, avg_cost, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)
+    INSERT INTO skills (id, name, category, description, path, requires, usage_count, avg_cost, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
   `);
 
   stmt.run(
@@ -46,6 +51,7 @@ export function upsertSkill(input: CreateSkillInput): Skill {
     input.category,
     input.description || null,
     input.path,
+    requiresJson,
     timestamp,
     timestamp
   );
@@ -130,6 +136,10 @@ export function updateSkill(id: string, input: UpdateSkillInput): Skill | null {
     updates.push('path = ?');
     values.push(input.path);
   }
+  if (input.requires !== undefined) {
+    updates.push('requires = ?');
+    values.push(input.requires.length > 0 ? JSON.stringify(input.requires) : null);
+  }
   if (input.usage_count !== undefined) {
     updates.push('usage_count = ?');
     values.push(input.usage_count);
@@ -193,4 +203,100 @@ export function getSkillCount(): number {
   const stmt = db.prepare('SELECT COUNT(*) as count FROM skills');
   const result = stmt.get() as { count: number };
   return result.count;
+}
+
+/**
+ * Get a skill by name
+ */
+export function getSkillByName(name: string): Skill | null {
+  const db = getDb();
+  const stmt = db.prepare('SELECT * FROM skills WHERE name = ?');
+  return stmt.get(name) as Skill | null;
+}
+
+/**
+ * Check if a skill's required API keys are configured
+ */
+export function checkSkillRequirements(skillId: string): {
+  allMet: boolean;
+  missing: string[];
+  configured: string[];
+} {
+  // Import dynamically to avoid circular dependency
+  const { checkRequiredKeys } = require('../utils/env-keys');
+
+  const skill = getSkillById(skillId);
+  if (!skill || !skill.requires) {
+    return { allMet: true, missing: [], configured: [] };
+  }
+
+  try {
+    const requiredKeys = JSON.parse(skill.requires) as string[];
+    if (!Array.isArray(requiredKeys) || requiredKeys.length === 0) {
+      return { allMet: true, missing: [], configured: [] };
+    }
+
+    const result = checkRequiredKeys(requiredKeys);
+    return {
+      allMet: result.allSet,
+      missing: result.missing,
+      configured: result.configured,
+    };
+  } catch {
+    return { allMet: true, missing: [], configured: [] };
+  }
+}
+
+/**
+ * Skill with key status information
+ */
+export interface SkillWithKeyStatus extends Skill {
+  keyStatus: {
+    allMet: boolean;
+    missing: string[];
+    configured: string[];
+    requiredKeys: string[];
+  };
+}
+
+/**
+ * Get all skills with their API key configuration status
+ */
+export function getAllSkillsWithKeyStatus(): SkillWithKeyStatus[] {
+  // Import dynamically to avoid circular dependency
+  const { checkRequiredKeys } = require('../utils/env-keys');
+
+  const skills = getAllSkills();
+
+  return skills.map(skill => {
+    let requiredKeys: string[] = [];
+    let keyStatus = {
+      allMet: true,
+      missing: [] as string[],
+      configured: [] as string[],
+      requiredKeys: [] as string[],
+    };
+
+    if (skill.requires) {
+      try {
+        requiredKeys = JSON.parse(skill.requires) as string[];
+        if (Array.isArray(requiredKeys) && requiredKeys.length > 0) {
+          const result = checkRequiredKeys(requiredKeys);
+          keyStatus = {
+            allMet: result.allSet,
+            missing: result.missing,
+            configured: result.configured,
+            requiredKeys,
+          };
+        }
+      } catch {
+        // Invalid JSON, treat as no requirements
+      }
+    }
+
+    return {
+      ...skill,
+      keyStatus,
+    };
+  });
 }

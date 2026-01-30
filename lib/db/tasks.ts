@@ -26,20 +26,24 @@ export interface CreateTaskInput {
   review_cycle?: number;
   phase?: TaskPhase;
   infra_type?: InfraType;
+  required_skills?: string[];
 }
 
 export function createTask(input: CreateTaskInput): Task {
   const db = getDb();
   const timestamp = now();
   const id = generateId('task');
+  const requiredSkillsJson = input.required_skills && input.required_skills.length > 0
+    ? JSON.stringify(input.required_skills)
+    : null;
 
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
-      from_review, review_cycle, phase, infra_type, created_at, updated_at
+      from_review, review_cycle, phase, infra_type, required_skills, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -54,6 +58,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.review_cycle ?? null,
     input.phase || 'execution',
     input.infra_type || null,
+    requiredSkillsJson,
     timestamp,
     timestamp
   );
@@ -306,6 +311,7 @@ export function claimTask(taskId: string, workerId: string): ClaimResult {
  * Atomically claim the next available task for a worker.
  * Finds the highest priority pending task and claims it.
  * Optionally filter by phase for orchestrated execution.
+ * Skips tasks with unsatisfied skill dependencies.
  */
 export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskPhase): ClaimResult {
   const db = getDb();
@@ -314,22 +320,47 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
   try {
     db.exec('BEGIN IMMEDIATE');
 
-    // Find the highest priority pending task, optionally filtered by phase
-    let task: Task | undefined;
+    // Find pending tasks, optionally filtered by phase
+    let candidates: Task[];
     if (phase) {
-      task = db.prepare(`
+      candidates = db.prepare(`
         SELECT * FROM tasks
         WHERE outcome_id = ? AND status = 'pending' AND phase = ?
         ORDER BY priority ASC, score DESC
-        LIMIT 1
-      `).get(outcomeId, phase) as Task | undefined;
+      `).all(outcomeId, phase) as Task[];
     } else {
-      task = db.prepare(`
+      candidates = db.prepare(`
         SELECT * FROM tasks
         WHERE outcome_id = ? AND status = 'pending'
         ORDER BY priority ASC, score DESC
-        LIMIT 1
-      `).get(outcomeId) as Task | undefined;
+      `).all(outcomeId) as Task[];
+    }
+
+    if (candidates.length === 0) {
+      db.exec('ROLLBACK');
+      return {
+        success: false,
+        task: null,
+        reason: 'No pending tasks available',
+      };
+    }
+
+    // Find first task with satisfied skill dependencies
+    let task: Task | undefined;
+    for (const candidate of candidates) {
+      if (!candidate.required_skills) {
+        // No skill requirements, can claim
+        task = candidate;
+        break;
+      }
+
+      // Check skill dependencies
+      const deps = checkTaskSkillDependencies(candidate.id);
+      if (deps.satisfied) {
+        task = candidate;
+        break;
+      }
+      // Otherwise, skip this task and try the next one
     }
 
     if (!task) {
@@ -337,7 +368,7 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
       return {
         success: false,
         task: null,
-        reason: 'No pending tasks available',
+        reason: 'No tasks with satisfied skill dependencies available',
       };
     }
 
@@ -633,4 +664,73 @@ export function getTaskStats(outcomeId: string): TaskStats {
   `).get(outcomeId) as TaskStats;
 
   return row;
+}
+
+// ============================================================================
+// Skill Dependency Checking
+// ============================================================================
+
+export interface SkillDependencyResult {
+  satisfied: boolean;
+  missingSkills: string[];
+  availableSkills: string[];
+}
+
+/**
+ * Check if a task's required skills are available in the database
+ */
+export function checkTaskSkillDependencies(taskId: string): SkillDependencyResult {
+  const task = getTaskById(taskId);
+  if (!task || !task.required_skills) {
+    return { satisfied: true, missingSkills: [], availableSkills: [] };
+  }
+
+  // Import dynamically to avoid circular dependency
+  const { getSkillByName } = require('./skills');
+
+  try {
+    const requiredSkills = JSON.parse(task.required_skills) as string[];
+    if (!Array.isArray(requiredSkills) || requiredSkills.length === 0) {
+      return { satisfied: true, missingSkills: [], availableSkills: [] };
+    }
+
+    const missingSkills: string[] = [];
+    const availableSkills: string[] = [];
+
+    for (const skillName of requiredSkills) {
+      const skill = getSkillByName(skillName);
+      if (skill) {
+        availableSkills.push(skillName);
+      } else {
+        missingSkills.push(skillName);
+      }
+    }
+
+    return {
+      satisfied: missingSkills.length === 0,
+      missingSkills,
+      availableSkills,
+    };
+  } catch {
+    return { satisfied: true, missingSkills: [], availableSkills: [] };
+  }
+}
+
+/**
+ * Get all tasks with unsatisfied skill dependencies for an outcome
+ */
+export function getTasksWithMissingSkills(outcomeId: string): { task: Task; missingSkills: string[] }[] {
+  const tasks = getTasksByOutcome(outcomeId);
+  const result: { task: Task; missingSkills: string[] }[] = [];
+
+  for (const task of tasks) {
+    if (task.required_skills && task.status === 'pending') {
+      const deps = checkTaskSkillDependencies(task.id);
+      if (!deps.satisfied) {
+        result.push({ task, missingSkills: deps.missingSkills });
+      }
+    }
+  }
+
+  return result;
 }

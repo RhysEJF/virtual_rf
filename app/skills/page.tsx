@@ -6,6 +6,14 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Ca
 import { Button } from '@/app/components/ui/Button';
 import { Badge } from '@/app/components/ui/Badge';
 import { useToast } from '@/app/hooks/useToast';
+import { SkillDetailModal } from '@/app/components/SkillDetailModal';
+
+interface SkillKeyStatus {
+  allMet: boolean;
+  missing: string[];
+  configured: string[];
+  requiredKeys: string[];
+}
 
 interface Skill {
   id: string;
@@ -17,6 +25,7 @@ interface Skill {
   avg_cost: number | null;
   created_at: number;
   updated_at: number;
+  keyStatus?: SkillKeyStatus;
 }
 
 interface OutcomeSkill {
@@ -27,6 +36,7 @@ interface OutcomeSkill {
   triggers: string[];
   description?: string;
   path: string;
+  keyStatus?: SkillKeyStatus;
 }
 
 interface SkillStats {
@@ -55,6 +65,7 @@ export default function SkillsLibraryPage(): JSX.Element {
   const [loadingContent, setLoadingContent] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
   const [activeTab, setActiveTab] = useState<'global' | 'outcome'>('global');
+  const [showModal, setShowModal] = useState(false);
 
   // Create skill form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -65,7 +76,7 @@ export default function SkillsLibraryPage(): JSX.Element {
 
   const fetchSkills = useCallback(async () => {
     try {
-      const response = await fetch('/api/skills?groupBy=category');
+      const response = await fetch('/api/skills?groupBy=category&includeKeyStatus=true');
       const data = await response.json();
       setSkills(data.skills || {});
 
@@ -135,11 +146,16 @@ export default function SkillsLibraryPage(): JSX.Element {
     setSelectedOutcomeSkill(null);
     setLoadingContent(true);
     setSkillContent(null);
+    setShowModal(true);
 
     try {
-      const response = await fetch(`/api/skills/${skill.id}`);
+      const response = await fetch(`/api/skills/${skill.id}?includeKeyStatus=true`);
       const data = await response.json();
       setSkillContent(data.content || 'No content available');
+      // Update skill with key status from API if available
+      if (data.skill?.keyStatus) {
+        setSelectedSkill({ ...skill, keyStatus: data.skill.keyStatus });
+      }
     } catch (error) {
       console.error('Failed to fetch skill content:', error);
       setSkillContent('Failed to load content');
@@ -153,11 +169,16 @@ export default function SkillsLibraryPage(): JSX.Element {
     setSelectedSkill(null);
     setLoadingContent(true);
     setSkillContent(null);
+    setShowModal(true);
 
     try {
-      const response = await fetch(`/api/skills/outcome/${skill.id}`);
+      const response = await fetch(`/api/skills/outcome/${skill.id}?includeKeyStatus=true`);
       const data = await response.json();
       setSkillContent(data.content || 'No content available');
+      // Update with key status if available
+      if (data.keyStatus) {
+        setSelectedOutcomeSkill({ ...skill, keyStatus: data.keyStatus } as OutcomeSkill & { keyStatus: SkillKeyStatus });
+      }
     } catch (error) {
       console.error('Failed to fetch outcome skill content:', error);
       setSkillContent('Failed to load content');
@@ -377,40 +398,48 @@ export default function SkillsLibraryPage(): JSX.Element {
                     {category}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {skills[category].map((skill) => (
-                      <Card
-                        key={skill.id}
-                        padding="sm"
-                        hover
-                        onClick={() => fetchSkillContent(skill)}
-                        className={`cursor-pointer transition-colors ${
-                          selectedSkill?.id === skill.id ? 'border-accent' : ''
-                        }`}
-                      >
-                        <CardContent>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-text-primary font-medium">{skill.name}</span>
-                              </div>
-                              {skill.description && (
-                                <p className="text-text-tertiary text-sm mt-1 truncate">
-                                  {skill.description}
-                                </p>
-                              )}
-                              <div className="flex items-center gap-2 mt-2">
-                                {skill.usage_count > 0 && (
-                                  <span className="text-text-tertiary text-xs">
-                                    {skill.usage_count} uses
-                                  </span>
+                    {skills[category].map((skill) => {
+                      const hasMissingKeys = skill.keyStatus && !skill.keyStatus.allMet;
+                      return (
+                        <Card
+                          key={skill.id}
+                          padding="sm"
+                          hover
+                          onClick={() => fetchSkillContent(skill)}
+                          className={`cursor-pointer transition-colors ${
+                            selectedSkill?.id === skill.id ? 'border-accent' : ''
+                          }`}
+                        >
+                          <CardContent>
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-text-primary font-medium">{skill.name}</span>
+                                  {hasMissingKeys && (
+                                    <Badge variant="warning" className="text-[10px]">Keys Missing</Badge>
+                                  )}
+                                </div>
+                                {skill.description && (
+                                  <p className="text-text-tertiary text-sm mt-1 truncate">
+                                    {skill.description}
+                                  </p>
                                 )}
-                                <Badge variant="success" className="text-[10px]">Ready</Badge>
+                                <div className="flex items-center gap-2 mt-2">
+                                  {skill.usage_count > 0 && (
+                                    <span className="text-text-tertiary text-xs">
+                                      {skill.usage_count} uses
+                                    </span>
+                                  )}
+                                  {!hasMissingKeys && (
+                                    <Badge variant="success" className="text-[10px]">Ready</Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </div>
               ))
@@ -563,6 +592,21 @@ export default function SkillsLibraryPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* Skill Detail Modal */}
+      {showModal && (selectedSkill || selectedOutcomeSkill) && (
+        <SkillDetailModal
+          skill={selectedSkill || selectedOutcomeSkill!}
+          content={skillContent}
+          loading={loadingContent}
+          onClose={() => {
+            setShowModal(false);
+            setSelectedSkill(null);
+            setSelectedOutcomeSkill(null);
+            setSkillContent(null);
+          }}
+        />
+      )}
 
       {/* API Keys Notice */}
       {apiKeyStatus && apiKeyStatus.missing.length > 0 && (

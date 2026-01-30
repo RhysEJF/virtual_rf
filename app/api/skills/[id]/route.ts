@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSkillById } from '@/lib/db/skills';
+import { getSkillById, checkSkillRequirements } from '@/lib/db/skills';
 import { getSkillContent } from '@/lib/agents/skill-manager';
 
 export async function GET(
@@ -14,6 +14,8 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const includeKeyStatus = searchParams.get('includeKeyStatus') === 'true';
 
     const skill = getSkillById(id);
     if (!skill) {
@@ -25,8 +27,30 @@ export async function GET(
 
     const content = getSkillContent(id);
 
+    // Parse requires field to get required keys
+    let requiredKeys: string[] = [];
+    if (skill.requires) {
+      try {
+        requiredKeys = JSON.parse(skill.requires);
+      } catch {
+        // Invalid JSON
+      }
+    }
+
+    // Optionally include key status
+    let keyStatus = null;
+    if (includeKeyStatus) {
+      const requirements = checkSkillRequirements(id);
+      keyStatus = {
+        allMet: requirements.allMet,
+        missing: requirements.missing,
+        configured: requirements.configured,
+        requiredKeys,
+      };
+    }
+
     return NextResponse.json({
-      skill,
+      skill: keyStatus ? { ...skill, keyStatus } : skill,
       content,
     });
   } catch (error) {

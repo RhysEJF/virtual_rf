@@ -36,8 +36,18 @@ export type SuggestionType = 'skill' | 'automation' | 'process';
 export type SuggestionStatus = 'pending' | 'accepted' | 'dismissed';
 
 // Supervisor alert types
-export type SupervisorAlertType = 'stuck' | 'no_progress' | 'repeated_errors' | 'high_cost';
-export type SupervisorAlertSeverity = 'warning' | 'critical';
+export type SupervisorAlertType =
+  | 'stuck'
+  | 'no_progress'
+  | 'repeated_errors'
+  | 'high_cost'
+  | 'suspicious_behavior'
+  | 'worker_paused'
+  | 'scope_violation'
+  | 'env_access'
+  | 'mass_deletion'
+  | 'system_file_access';
+export type SupervisorAlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 
 // Git workflow modes for outcomes
@@ -46,6 +56,10 @@ export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 // ============================================================================
 // Core Entities
 // ============================================================================
+
+// Supervisor settings for AI safety/observability
+export type PauseSensitivity = 'low' | 'medium' | 'high';
+export type CoTReviewFrequency = 'every_task' | 'every_5_min' | 'on_patterns_only';
 
 export interface Outcome {
   id: string;
@@ -66,6 +80,10 @@ export interface Outcome {
   work_branch: string | null;       // e.g., 'outcome/my-feature' - working branch
   auto_commit: boolean;             // Auto-commit after successful task completion
   create_pr_on_complete: boolean;   // Create PR when outcome achieved
+  // Supervisor settings
+  supervisor_enabled: boolean;      // Should supervisor monitor this outcome
+  pause_sensitivity: PauseSensitivity;  // How aggressive auto-pause should be
+  cot_review_frequency: CoTReviewFrequency; // How often to run AI review
 }
 
 export interface DesignDoc {
@@ -113,6 +131,8 @@ export interface Task {
   // For skill-first orchestration
   phase: TaskPhase;                 // 'infrastructure' | 'execution'
   infra_type: InfraType | null;     // 'skill' | 'tool' | 'config' | null
+  // Skill dependencies
+  required_skills: string | null;   // JSON array of skill names this task requires
 }
 
 export interface Worker {
@@ -171,6 +191,7 @@ export interface Skill {
   description: string | null;
   path: string;
   triggers: string | null;          // JSON array of trigger phrases
+  requires: string | null;          // JSON array of required API key names
   usage_count: number;
   avg_cost: number | null;
   created_at: number;
@@ -324,6 +345,55 @@ export interface OutcomeWithRelations extends Outcome {
 }
 
 // ============================================================================
+// Supervisor Types (AI Safety & Observability)
+// ============================================================================
+
+export type PatternSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type SupervisorAction = 'log' | 'alert' | 'pause';
+export type BehaviorRecommendation = 'continue' | 'review' | 'pause';
+
+export interface ChangeSnapshot {
+  id: string;
+  worker_id: string;
+  outcome_id: string;
+  task_id: string | null;
+  timestamp: number;
+  files_created: string[];      // JSON in DB
+  files_modified: string[];     // JSON in DB
+  files_deleted: string[];      // JSON in DB
+  git_commits: string[];        // JSON in DB - commit hashes
+  git_diff_summary: string | null;
+  pre_snapshot: string | null;  // JSON in DB - path -> content before (for rollback)
+}
+
+export interface BehaviorReview {
+  id: string;
+  worker_id: string;
+  outcome_id: string;
+  snapshot_id: string;
+  timestamp: number;
+  alignment_score: number;      // 0-100
+  concerns: string[];           // JSON in DB
+  deception_indicators: string[]; // JSON in DB
+  recommendation: BehaviorRecommendation;
+  reasoning: string;
+  action_taken: SupervisorAction | null;
+}
+
+export interface PatternDetection {
+  id: string;
+  worker_id: string;
+  outcome_id: string;
+  pattern_id: string;
+  pattern_name: string;
+  timestamp: number;
+  severity: PatternSeverity;
+  details: string;
+  files_involved: string[];     // JSON in DB
+  action_taken: SupervisorAction | null;
+}
+
+// ============================================================================
 // SQL Schema
 // ============================================================================
 
@@ -400,6 +470,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   review_cycle INTEGER,
   phase TEXT NOT NULL DEFAULT 'execution',
   infra_type TEXT,
+  required_skills TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
 );
@@ -484,6 +555,7 @@ CREATE TABLE IF NOT EXISTS skills (
   description TEXT,
   path TEXT NOT NULL,
   triggers TEXT,
+  requires TEXT,
   usage_count INTEGER DEFAULT 0,
   avg_cost REAL,
   created_at INTEGER NOT NULL,
@@ -646,6 +718,76 @@ CREATE INDEX IF NOT EXISTS idx_supervisor_alerts_active ON supervisor_alerts(sta
 CREATE INDEX IF NOT EXISTS idx_merge_queue_outcome ON merge_queue(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_merge_queue_status ON merge_queue(status);
 CREATE INDEX IF NOT EXISTS idx_merge_queue_pending ON merge_queue(outcome_id, status) WHERE status = 'pending';
+
+-- ============================================================================
+-- Supervisor Tables (AI Safety & Observability)
+-- ============================================================================
+
+-- Change snapshots: Track all file changes for audit and rollback
+CREATE TABLE IF NOT EXISTS change_snapshots (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  task_id TEXT,
+  timestamp INTEGER NOT NULL,
+  files_created TEXT,          -- JSON array
+  files_modified TEXT,         -- JSON array
+  files_deleted TEXT,          -- JSON array
+  git_commits TEXT,            -- JSON array of commit hashes
+  git_diff_summary TEXT,
+  pre_snapshot TEXT,           -- JSON: path -> content before (for rollback)
+  FOREIGN KEY (worker_id) REFERENCES workers(id),
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
+);
+
+-- Behavior reviews: AI analysis of worker behavior
+CREATE TABLE IF NOT EXISTS behavior_reviews (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  snapshot_id TEXT,
+  timestamp INTEGER NOT NULL,
+  alignment_score INTEGER,     -- 0-100
+  concerns TEXT,               -- JSON array
+  deception_indicators TEXT,   -- JSON array
+  recommendation TEXT,         -- 'continue' | 'review' | 'pause'
+  reasoning TEXT,
+  action_taken TEXT,
+  FOREIGN KEY (worker_id) REFERENCES workers(id),
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id),
+  FOREIGN KEY (snapshot_id) REFERENCES change_snapshots(id)
+);
+
+-- Pattern detections: Rule-based suspicious behavior detection
+CREATE TABLE IF NOT EXISTS pattern_detections (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  pattern_id TEXT NOT NULL,
+  pattern_name TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  severity TEXT NOT NULL,      -- 'low' | 'medium' | 'high' | 'critical'
+  details TEXT,
+  files_involved TEXT,         -- JSON array
+  action_taken TEXT,
+  FOREIGN KEY (worker_id) REFERENCES workers(id),
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
+);
+
+-- Indexes for supervisor tables
+CREATE INDEX IF NOT EXISTS idx_change_snapshots_worker ON change_snapshots(worker_id);
+CREATE INDEX IF NOT EXISTS idx_change_snapshots_outcome ON change_snapshots(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_change_snapshots_time ON change_snapshots(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_behavior_reviews_worker ON behavior_reviews(worker_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_reviews_outcome ON behavior_reviews(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_reviews_time ON behavior_reviews(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_behavior_reviews_recommendation ON behavior_reviews(recommendation);
+
+CREATE INDEX IF NOT EXISTS idx_pattern_detections_worker ON pattern_detections(worker_id);
+CREATE INDEX IF NOT EXISTS idx_pattern_detections_outcome ON pattern_detections(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_pattern_detections_severity ON pattern_detections(severity);
+CREATE INDEX IF NOT EXISTS idx_pattern_detections_time ON pattern_detections(timestamp DESC);
 `;
 
 // ============================================================================

@@ -104,25 +104,59 @@ export default function SkillsLibraryPage(): JSX.Element {
     }
   }, []);
 
-  const fetchApiKeyStatus = useCallback(async () => {
-    try {
-      const response = await fetch('/api/env-keys');
-      const data = await response.json();
-      const keys = data.keys || [];
-      const configured = keys.filter((k: { isSet: boolean }) => k.isSet).length;
-      const missingKeys = keys.filter((k: { isSet: boolean }) => !k.isSet);
-      const missing = missingKeys.map((k: { label: string }) => k.label);
-      const missingKeyNames = missingKeys.map((k: { name: string }) => k.name);
-      setApiKeyStatus({
-        configured,
-        total: keys.length,
-        missing,
-        missingKeyNames,
-      });
-    } catch (error) {
-      console.error('Failed to fetch API key status:', error);
+  // Calculate which API keys are actually needed by skills
+  const computeApiKeyStatus = useCallback(async () => {
+    // Collect all missing keys from skills that actually require them
+    const allSkillsFlat = Object.values(skills).flat();
+    const missingLabels = new Set<string>();
+    const requiredKeyNames = new Set<string>();
+
+    for (const skill of allSkillsFlat) {
+      if (skill.keyStatus && !skill.keyStatus.allMet) {
+        for (const missingLabel of skill.keyStatus.missing) {
+          missingLabels.add(missingLabel);
+        }
+        // Collect the required key names (actual env var names)
+        for (const keyName of skill.keyStatus.requiredKeys) {
+          requiredKeyNames.add(keyName);
+        }
+      }
     }
-  }, []);
+
+    // If there are skills with missing keys, fetch the env-keys to get proper mapping
+    if (missingLabels.size > 0) {
+      try {
+        const response = await fetch('/api/env-keys');
+        const data = await response.json();
+        const keys = data.keys || [];
+
+        // Find the key names for the missing labels
+        const missingKeyNames: string[] = [];
+        for (const key of keys) {
+          if (!key.isSet && requiredKeyNames.has(key.name)) {
+            missingKeyNames.push(key.name);
+          }
+        }
+
+        setApiKeyStatus({
+          configured: 0,
+          total: missingLabels.size,
+          missing: Array.from(missingLabels),
+          missingKeyNames,
+        });
+      } catch (error) {
+        console.error('Failed to fetch env keys:', error);
+        setApiKeyStatus({
+          configured: 0,
+          total: missingLabels.size,
+          missing: Array.from(missingLabels),
+          missingKeyNames: Array.from(requiredKeyNames),
+        });
+      }
+    } else {
+      setApiKeyStatus(null);
+    }
+  }, [skills]);
 
   const syncSkills = async () => {
     setSyncing(true);
@@ -230,8 +264,12 @@ export default function SkillsLibraryPage(): JSX.Element {
   useEffect(() => {
     fetchSkills();
     fetchOutcomeSkills();
-    fetchApiKeyStatus();
-  }, [fetchSkills, fetchOutcomeSkills, fetchApiKeyStatus]);
+  }, [fetchSkills, fetchOutcomeSkills]);
+
+  // Recompute API key status when skills change
+  useEffect(() => {
+    computeApiKeyStatus();
+  }, [computeApiKeyStatus]);
 
   const categories = Object.keys(skills).sort();
   const outcomeNames = Object.keys(outcomeSkills).sort();

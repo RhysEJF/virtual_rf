@@ -94,12 +94,18 @@ export default function Dashboard(): JSX.Element {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, newMode);
   };
 
-  // Fetch skills count
+  // Fetch skills count (global + outcome skills)
   const fetchSkillsCount = useCallback(async () => {
     try {
-      const response = await fetch('/api/skills');
-      const data = await response.json();
-      setSkillsCount(data.total || 0);
+      const [globalResponse, outcomeResponse] = await Promise.all([
+        fetch('/api/skills'),
+        fetch('/api/skills/outcome'),
+      ]);
+      const globalData = await globalResponse.json();
+      const outcomeData = await outcomeResponse.json();
+      const globalCount = globalData.total || 0;
+      const outcomeCount = outcomeData.total || 0;
+      setSkillsCount(globalCount + outcomeCount);
     } catch (error) {
       console.error('Failed to fetch skills count:', error);
     }

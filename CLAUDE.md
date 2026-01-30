@@ -23,17 +23,41 @@ See `VISION.md` for the complete vision document.
 virtual_rf/
 ├── app/                    # Next.js App Router
 │   ├── page.tsx           # Dashboard
-│   ├── project/[id]/      # Project detail view
-│   ├── worker/[id]/       # Worker drill-down
-│   ├── skills/            # Skills library
+│   ├── outcome/[id]/      # Outcome detail & management
+│   ├── worker/[id]/       # Worker drill-down & logs
+│   ├── skills/            # Skills library (global + outcome)
+│   ├── components/        # React components
+│   │   ├── ui/            # Base UI components (Card, Badge, Button, etc.)
+│   │   ├── SkillsSection.tsx
+│   │   ├── IterateSection.tsx
+│   │   ├── OutputsSection.tsx
+│   │   ├── ProgressView.tsx
+│   │   └── ...
 │   └── api/               # API routes
+│       ├── outcomes/      # Outcome CRUD & actions
+│       ├── workers/       # Worker management
+│       ├── skills/        # Skills APIs (global + outcome)
+│       └── dispatch/      # Request dispatcher
 ├── lib/
 │   ├── agents/            # AI agent implementations
+│   │   ├── dispatcher.ts
+│   │   ├── briefer.ts
+│   │   ├── orchestrator.ts
+│   │   ├── infrastructure-planner.ts
+│   │   ├── skill-builder.ts
+│   │   ├── tool-builder.ts
+│   │   └── reviewer.ts
 │   ├── ralph/             # Ralph worker system
-│   ├── db/                # Database layer
-│   ├── claude/            # Claude API client
+│   ├── db/                # Database layer (SQLite)
+│   ├── claude/            # Claude CLI client
+│   ├── workspace/         # Workspace utilities
 │   └── utils/             # Utilities
-├── skills/                # Skill library (SKILL.md files)
+├── skills/                # Global skill library (markdown files)
+├── workspaces/            # Outcome workspaces (created at runtime)
+│   └── out_{id}/          # Each outcome gets a workspace
+│       ├── skills/        # Outcome-specific skills
+│       ├── tools/         # Outcome-specific tools
+│       └── task_{id}/     # Task working directories
 ├── data/                  # SQLite database
 ├── VISION.md              # System vision document
 └── CLAUDE.md              # This file
@@ -123,35 +147,58 @@ Examples:
 
 ## Key Concepts
 
-### Dispatcher
-Routes messy human input to appropriate handlers:
-- Quick tasks → Quick Executor (immediate response)
-- Research → Research Agent
-- Deep work → Briefer → Orchestrator → Ralph Workers
+### Outcomes
+The core unit of work. An outcome represents something the user wants to achieve:
+- Has an **intent** (what) - structured PRD with items and success criteria
+- Has an **approach** (how) - design doc describing implementation
+- Contains **tasks** generated from the intent
+- Can have **workers** executing tasks
+- Tracks **infrastructure_ready** status (0=needed, 1=building, 2=ready)
+
+### Two-Phase Orchestration
+Work happens in two phases:
+1. **Infrastructure Phase**: Build skills and tools the workers will need
+2. **Execution Phase**: Workers use the skills/tools to complete actual tasks
 
 ### Ralph Worker
 Autonomous development loop that:
-1. Reads PRD and progress.txt
-2. Implements one feature at a time
-3. Runs verification (typecheck, test, lint)
-4. Commits and updates progress
-5. Repeats until completion
+1. Claims a pending task from the outcome
+2. Creates workspace with CLAUDE.md instructions
+3. Spawns `claude --dangerously-skip-permissions` process
+4. Monitors progress.txt for completion signal
+5. Records full output for auditing
+6. Repeats until no pending tasks or paused
 
-### Skills
-Markdown files + optional tools that teach the AI specific capabilities.
-Located in `skills/` directory.
+PID is tracked in database for reliable pause/stop.
 
-### Supervisor
-AI agent that watches workers, detects stuck states, escalates blockers.
+### Skills (Two Types)
+1. **Global Skills** (`/skills/`): Shared across all outcomes, DB-tracked
+2. **Outcome Skills** (`/workspaces/{id}/skills/`): Built during infrastructure phase, specific to that outcome
+
+Skills are markdown files with instructions that get injected into worker context.
+
+### Review Cycles
+After workers complete, the Reviewer agent:
+1. Checks if success criteria are met
+2. Creates new tasks for any issues found
+3. Tracks convergence (consecutive clean reviews)
+
+### Iterate
+Users can request changes after completion via the Iterate section:
+- Describe bugs or desired changes
+- System converts feedback to tasks via Claude
+- Optionally auto-starts a worker
 
 ## Database Tables
 
-- `projects` - Active projects with briefs and PRDs
-- `workers` - Ralph worker instances
-- `skills` - Registered skills from skills/ directory
-- `cost_log` - API cost tracking
-- `bottleneck_log` - Human intervention tracking
-- `improvement_suggestions` - System-generated improvements
+- `outcomes` - Outcomes with intent, design_doc, git config, infrastructure status
+- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed)
+- `workers` - Ralph worker instances with PID tracking
+- `progress_entries` - Episodic memory of worker iterations (full_output capture)
+- `review_cycles` - Review history with issues found and convergence tracking
+- `skills` - Registered global skills from skills/ directory
+- `interventions` - Human instructions sent to workers
+- `alerts` - System alerts for stuck workers, failures, etc.
 
 ## Requirements
 
@@ -183,48 +230,82 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-01-29)
+## Current Progress (Updated 2026-01-30)
 
-### Completed (MVP Working)
+### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
 - [x] Database schema and CRUD operations (SQLite)
 - [x] UI shell: Dashboard, CommandBar, SystemStatus, ThemeToggle
 - [x] Light/dark theme with earthy green-beige colors
-- [x] Claude CLI wrapper (`lib/claude/client.ts`) - uses `claude -p` for non-interactive calls
-- [x] Dispatcher agent - classifies requests as quick/research/deep/clarification
-- [x] Quick executor - handles simple one-shot questions
-- [x] Briefer agent - generates PRD from "deep" requests
-- [x] Ralph Worker - spawns autonomous `claude --dangerously-skip-permissions` processes
-- [x] Auto-start worker when project is created
+- [x] Claude CLI wrapper (`lib/claude/client.ts`)
+
+### Outcome Management (Complete)
+- [x] Outcome-based architecture (replaced "projects" with "outcomes")
+- [x] Outcome detail page (`/outcome/[id]`) with full management UI
+- [x] Intent optimization - ramble box → structured PRD via Claude
+- [x] Approach optimization - ramble box → design doc via Claude
+- [x] Task generation from intent
+- [x] Git integration configuration (workspace, branches, auto-commit, PR creation)
+
+### Worker System (Complete)
+- [x] Ralph Worker - autonomous Claude CLI processes
+- [x] Worker drill-down page (`/worker/[id]`) with log viewer
+- [x] PID tracking for proper pause/stop (kills actual processes)
+- [x] Progress tracking with episodic memory (ProgressView component)
+- [x] Intervention system - send instructions to running workers
+- [x] Full output capture for iteration auditing
+
+### Two-Phase Orchestration (Complete)
+- [x] Infrastructure phase → Execution phase workflow
+- [x] Infrastructure planner (`lib/agents/infrastructure-planner.ts`)
+- [x] Skill builder - creates markdown skill files in workspaces
+- [x] Tool builder - creates TypeScript CLI tools in workspaces
+- [x] Automatic phase transition when infrastructure ready
+
+### Skills System (Complete)
+- [x] Global skills library (`/skills` directory, DB-tracked)
+- [x] Outcome-specific skills (`workspaces/{outcomeId}/skills/`)
+- [x] Skills Library page (`/skills`) with Global/Outcome tabs
+- [x] SkillsSection component on outcome detail page
+- [x] Skill content viewer with click-to-expand
+
+### Review & Iteration (Complete)
+- [x] Review cycle system with convergence tracking
+- [x] Reviewer agent creates tasks from issues found
+- [x] Iterate feature - post-completion feedback form
+- [x] Feedback → tasks via Claude parsing
+- [x] Auto-restart workers after iteration feedback
+
+### Output Detection (Complete)
+- [x] OutputsSection component - auto-detects deliverables
+- [x] Finds HTML, images, PDFs, etc. in workspaces
+- [x] Quick preview/open for completed work
 
 ### Working Flow
 1. User submits request via CommandBar
-2. Dispatcher classifies it using Claude CLI
-3. If "deep" → Briefer creates PRD → Ralph Worker spawns
-4. Worker creates workspace in `workspaces/{project-id}/`
-5. Worker writes CLAUDE.md and progress.txt, then works autonomously
+2. Dispatcher classifies it → creates Outcome with intent
+3. System generates tasks from intent
+4. **Infrastructure Phase**: Build skills/tools needed for the work
+5. **Execution Phase**: Ralph Workers claim and complete tasks
+6. **Review Phase**: Reviewer checks work, creates fix tasks if needed
+7. **Iterate**: User can request changes even after completion
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
-- [ ] Project detail page (`/project/[id]`)
-- [ ] Worker drill-down page (`/worker/[id]`)
-- [ ] SSE for live progress updates to UI
 - [ ] Supervisor agent (watches workers for stuck states)
-- [ ] Skill Manager (loads skills from `skills/` directory)
 - [ ] Self-Improvement Engine (logs bottlenecks, suggests improvements)
 - [ ] Telegram bridge
-
-### Known Issues
-- CLI spawns can be slow (30-60s first call)
-- Timeouts set to 2-3 minutes to accommodate
-- Worker output can corrupt terminal display (fixed by restarting Cursor)
+- [ ] SSE for live progress updates (currently polls every 5s)
 
 ### Key Files to Understand
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
-- `lib/agents/dispatcher.ts` - Request classification
-- `lib/agents/briefer.ts` - PRD generation
-- `lib/ralph/worker.ts` - Autonomous worker spawning
-- `app/api/dispatch/route.ts` - Main API endpoint
+- `lib/ralph/worker.ts` - Autonomous worker spawning with PID tracking
+- `lib/agents/orchestrator.ts` - Two-phase orchestration controller
+- `lib/agents/infrastructure-planner.ts` - Analyzes outcomes, plans skills/tools
+- `lib/agents/skill-builder.ts` - Builds markdown skills
+- `lib/agents/reviewer.ts` - Reviews completed work, finds issues
+- `app/outcome/[id]/page.tsx` - Main outcome management UI
+- `app/api/outcomes/[id]/iterate/route.ts` - Post-completion feedback
 
 ## Agent Notes
 

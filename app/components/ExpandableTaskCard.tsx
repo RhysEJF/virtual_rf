@@ -20,62 +20,77 @@ const statusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'su
 
 export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const [ramble, setRamble] = useState('');
-  const [optimizing, setOptimizing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [taskIntent, setTaskIntent] = useState(task.task_intent || '');
+  const [taskApproach, setTaskApproach] = useState(task.task_approach || '');
+  const [optimizingIntent, setOptimizingIntent] = useState(false);
+  const [optimizingApproach, setOptimizingApproach] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   const status = statusConfig[task.status];
   const hasContext = Boolean(task.task_intent || task.task_approach);
 
-  const handleOptimize = async () => {
-    if (!ramble.trim()) return;
-
-    setOptimizing(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/tasks/${task.id}/optimize-context`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ramble }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to optimize');
-      }
-
-      setRamble('');
-      if (data.task && onUpdate) {
-        onUpdate(data.task);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to optimize context');
-    } finally {
-      setOptimizing(false);
-    }
+  // Track changes
+  const handleIntentChange = (value: string) => {
+    setTaskIntent(value);
+    setHasChanges(value !== (task.task_intent || '') || taskApproach !== (task.task_approach || ''));
   };
 
-  const handleDirectEdit = async (field: 'task_intent' | 'task_approach', value: string) => {
+  const handleApproachChange = (value: string) => {
+    setTaskApproach(value);
+    setHasChanges(taskIntent !== (task.task_intent || '') || value !== (task.task_approach || ''));
+  };
+
+  // Save changes
+  const handleSave = async () => {
+    setSaving(true);
     try {
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value || null }),
+        body: JSON.stringify({
+          task_intent: taskIntent || null,
+          task_approach: taskApproach || null,
+        }),
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update');
-      }
-
-      if (data.task && onUpdate) {
+      if (response.ok && data.task && onUpdate) {
         onUpdate(data.task);
+        setHasChanges(false);
       }
     } catch (err) {
-      console.error('Failed to update task:', err);
+      console.error('Failed to save:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Optimize a specific field
+  const handleOptimize = async (field: 'intent' | 'approach') => {
+    const content = field === 'intent' ? taskIntent : taskApproach;
+    if (!content.trim()) return;
+
+    const setOptimizing = field === 'intent' ? setOptimizingIntent : setOptimizingApproach;
+    const setValue = field === 'intent' ? setTaskIntent : setTaskApproach;
+
+    setOptimizing(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/optimize-field`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, content }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.optimized) {
+        setValue(data.optimized);
+        setHasChanges(true);
+      }
+    } catch (err) {
+      console.error('Failed to optimize:', err);
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -137,93 +152,79 @@ export function ExpandableTaskCard({ task, onUpdate }: ExpandableTaskCardProps):
             </div>
           )}
 
-          {/* Task Intent (What) */}
+          {/* Task Intent (What) - Editable */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs text-text-tertiary uppercase tracking-wide">
                 What (Task Intent)
               </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleOptimize('intent')}
+                disabled={optimizingIntent || !taskIntent.trim()}
+                className="text-xs h-6 px-2"
+              >
+                {optimizingIntent ? 'Optimizing...' : 'Optimize'}
+              </Button>
             </div>
-            {task.task_intent ? (
-              <div className="p-3 bg-bg-primary rounded-lg border border-border">
-                <p className="text-text-secondary text-sm whitespace-pre-wrap">
-                  {task.task_intent}
-                </p>
-                <button
-                  className="text-xs text-text-tertiary hover:text-text-secondary mt-2"
-                  onClick={() => {
-                    const newValue = prompt('Edit task intent:', task.task_intent || '');
-                    if (newValue !== null) {
-                      handleDirectEdit('task_intent', newValue);
-                    }
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-            ) : (
-              <p className="text-text-tertiary text-sm italic">
-                No intent specified. Add context below.
-              </p>
-            )}
+            <textarea
+              value={taskIntent}
+              onChange={(e) => handleIntentChange(e.target.value)}
+              placeholder="What should this task achieve? What are the requirements?"
+              className="w-full h-20 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+            />
           </div>
 
-          {/* Task Approach (How) */}
+          {/* Task Approach (How) - Editable */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs text-text-tertiary uppercase tracking-wide">
                 How (Task Approach)
               </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleOptimize('approach')}
+                disabled={optimizingApproach || !taskApproach.trim()}
+                className="text-xs h-6 px-2"
+              >
+                {optimizingApproach ? 'Optimizing...' : 'Optimize'}
+              </Button>
             </div>
-            {task.task_approach ? (
-              <div className="p-3 bg-bg-primary rounded-lg border border-border">
-                <p className="text-text-secondary text-sm whitespace-pre-wrap">
-                  {task.task_approach}
-                </p>
-                <button
-                  className="text-xs text-text-tertiary hover:text-text-secondary mt-2"
-                  onClick={() => {
-                    const newValue = prompt('Edit task approach:', task.task_approach || '');
-                    if (newValue !== null) {
-                      handleDirectEdit('task_approach', newValue);
-                    }
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-            ) : (
-              <p className="text-text-tertiary text-sm italic">
-                No approach specified. Add context below.
-              </p>
-            )}
+            <textarea
+              value={taskApproach}
+              onChange={(e) => handleApproachChange(e.target.value)}
+              placeholder="How should this be done? What tools, patterns, or constraints?"
+              className="w-full h-20 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+            />
           </div>
 
-          {/* Ramble Box */}
-          <div className="border-t border-border pt-4">
-            <textarea
-              value={ramble}
-              onChange={(e) => setRamble(e.target.value)}
-              placeholder="Add context to this task... What should it achieve? How should it be done?"
-              className="w-full h-24 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
-            />
-            {error && (
-              <p className="text-status-error text-xs mt-1">{error}</p>
-            )}
-            <div className="flex items-center gap-2 mt-2">
+          {/* Save button - only show if there are changes */}
+          {hasChanges && (
+            <div className="flex items-center gap-2 pt-2 border-t border-border">
               <Button
-                variant="secondary"
+                variant="primary"
                 size="sm"
-                onClick={handleOptimize}
-                disabled={optimizing || !ramble.trim()}
+                onClick={handleSave}
+                disabled={saving}
               >
-                {optimizing ? 'Optimizing...' : 'Optimize Context'}
+                {saving ? 'Saving...' : 'Save Changes'}
               </Button>
-              <span className="text-xs text-text-tertiary">
-                AI will structure your ramble into What/How
-              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setTaskIntent(task.task_intent || '');
+                  setTaskApproach(task.task_approach || '');
+                  setHasChanges(false);
+                }}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

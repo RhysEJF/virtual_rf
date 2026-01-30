@@ -164,6 +164,12 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [lastReviewResponse, setLastReviewResponse] = useState<string | null>(null);
   const [showReviewDetails, setShowReviewDetails] = useState(false);
 
+  // Add task state
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+
   // Fetch outcome data
   const fetchOutcome = useCallback(async () => {
     try {
@@ -414,6 +420,37 @@ export default function OutcomeDetailPage(): JSX.Element {
       toast({ type: 'error', message: 'Failed to save approach' });
     } finally {
       setSavingApproach(false);
+    }
+  };
+
+  // Add task handler
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim()) return;
+
+    setAddingTask(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTaskTitle.trim(),
+          description: newTaskDescription.trim() || null,
+        }),
+      });
+
+      if (response.ok) {
+        setNewTaskTitle('');
+        setNewTaskDescription('');
+        setShowAddTask(false);
+        toast({ type: 'success', message: 'Task added' });
+        fetchOutcome();
+      } else {
+        toast({ type: 'error', message: 'Failed to add task' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to add task' });
+    } finally {
+      setAddingTask(false);
     }
   };
 
@@ -844,19 +881,76 @@ export default function OutcomeDetailPage(): JSX.Element {
           <Card padding="md">
             <CardHeader>
               <CardTitle>Tasks</CardTitle>
-              <span className="text-text-tertiary text-sm">{outcome.tasks.length} total</span>
+              <div className="flex items-center gap-3">
+                <span className="text-text-tertiary text-sm">{outcome.tasks.length} total</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAddTask(!showAddTask)}
+                  className="text-xs"
+                >
+                  + Add Task
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {outcome.tasks.length === 0 ? (
+              {/* Add Task Form */}
+              {showAddTask && (
+                <div className="mb-4 p-3 border border-border rounded-lg bg-bg-tertiary">
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    placeholder="Task title..."
+                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddTask();
+                      }
+                    }}
+                  />
+                  <textarea
+                    value={newTaskDescription}
+                    onChange={(e) => setNewTaskDescription(e.target.value)}
+                    placeholder="Description (optional)..."
+                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 resize-none h-16 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleAddTask}
+                      disabled={addingTask || !newTaskTitle.trim()}
+                    >
+                      {addingTask ? 'Adding...' : 'Add'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddTask(false);
+                        setNewTaskTitle('');
+                        setNewTaskDescription('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {outcome.tasks.length === 0 && !showAddTask ? (
                 <div className="text-center py-6">
                   <p className="text-text-tertiary text-sm mb-2">No tasks yet</p>
                   <p className="text-text-tertiary text-xs">
-                    Tasks are generated from the intent. Try optimizing the intent above to create tasks.
+                    Tasks are generated from the intent, or add them manually above.
                   </p>
                 </div>
-              ) : (
+              ) : outcome.tasks.length > 0 && (
                 <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                  {outcome.tasks.map((task) => (
+                  {outcome.tasks.map((task, index) => (
                     <ExpandableTaskCard
                       key={task.id}
                       task={task}

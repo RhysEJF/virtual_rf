@@ -158,6 +158,77 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
     }
   };
 
+  // Copy single output content
+  const handleCopyOutput = async (output: DetectedOutput) => {
+    const viewAction = output.actions.find(a => a.type === 'view');
+    if (!viewAction?.endpoint) {
+      toast({ type: 'error', message: 'Cannot copy this file' });
+      return;
+    }
+
+    try {
+      const response = await fetch(viewAction.endpoint);
+      if (response.ok) {
+        const result = await response.json();
+        await navigator.clipboard.writeText(result.content);
+        toast({ type: 'success', message: `Copied: ${output.name}` });
+      } else {
+        toast({ type: 'error', message: 'Failed to copy' });
+      }
+    } catch {
+      toast({ type: 'error', message: 'Failed to copy' });
+    }
+  };
+
+  // Copy all outputs content
+  const handleCopyAll = async () => {
+    if (!data?.outputs || data.outputs.length === 0) {
+      toast({ type: 'warning', message: 'No outputs to copy' });
+      return;
+    }
+
+    const viewableOutputs = data.outputs.filter(o => o.actions.some(a => a.type === 'view'));
+    if (viewableOutputs.length === 0) {
+      toast({ type: 'warning', message: 'No viewable outputs to copy' });
+      return;
+    }
+
+    try {
+      const contents: string[] = [];
+
+      for (const output of viewableOutputs) {
+        const viewAction = output.actions.find(a => a.type === 'view');
+        if (!viewAction?.endpoint) continue;
+
+        const response = await fetch(viewAction.endpoint);
+        if (response.ok) {
+          const result = await response.json();
+          contents.push(`${'='.repeat(60)}\n${output.name} (${output.type})\n${'='.repeat(60)}\n\n${result.content}\n`);
+        }
+      }
+
+      if (contents.length > 0) {
+        await navigator.clipboard.writeText(contents.join('\n\n'));
+        toast({ type: 'success', message: `Copied ${contents.length} outputs to clipboard` });
+      } else {
+        toast({ type: 'error', message: 'Failed to copy outputs' });
+      }
+    } catch {
+      toast({ type: 'error', message: 'Failed to copy outputs' });
+    }
+  };
+
+  // Copy currently viewing file
+  const handleCopyViewing = async () => {
+    if (!viewingFile) return;
+    try {
+      await navigator.clipboard.writeText(viewingFile.content);
+      toast({ type: 'success', message: 'Copied to clipboard' });
+    } catch {
+      toast({ type: 'error', message: 'Failed to copy' });
+    }
+  };
+
   // Don't render if no outputs and workspace doesn't exist
   if (!loading && (!data || !data.workspace.exists || data.summary.total === 0)) {
     return null;
@@ -202,13 +273,24 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
             <CardTitle>Outputs</CardTitle>
             <Badge variant="default" className="text-xs">{data?.summary.total || 0}</Badge>
           </div>
-          <button
-            onClick={handleOpenFolder}
-            className="text-xs text-text-tertiary hover:text-text-secondary"
-            title="Copy workspace path"
-          >
-            [copy path]
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleCopyAll}
+              className="text-xs"
+              title="Copy all outputs to clipboard"
+            >
+              Copy All
+            </Button>
+            <button
+              onClick={handleOpenFolder}
+              className="text-xs text-text-tertiary hover:text-text-secondary"
+              title="Copy workspace path"
+            >
+              [path]
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           {/* Server Status */}
@@ -282,13 +364,23 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
                     </Button>
                   )}
                   {output.actions.find(a => a.type === 'view') && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleView(output)}
-                    >
-                      View
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopyOutput(output)}
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleView(output)}
+                      >
+                        View
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -315,12 +407,21 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
           >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="text-lg font-medium text-text-primary">{viewingFile.name}</h3>
-              <button
-                onClick={() => setViewingFile(null)}
-                className="text-text-tertiary hover:text-text-primary"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCopyViewing}
+                >
+                  Copy
+                </Button>
+                <button
+                  onClick={() => setViewingFile(null)}
+                  className="text-text-tertiary hover:text-text-primary"
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-auto p-4">
               <pre className="text-sm text-text-secondary whitespace-pre-wrap font-mono">

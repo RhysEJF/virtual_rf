@@ -21,7 +21,7 @@ export interface ActionPlan {
   warnings?: string[];
 }
 
-type CommandState = 'idle' | 'interpreting' | 'suggesting' | 'editing' | 'confirming' | 'executing';
+type CommandState = 'idle' | 'interpreting' | 'suggesting' | 'editing' | 'confirming' | 'executing' | 'error';
 
 interface OutcomeCommandBarProps {
   outcomeId: string;
@@ -43,6 +43,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
   const [editedPlan, setEditedPlan] = useState<ActionPlan | null>(null);
   const [refineInput, setRefineInput] = useState('');
   const [fromDispatcher, setFromDispatcher] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
   const initialInputProcessedRef = useRef(false);
 
   // Auto-resize textarea
@@ -74,6 +75,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
     if (!inputText.trim()) return;
 
     setState('interpreting');
+    setLastError(null);
 
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}/interpret`, {
@@ -85,16 +87,32 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
       const data = await response.json();
 
       if (data.success && data.plan) {
-        setPlan(data.plan);
-        setEditedPlan(data.plan);
-        setState('suggesting');
+        // Check if the AI was confused (no actions or only warnings)
+        const hasUsefulActions = data.plan.actions && data.plan.actions.length > 0;
+        const isConfused = data.plan.summary?.toLowerCase().includes('trouble understanding') ||
+                          data.plan.summary?.toLowerCase().includes('could you be more specific') ||
+                          data.plan.summary?.toLowerCase().includes('ambiguous');
+
+        if (isConfused || !hasUsefulActions) {
+          // AI couldn't understand - go to error state but preserve input
+          setPlan(data.plan);
+          setEditedPlan(data.plan);
+          setLastError(data.plan.summary || 'Could not interpret request');
+          setState('error');
+        } else {
+          setPlan(data.plan);
+          setEditedPlan(data.plan);
+          setState('suggesting');
+        }
       } else {
-        toast({ type: 'error', message: data.error || 'Failed to interpret request' });
-        setState('idle');
+        // API error - preserve input and show error state
+        setLastError(data.error || 'Failed to interpret request');
+        setState('error');
       }
     } catch (err) {
-      toast({ type: 'error', message: 'Failed to interpret request' });
-      setState('idle');
+      // Network error - preserve input and show error state
+      setLastError('Failed to connect. Please try again.');
+      setState('error');
     }
   };
 
@@ -169,11 +187,8 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
 
       if (data.success) {
         toast({ type: 'success', message: data.message || 'Plan executed successfully' });
-        // Reset state
-        setInput('');
-        setPlan(null);
-        setEditedPlan(null);
-        setState('idle');
+        // Full reset on success
+        handleFullReset();
         onSuccess?.();
       } else {
         toast({ type: 'error', message: data.error || 'Failed to execute plan' });
@@ -185,12 +200,25 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
     }
   };
 
+  // Cancel preserves input so user doesn't lose their ramble
   const handleCancel = () => {
+    // Keep the input! Don't clear it.
+    setPlan(null);
+    setEditedPlan(null);
+    setRefineInput('');
+    setLastError(null);
+    // Keep fromDispatcher true if we came from dispatcher so we show context
+    setState('idle');
+  };
+
+  // Full reset clears everything (use sparingly)
+  const handleFullReset = () => {
     setInput('');
     setPlan(null);
     setEditedPlan(null);
     setRefineInput('');
     setFromDispatcher(false);
+    setLastError(null);
     setState('idle');
   };
 
@@ -204,6 +232,18 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
       {/* Idle State - Input Box */}
       {state === 'idle' && (
         <div className="p-4">
+          {/* Show hint if there's preserved input from a previous attempt */}
+          {input.trim() && fromDispatcher && (
+            <div className="mb-3 p-2 bg-accent/10 border border-accent/30 rounded-lg flex items-center justify-between">
+              <p className="text-xs text-accent">Your previous request is preserved. Edit it or press Send to try again.</p>
+              <button
+                onClick={handleFullReset}
+                className="text-xs text-text-tertiary hover:text-text-secondary ml-2"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="flex gap-3">
             <textarea
               ref={textareaRef}
@@ -217,7 +257,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
               }}
               placeholder={`Talk to "${outcomeName}"... Describe changes, add requirements, or give instructions.`}
               className="flex-1 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary min-h-[44px]"
-              rows={1}
+              rows={input.length > 100 ? 3 : 1}
             />
             <Button
               variant="primary"
@@ -247,6 +287,84 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
             <div className="flex items-center justify-center gap-3">
               <div className="animate-spin h-5 w-5 border-2 border-accent border-t-transparent rounded-full" />
               <span className="text-text-secondary">Interpreting your request...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error State - Preserve input and allow retry */}
+      {state === 'error' && (
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-text-primary">Couldn't Process Request</h3>
+            <button
+              onClick={handleFullReset}
+              className="text-xs text-text-tertiary hover:text-text-secondary"
+            >
+              Start Over
+            </button>
+          </div>
+
+          {/* Error Message */}
+          <div className="mb-4 p-3 bg-status-error/10 border border-status-error/30 rounded-lg">
+            <p className="text-sm text-status-error">{lastError}</p>
+          </div>
+
+          {/* Your Original Input - Show it prominently */}
+          <div className="mb-4">
+            <p className="text-xs text-text-secondary mb-2">Your original request:</p>
+            <div className="p-3 bg-bg-primary border border-border rounded-lg max-h-32 overflow-y-auto">
+              <p className="text-sm text-text-primary whitespace-pre-wrap">{input}</p>
+            </div>
+          </div>
+
+          {/* Add More Context */}
+          <div className="mb-4">
+            <p className="text-xs text-text-secondary mb-2">Add more context (optional):</p>
+            <textarea
+              value={refineInput}
+              onChange={(e) => setRefineInput(e.target.value)}
+              placeholder="Add details, clarify what you want, or mention specific documents..."
+              className="w-full p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+              rows={3}
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+            >
+              Edit Request
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // Retry with same input
+                  setLastError(null);
+                  handleSubmitWithInput(input);
+                }}
+              >
+                Try Again
+              </Button>
+              {refineInput.trim() && (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    // Combine original + new context and retry
+                    const combined = `${input}\n\nAdditional context: ${refineInput}`;
+                    setInput(combined);
+                    setRefineInput('');
+                    setLastError(null);
+                    handleSubmitWithInput(combined);
+                  }}
+                >
+                  Submit with Context
+                </Button>
+              )}
             </div>
           </div>
         </div>

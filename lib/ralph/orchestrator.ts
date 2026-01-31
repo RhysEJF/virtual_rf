@@ -281,6 +281,8 @@ async function runExecutionPhase(
     console.log(`[Orchestrator] Execution worker started: ${worker.id}`);
 
     // Run worker with skill context
+    updateWorker(worker.id, { status: 'running' });
+
     await runWorkerLoop(outcomeId, worker.id, {
       phase: 'execution',
       skillContext,

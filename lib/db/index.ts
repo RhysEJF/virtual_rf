@@ -65,12 +65,21 @@ function runMigrations(database: Database.Database): void {
     console.log('[DB Migration] Added raw_response column to review_cycles');
   }
 
-  // Add infrastructure_ready column to outcomes if it doesn't exist
+  // Add capability_ready column to outcomes if it doesn't exist
+  // Also migrate from old infrastructure_ready column if it exists
   const outcomesColumns = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
-  const hasInfraReady = outcomesColumns.some(col => col.name === 'infrastructure_ready');
-  if (!hasInfraReady) {
-    database.exec(`ALTER TABLE outcomes ADD COLUMN infrastructure_ready INTEGER NOT NULL DEFAULT 0`);
-    console.log('[DB Migration] Added infrastructure_ready column to outcomes');
+  const hasCapabilityReady = outcomesColumns.some(col => col.name === 'capability_ready');
+  const hasOldInfraReady = outcomesColumns.some(col => col.name === 'infrastructure_ready');
+
+  if (!hasCapabilityReady) {
+    database.exec(`ALTER TABLE outcomes ADD COLUMN capability_ready INTEGER NOT NULL DEFAULT 0`);
+    console.log('[DB Migration] Added capability_ready column to outcomes');
+
+    // Migrate data from old column if it exists
+    if (hasOldInfraReady) {
+      database.exec(`UPDATE outcomes SET capability_ready = infrastructure_ready`);
+      console.log('[DB Migration] Migrated infrastructure_ready data to capability_ready');
+    }
   }
 
   // Add phase and infra_type columns to tasks if they don't exist
@@ -80,10 +89,27 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE tasks ADD COLUMN phase TEXT NOT NULL DEFAULT 'execution'`);
     console.log('[DB Migration] Added phase column to tasks');
   }
-  const hasInfraType = tasksColumns.some(col => col.name === 'infra_type');
-  if (!hasInfraType) {
-    database.exec(`ALTER TABLE tasks ADD COLUMN infra_type TEXT`);
-    console.log('[DB Migration] Added infra_type column to tasks');
+  // Add capability_type column (replaces old infra_type)
+  const hasCapabilityType = tasksColumns.some(col => col.name === 'capability_type');
+  const hasOldInfraType = tasksColumns.some(col => col.name === 'infra_type');
+
+  if (!hasCapabilityType) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN capability_type TEXT`);
+    console.log('[DB Migration] Added capability_type column to tasks');
+
+    // Migrate data from old column if it exists
+    if (hasOldInfraType) {
+      database.exec(`UPDATE tasks SET capability_type = infra_type`);
+      console.log('[DB Migration] Migrated infra_type data to capability_type');
+    }
+  }
+
+  // Migrate phase values from 'infrastructure' to 'capability'
+  database.exec(`UPDATE tasks SET phase = 'capability' WHERE phase = 'infrastructure'`);
+
+  // Keep old infra_type check for backwards compatibility during transition
+  if (!hasOldInfraType && !hasCapabilityType) {
+    // Neither column exists - this shouldn't happen but handle gracefully
   }
 
   // Add git configuration columns to outcomes
@@ -182,6 +208,19 @@ function runMigrations(database: Database.Database): void {
       console.log(`[DB Migration] Added ${col.name} column to tasks`);
     }
   }
+
+  // HOMЯ Protocol tables are created via SCHEMA_SQL
+  // Just log that they're available
+  const homrTables = database.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name LIKE 'homr_%'
+  `).all() as { name: string }[];
+
+  if (homrTables.length === 4) {
+    // All HOMЯ tables exist
+  } else if (homrTables.length > 0) {
+    console.log(`[DB Migration] HOMЯ Protocol tables: ${homrTables.map(t => t.name).join(', ')}`);
+  }
 }
 
 /**
@@ -252,16 +291,16 @@ function cleanupOrphanedState(database: Database.Database): void {
     }
   }
 
-  // Sync infrastructure_ready status for all active outcomes based on actual task state
+  // Sync capability_ready status for all active outcomes based on actual task state
   // This is imported lazily to avoid circular dependencies
   try {
-    const { syncAllInfrastructureStatus } = require('./outcomes');
-    const syncedCount = syncAllInfrastructureStatus();
+    const { syncAllCapabilityStatus } = require('./outcomes');
+    const syncedCount = syncAllCapabilityStatus();
     if (syncedCount > 0) {
-      console.log(`[DB Cleanup] Synced infrastructure status for ${syncedCount} outcomes`);
+      console.log(`[DB Cleanup] Synced capability status for ${syncedCount} outcomes`);
     }
   } catch (err) {
-    console.error('[DB Cleanup] Failed to sync infrastructure status:', err);
+    console.error('[DB Cleanup] Failed to sync capability status:', err);
   }
 }
 

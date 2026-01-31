@@ -57,7 +57,7 @@ virtual_rf/
 │   │   ├── dispatcher.ts
 │   │   ├── briefer.ts
 │   │   ├── orchestrator.ts
-│   │   ├── infrastructure-planner.ts
+│   │   ├── capability-planner.ts
 │   │   ├── skill-builder.ts
 │   │   ├── tool-builder.ts
 │   │   └── reviewer.ts
@@ -167,11 +167,11 @@ The core unit of work. An outcome represents something the user wants to achieve
 - Has an **approach** (how) - design doc describing implementation
 - Contains **tasks** generated from the intent
 - Can have **workers** executing tasks
-- Tracks **infrastructure_ready** status (0=needed, 1=building, 2=ready)
+- Tracks **capability_ready** status (0=needed, 1=building, 2=ready)
 
 ### Two-Phase Orchestration
 Work happens in two phases:
-1. **Infrastructure Phase**: Build skills and tools the workers will need
+1. **Capability Phase**: Build skills and tools the workers will need
 2. **Execution Phase**: Workers use the skills/tools to complete actual tasks
 
 ### Ralph Worker
@@ -187,7 +187,7 @@ PID is tracked in database for reliable pause/stop.
 
 ### Skills (Two Types)
 1. **Global Skills** (`/skills/`): Shared across all outcomes, DB-tracked
-2. **Outcome Skills** (`/workspaces/{id}/skills/`): Built during infrastructure phase, specific to that outcome
+2. **Outcome Skills** (`/workspaces/{id}/skills/`): Built during capability phase, specific to that outcome
 
 Skills are markdown files with instructions that get injected into worker context.
 
@@ -205,7 +205,7 @@ Users can request changes after completion via the Iterate section:
 
 ## Database Tables
 
-- `outcomes` - Outcomes with intent, design_doc, git config, infrastructure status
+- `outcomes` - Outcomes with intent, design_doc, git config, capability status
 - `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed)
 - `workers` - Ralph worker instances with PID tracking
 - `progress_entries` - Episodic memory of worker iterations (full_output capture)
@@ -270,11 +270,11 @@ kill -9 <PID>
 - [x] Full output capture for iteration auditing
 
 ### Two-Phase Orchestration (Complete)
-- [x] Infrastructure phase → Execution phase workflow
-- [x] Infrastructure planner (`lib/agents/infrastructure-planner.ts`)
+- [x] Capability phase → Execution phase workflow
+- [x] Capability planner (`lib/agents/capability-planner.ts`)
 - [x] Skill builder - creates markdown skill files in workspaces
 - [x] Tool builder - creates TypeScript CLI tools in workspaces
-- [x] Automatic phase transition when infrastructure ready
+- [x] Automatic phase transition when capabilities ready
 
 ### Skills System (Complete)
 - [x] Global skills library (`/skills` directory, DB-tracked)
@@ -299,7 +299,7 @@ kill -9 <PID>
 1. User submits request via CommandBar
 2. Dispatcher classifies it → creates Outcome with intent
 3. System generates tasks from intent
-4. **Infrastructure Phase**: Build skills/tools needed for the work
+4. **Capability Phase**: Build skills/tools needed for the work
 5. **Execution Phase**: Ralph Workers claim and complete tasks
 6. **Review Phase**: Reviewer checks work, creates fix tasks if needed
 7. **Iterate**: User can request changes even after completion
@@ -315,7 +315,7 @@ kill -9 <PID>
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
 - `lib/ralph/worker.ts` - Autonomous worker spawning with PID tracking
 - `lib/agents/orchestrator.ts` - Two-phase orchestration controller
-- `lib/agents/infrastructure-planner.ts` - Analyzes outcomes, plans skills/tools
+- `lib/agents/capability-planner.ts` - Analyzes outcomes, plans skills/tools
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues
 - `app/outcome/[id]/page.tsx` - Main outcome management UI

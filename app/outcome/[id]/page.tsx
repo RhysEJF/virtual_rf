@@ -18,6 +18,9 @@ import { OutcomeBreadcrumbs } from '@/app/components/OutcomeBreadcrumbs';
 import { ChildOutcomesList } from '@/app/components/ChildOutcomesList';
 import { CreateChildModal } from '@/app/components/CreateChildModal';
 import { ExpandableTaskCard } from '@/app/components/ExpandableTaskCard';
+import { HomrStatusCard } from '@/app/components/homr/HomrStatusCard';
+import { EscalationAlert } from '@/app/components/homr/EscalationAlert';
+import { ActivityLogDrawer } from '@/app/components/homr/ActivityLogDrawer';
 import { useToast } from '@/app/hooks/useToast';
 import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
 
@@ -33,7 +36,7 @@ interface OutcomeDetail {
   created_at: number;
   updated_at: number;
   last_activity_at: number;
-  infrastructure_ready: number;  // 0 = not started, 1 = in progress, 2 = complete
+  capability_ready: number;  // 0 = not started, 1 = in progress, 2 = complete
   design_doc: { approach: string; version: number } | null;
   tasks: Task[];
   workers: Worker[];
@@ -170,6 +173,31 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [addingTask, setAddingTask] = useState(false);
 
+  // HOMЯ state
+  const [showHomrActivityLog, setShowHomrActivityLog] = useState(false);
+  const [pendingEscalations, setPendingEscalations] = useState<Array<{
+    id: string;
+    outcomeId: string;
+    createdAt: number;
+    status: 'pending' | 'answered' | 'dismissed';
+    trigger: {
+      type: string;
+      taskId: string;
+      evidence: string[];
+    };
+    question: {
+      text: string;
+      context: string;
+      options: Array<{
+        id: string;
+        label: string;
+        description: string;
+        implications: string;
+      }>;
+    };
+    affectedTasks: string[];
+  }>>([]);
+
   // Fetch outcome data
   const fetchOutcome = useCallback(async () => {
     try {
@@ -188,6 +216,17 @@ export default function OutcomeDetailPage(): JSX.Element {
       setAggregatedStats(data.aggregatedStats || null);
       setIsParent(data.isParent || false);
       setError(null);
+
+      // Fetch HOMЯ escalations
+      try {
+        const homrRes = await fetch(`/api/outcomes/${outcomeId}/homr/escalations?pending=true`);
+        if (homrRes.ok) {
+          const homrData = await homrRes.json();
+          setPendingEscalations(homrData.escalations || []);
+        }
+      } catch {
+        // HOMЯ fetch failed, continue without it
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load outcome');
     } finally {
@@ -200,6 +239,28 @@ export default function OutcomeDetailPage(): JSX.Element {
     const interval = setInterval(fetchOutcome, 5000);
     return () => clearInterval(interval);
   }, [fetchOutcome]);
+
+  // HOMЯ handlers
+  const handleHomrAnswer = async (escalationId: string, selectedOption: string, additionalContext?: string): Promise<void> => {
+    const response = await fetch(`/api/outcomes/${outcomeId}/homr/escalations/${escalationId}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedOption, additionalContext }),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to answer escalation');
+    }
+    toast({ type: 'success', message: 'Decision submitted - tasks resumed' });
+    fetchOutcome();
+  };
+
+  const handleHomrDismiss = async (escalationId: string): Promise<void> => {
+    // Currently dismiss via the answer endpoint with a special option
+    // For now, just remove from local state and refresh
+    toast({ type: 'info', message: 'Escalation dismissed' });
+    fetchOutcome();
+  };
 
   // Actions
   const handleStartWorker = async () => {
@@ -230,7 +291,7 @@ export default function OutcomeDetailPage(): JSX.Element {
       });
       const data = await response.json();
       if (data.success) {
-        toast({ type: 'success', message: 'Orchestrated execution started - building infrastructure first' });
+        toast({ type: 'success', message: 'Orchestrated execution started - building capabilities first' });
       } else {
         toast({ type: 'error', message: data.error || 'Failed to start orchestration' });
       }
@@ -547,10 +608,10 @@ export default function OutcomeDetailPage(): JSX.Element {
   const isDraft = !hasEverHadWorker && outcome.status === 'active';
   const canStartWorker = hasPendingTasks && !hasRunningWorker && outcome.status === 'active';
 
-  // Infrastructure status
-  const needsInfrastructure = outcome.infrastructure_ready === 0;
-  const infrastructureInProgress = outcome.infrastructure_ready === 1;
-  const infrastructureReady = outcome.infrastructure_ready === 2;
+  // Capability phase status
+  const needsCapabilities = outcome.capability_ready === 0;
+  const capabilityInProgress = outcome.capability_ready === 1;
+  const capabilityReady = outcome.capability_ready === 2;
 
   // Parse intent if available
   let intent: { summary?: string; items?: { id: string; title: string; status: string }[]; success_criteria?: string[] } | null = null;
@@ -590,14 +651,14 @@ export default function OutcomeDetailPage(): JSX.Element {
               {isParent && (
                 <Badge variant="default">{children.length} {children.length === 1 ? 'child' : 'children'}</Badge>
               )}
-              {!isParent && needsInfrastructure && (
-                <Badge variant="warning">Infrastructure Needed</Badge>
+              {!isParent && needsCapabilities && (
+                <Badge variant="warning">Capabilities Needed</Badge>
               )}
-              {!isParent && infrastructureInProgress && (
-                <Badge variant="info">Building Infrastructure</Badge>
+              {!isParent && capabilityInProgress && (
+                <Badge variant="info">Building Capabilities</Badge>
               )}
-              {!isParent && infrastructureReady && outcome.infrastructure_ready !== 0 && (
-                <Badge variant="success">Infrastructure Ready</Badge>
+              {!isParent && capabilityReady && outcome.capability_ready !== 0 && (
+                <Badge variant="success">Capabilities Ready</Badge>
               )}
             </div>
             {outcome.brief && (
@@ -628,11 +689,11 @@ export default function OutcomeDetailPage(): JSX.Element {
           initialInput={refinementInput}
           onInitialInputConsumed={handleRefinementConsumed}
         />
-        {/* Infrastructure status indicator */}
-        {infrastructureInProgress && (
+        {/* Capability phase status indicator */}
+        {capabilityInProgress && (
           <div className="mt-2 flex items-center gap-2 text-xs text-status-info">
             <div className="animate-spin h-3 w-3 border-2 border-status-info border-t-transparent rounded-full" />
-            <span>Building infrastructure (skills/tools)...</span>
+            <span>Building capabilities (skills/tools)...</span>
           </div>
         )}
       </div>
@@ -706,10 +767,10 @@ export default function OutcomeDetailPage(): JSX.Element {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
+                      onClick={needsCapabilities ? handleStartOrchestrated : handleStartWorker}
                       disabled={actionLoading}
                     >
-                      {actionLoading ? 'Starting...' : needsInfrastructure ? 'Build & Run' : 'Start Worker'}
+                      {actionLoading ? 'Starting...' : needsCapabilities ? 'Build & Run' : 'Start Worker'}
                     </Button>
                   )}
                 </div>
@@ -1095,6 +1156,34 @@ export default function OutcomeDetailPage(): JSX.Element {
           {/* Skills */}
           <SkillsSection outcomeId={outcomeId} />
 
+          {/* HOMЯ Protocol Status */}
+          <HomrStatusCard
+            outcomeId={outcomeId}
+            onEscalationClick={() => {/* Scroll to escalation alert if visible */}}
+            onActivityClick={() => setShowHomrActivityLog(true)}
+          />
+
+          {/* HOMЯ Escalation Alerts */}
+          {pendingEscalations.length > 0 && (
+            <div className="space-y-4">
+              {pendingEscalations.map((escalation) => (
+                <EscalationAlert
+                  key={escalation.id}
+                  escalation={escalation}
+                  onAnswer={handleHomrAnswer}
+                  onDismiss={handleHomrDismiss}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* HOMЯ Activity Log Drawer */}
+          <ActivityLogDrawer
+            outcomeId={outcomeId}
+            isOpen={showHomrActivityLog}
+            onClose={() => setShowHomrActivityLog(false)}
+          />
+
           {/* Documents */}
           <DocumentsSection outcomeId={outcomeId} />
 
@@ -1158,10 +1247,10 @@ export default function OutcomeDetailPage(): JSX.Element {
                   <Button
                     variant="primary"
                     className="w-full"
-                    onClick={needsInfrastructure ? handleStartOrchestrated : handleStartWorker}
+                    onClick={needsCapabilities ? handleStartOrchestrated : handleStartWorker}
                     disabled={actionLoading}
                   >
-                    {needsInfrastructure
+                    {needsCapabilities
                       ? 'Build & Run'
                       : isDraft
                       ? 'Start Worker'

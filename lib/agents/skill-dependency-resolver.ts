@@ -1,7 +1,7 @@
 /**
  * Skill Dependency Resolver
  *
- * Analyzes tasks for skill requirements and creates infrastructure tasks
+ * Analyzes tasks for skill requirements and creates capability tasks
  * to build missing skills before execution can proceed.
  */
 
@@ -58,12 +58,12 @@ export function areSkillDependenciesMet(outcomeId: string): DependencyCheckResul
 }
 
 /**
- * Resolve skill dependencies by creating infrastructure tasks for missing skills
+ * Resolve skill dependencies by creating capability tasks for missing skills
  *
  * This function:
  * 1. Scans execution tasks for required_skills
  * 2. Finds skills that don't exist in the database
- * 3. Creates infrastructure tasks (phase: 'infrastructure', infra_type: 'skill')
+ * 3. Creates capability tasks (phase: 'capability', capability_type: 'skill')
  *    to build the missing skills
  */
 export function resolveSkillDependencies(outcomeId: string): ResolutionResult {
@@ -95,15 +95,15 @@ export function resolveSkillDependencies(outcomeId: string): ResolutionResult {
     }
   }
 
-  // Check if infrastructure tasks already exist for these skills
-  const existingInfraTasks = tasks.filter(
-    t => t.phase === 'infrastructure' && t.infra_type === 'skill'
+  // Check if capability tasks already exist for these skills
+  const existingCapabilityTasks = tasks.filter(
+    t => t.phase === 'capability' && t.capability_type === 'skill'
   );
   const existingSkillTasks = new Set(
-    existingInfraTasks.map(t => t.title.replace(/^Build skill:\s*/i, '').toLowerCase())
+    existingCapabilityTasks.map(t => t.title.replace(/^Build skill:\s*/i, '').toLowerCase())
   );
 
-  // Create infrastructure tasks for missing skills
+  // Create capability tasks for missing skills
   const gaps: SkillGap[] = [];
   let tasksCreated = 0;
 
@@ -115,7 +115,7 @@ export function resolveSkillDependencies(outcomeId: string): ResolutionResult {
 
     gaps.push({ skillName, requiredBy });
 
-    // Create infrastructure task
+    // Create capability task
     createTask({
       outcome_id: outcomeId,
       title: `Build skill: ${skillName}`,
@@ -131,16 +131,16 @@ Instructions:
 2. Create a skill file at skills/<category>/<skill-name>/SKILL.md
 3. Include proper YAML frontmatter with name, description, triggers
 4. Add comprehensive instructions for using this skill`,
-      phase: 'infrastructure',
-      infra_type: 'skill',
-      priority: 50,  // High priority for infrastructure
+      phase: 'capability',
+      capability_type: 'skill',
+      priority: 50,  // High priority for capability phase
     });
 
     tasksCreated++;
   });
 
   if (tasksCreated > 0) {
-    console.log(`[SkillDependencyResolver] Created ${tasksCreated} infrastructure tasks for missing skills`);
+    console.log(`[SkillDependencyResolver] Created ${tasksCreated} capability tasks for missing skills`);
   }
 
   return {

@@ -1,7 +1,7 @@
 /**
  * Orchestration API
  *
- * POST: Start orchestrated execution (infrastructure + execution phases)
+ * POST: Start orchestrated execution (capability + execution phases)
  * GET: Get orchestration status
  */
 
@@ -45,7 +45,7 @@ export async function POST(
     // Parse options from body
     const body = await request.json().catch(() => ({}));
     const {
-      maxInfrastructureWorkers = 3,
+      maxCapabilityWorkers = 3,
       maxExecutionWorkers = 1,
       skipValidation = false,
       async: runAsync = true,
@@ -54,7 +54,7 @@ export async function POST(
     if (runAsync) {
       // Start orchestration in background and return immediately
       runOrchestrated(outcomeId, {
-        maxInfrastructureWorkers,
+        maxCapabilityWorkers,
         maxExecutionWorkers,
         skipValidation,
       }).catch(error => {
@@ -70,7 +70,7 @@ export async function POST(
     } else {
       // Run synchronously and wait for result
       const result = await runOrchestrated(outcomeId, {
-        maxInfrastructureWorkers,
+        maxCapabilityWorkers,
         maxExecutionWorkers,
         skipValidation,
       });
@@ -119,14 +119,14 @@ export async function GET(
     return NextResponse.json({
       outcomeId,
       currentPhase: state?.currentPhase || 'execution',
-      infrastructureReady: outcome.infrastructure_ready,
+      capabilityReady: outcome.capability_ready,
       readyForExecution: isReadyForExecution(outcomeId),
       stats: {
-        infrastructure: {
-          total: phaseStats.infrastructure.total,
-          pending: phaseStats.infrastructure.pending,
-          completed: phaseStats.infrastructure.completed,
-          failed: phaseStats.infrastructure.failed,
+        capability: {
+          total: phaseStats.capability.total,
+          pending: phaseStats.capability.pending,
+          completed: phaseStats.capability.completed,
+          failed: phaseStats.capability.failed,
         },
         execution: {
           total: phaseStats.execution.total,
@@ -136,7 +136,7 @@ export async function GET(
         },
       },
       activeWorkers: {
-        infrastructure: state?.infrastructureWorkers.length || 0,
+        capability: state?.capabilityWorkers.length || 0,
         execution: state?.executionWorkers.length || 0,
       },
     });

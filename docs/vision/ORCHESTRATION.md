@@ -1,6 +1,6 @@
 # Orchestration
 
-> Manages two-phase execution: build infrastructure first, then execute tasks.
+> Manages two-phase execution: build capabilities first, then execute tasks.
 
 ---
 
@@ -8,9 +8,9 @@
 
 Complex outcomes need preparation before execution. The Orchestrator ensures workers have the right skills and tools before starting actual work. It manages:
 
-1. **Infrastructure Phase** - Build skills, tools, and capabilities
-2. **Execution Phase** - Run tasks using the built infrastructure
-3. **Phase transitions** - Know when infrastructure is ready
+1. **Capability Phase** - Build skills, tools, and capabilities
+2. **Execution Phase** - Run tasks using the built capabilities
+3. **Phase transitions** - Know when capabilities are ready
 4. **Worker spawning** - Start the right number of workers per phase
 
 ---
@@ -20,10 +20,10 @@ Complex outcomes need preparation before execution. The Orchestrator ensures wor
 **Status:** Complete and production-ready
 
 The Orchestrator:
-- Analyzes outcomes to detect infrastructure needs
-- Creates infrastructure tasks from design docs
+- Analyzes outcomes to detect capability needs
+- Creates capability tasks from design docs
 - Runs parallel workers for skill/tool building
-- Transitions to execution when infrastructure is ready
+- Transitions to execution when capabilities are ready
 - Spawns execution workers with skill context
 
 ---
@@ -37,33 +37,33 @@ Outcome Created
       │
       ▼
 ┌─────────────────┐
-│ INFRASTRUCTURE  │ ← Build what workers will need
+│   CAPABILITY    │ ← Build what workers will need
 │     PHASE       │   (skills, tools, capabilities)
 │                 │   Up to 3 parallel workers
 └────────┬────────┘
-         │ infrastructure_ready = 2
+         │ capability_ready = 2
          ▼
 ┌─────────────────┐
 │   EXECUTION     │ ← Do the actual work
-│     PHASE       │   using built infrastructure
+│     PHASE       │   using built capabilities
 │                 │   Default: 1 worker
 └─────────────────┘
 ```
 
-### Infrastructure Ready States
+### Capability Ready States
 
 | Value | Meaning |
 |-------|---------|
-| `0` | Infrastructure needed (not started) |
-| `1` | Infrastructure building (in progress) |
-| `2` | Infrastructure ready (can execute) |
+| `0` | Capabilities needed (not started) |
+| `1` | Capabilities building (in progress) |
+| `2` | Capabilities ready (can execute) |
 
-When the approach changes significantly, `infrastructure_ready` resets to `0` to force re-evaluation.
+When the approach changes significantly, `capability_ready` resets to `0` to force re-evaluation.
 
 ### Task Phases
 
 Tasks are tagged with their phase:
-- `phase: 'infrastructure'` - Skill/tool building tasks
+- `phase: 'capability'` - Skill/tool building tasks
 - `phase: 'execution'` - Actual work tasks
 
 Workers only claim tasks matching their current phase.

@@ -23,7 +23,7 @@ Think of skills as "employee training manuals" that workers read before starting
 
 The skill system handles:
 - Global skills (shared across all outcomes)
-- Outcome-specific skills (built during infrastructure phase)
+- Outcome-specific skills (built during capability phase)
 - Trigger-based matching (find relevant skills for a task)
 - YAML frontmatter parsing
 - Skill dependency resolution
@@ -40,7 +40,7 @@ The skill system handles:
 | **Outcome** | `/workspaces/out_{id}/skills/` | Built for specific outcome |
 
 Global skills are general-purpose (e.g., "web-research", "competitive-analysis").
-Outcome skills are built during infrastructure phase for that outcome's specific needs.
+Outcome skills are built during capability phase for that outcome's specific needs.
 
 ### Skill Structure
 
@@ -152,10 +152,10 @@ Task Claimed
 
 ## Skill Building
 
-During infrastructure phase, new skills are built:
+During capability phase, new skills are built:
 
 1. **Planner detects need** - "This outcome needs a skill for X"
-2. **Infrastructure task created** - `phase: 'infrastructure', infra_type: 'skill'`
+2. **Capability task created** - `phase: 'capability', capability_type: 'skill'`
 3. **Worker claims task** - Gets special CLAUDE.md for skill building
 4. **Skill document created** - Saved to `/workspaces/out_{id}/skills/`
 5. **Validation** - Check YAML frontmatter and required sections
@@ -179,7 +179,7 @@ The skill builder generates specialized CLAUDE.md that tells the worker:
 **Used by:**
 - `lib/ralph/worker.ts` - Loads skills into context
 - `lib/ralph/orchestrator.ts` - Triggers skill building
-- `lib/agents/infrastructure-planner.ts` - Detects skill needs
+- `lib/agents/capability-planner.ts` - Detects skill needs
 
 ---
 

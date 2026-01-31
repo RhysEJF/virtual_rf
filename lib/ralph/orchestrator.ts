@@ -1,15 +1,15 @@
 /**
  * Orchestrator
  *
- * Manages multi-phase execution for outcomes with infrastructure needs.
- * Phase 1: Build skills and tools in parallel
- * Phase 2: Execute main tasks with skills loaded
+ * Manages multi-phase execution for outcomes with capability needs.
+ * Phase 1: Build skills and tools in parallel (Capability Phase)
+ * Phase 2: Execute main tasks with skills loaded (Execution Phase)
  */
 
 import { getOutcomeById, getOutcomeWithRelations, updateOutcome } from '../db/outcomes';
 import {
   getTasksByPhase,
-  getPendingInfrastructureTasks,
+  getPendingCapabilityTasks,
   isPhaseComplete,
   getPhaseStats,
   claimNextTask,
@@ -19,10 +19,10 @@ import {
 } from '../db/tasks';
 import { createWorker, updateWorker, getActiveWorkersByOutcome } from '../db/workers';
 import {
-  analyzeApproachForInfrastructure,
-  createInfrastructureTasks,
-  hasInfrastructureNeeds,
-} from '../agents/infrastructure-planner';
+  analyzeApproachForCapabilities,
+  createCapabilityTasks,
+  hasCapabilityNeeds,
+} from '../agents/capability-planner';
 import { validateSkill, loadOutcomeSkills, getSkillContent } from '../agents/skill-builder';
 import { validateToolSyntax, loadOutcomeTools } from '../agents/tool-builder';
 import { getWorkspacePath, ensureWorkspaceExists } from '../workspace/detector';
@@ -36,13 +36,13 @@ import type { Outcome, Task, TaskPhase } from '../db/schema';
 
 export interface OrchestrationState {
   outcomeId: string;
-  currentPhase: 'infrastructure' | 'execution' | 'complete';
-  infrastructureWorkers: string[];
+  currentPhase: 'capability' | 'execution' | 'complete';
+  capabilityWorkers: string[];
   executionWorkers: string[];
 }
 
 export interface OrchestrationOptions {
-  maxInfrastructureWorkers?: number;  // Default 3
+  maxCapabilityWorkers?: number;      // Default 3
   maxExecutionWorkers?: number;       // Default 1
   skipValidation?: boolean;           // Skip skill/tool validation
 }
@@ -67,7 +67,7 @@ export async function runOrchestrated(
   options: OrchestrationOptions = {}
 ): Promise<OrchestrationResult> {
   const {
-    maxInfrastructureWorkers = 3,
+    maxCapabilityWorkers = 3,
     maxExecutionWorkers = 1,
     skipValidation = false,
   } = options;
@@ -79,7 +79,7 @@ export async function runOrchestrated(
   if (!outcomeWithRelations) {
     return {
       success: false,
-      phase: 'infrastructure',
+      phase: 'capability',
       message: 'Outcome not found',
     };
   }
@@ -87,64 +87,64 @@ export async function runOrchestrated(
   const outcome = outcomeWithRelations;
   const approach = outcomeWithRelations.design_doc?.approach;
 
-  // Check if we need to analyze for infrastructure
-  if (outcome.infrastructure_ready === 0 && approach) {
-    const needsInfra = hasInfrastructureNeeds(approach);
-    if (needsInfra) {
-      console.log('[Orchestrator] Analyzing approach for infrastructure needs...');
+  // Check if we need to analyze for capabilities
+  if (outcome.capability_ready === 0 && approach) {
+    const needsCapabilities = hasCapabilityNeeds(approach);
+    if (needsCapabilities) {
+      console.log('[Orchestrator] Analyzing approach for capability needs...');
       const intent = outcome.intent ? JSON.parse(outcome.intent) : null;
-      const plan = await analyzeApproachForInfrastructure(
+      const plan = await analyzeApproachForCapabilities(
         approach,
         intent,
         outcomeId
       );
 
-      if (plan.hasInfrastructure) {
-        console.log(`[Orchestrator] Found ${plan.needs.length} infrastructure needs`);
-        createInfrastructureTasks(outcomeId, plan);
+      if (plan.hasCapabilities) {
+        console.log(`[Orchestrator] Found ${plan.needs.length} capability needs`);
+        createCapabilityTasks(outcomeId, plan);
       } else {
-        // No infrastructure needed, mark as ready
-        updateOutcome(outcomeId, { infrastructure_ready: 2 });
+        // No capabilities needed, mark as ready
+        updateOutcome(outcomeId, { capability_ready: 2 });
       }
     } else {
-      // No infrastructure patterns found
-      updateOutcome(outcomeId, { infrastructure_ready: 2 });
+      // No capability patterns found
+      updateOutcome(outcomeId, { capability_ready: 2 });
     }
   }
 
   // Refresh outcome after potential updates
   const updatedOutcome = getOutcomeById(outcomeId)!;
 
-  // Phase 1: Infrastructure
-  if (updatedOutcome.infrastructure_ready < 2) {
-    console.log('[Orchestrator] Running infrastructure phase...');
-    updateOutcome(outcomeId, { infrastructure_ready: 1 });
+  // Phase 1: Capability
+  if (updatedOutcome.capability_ready < 2) {
+    console.log('[Orchestrator] Running capability phase...');
+    updateOutcome(outcomeId, { capability_ready: 1 });
 
-    const infraResult = await runInfrastructurePhase(
+    const capabilityResult = await runCapabilityPhase(
       outcomeId,
-      maxInfrastructureWorkers
+      maxCapabilityWorkers
     );
 
-    if (!infraResult.success) {
-      return infraResult;
+    if (!capabilityResult.success) {
+      return capabilityResult;
     }
 
-    // Validate infrastructure if not skipped
+    // Validate capabilities if not skipped
     if (!skipValidation) {
-      const validationResult = await validateInfrastructure(outcomeId);
+      const validationResult = await validateCapabilities(outcomeId);
       if (!validationResult.valid) {
         return {
           success: false,
-          phase: 'infrastructure',
-          message: 'Infrastructure validation failed',
+          phase: 'capability',
+          message: 'Capability validation failed',
           errors: validationResult.errors,
         };
       }
     }
 
-    // Mark infrastructure as ready
-    updateOutcome(outcomeId, { infrastructure_ready: 2 });
-    console.log('[Orchestrator] Infrastructure phase complete');
+    // Mark capability phase as ready
+    updateOutcome(outcomeId, { capability_ready: 2 });
+    console.log('[Orchestrator] Capability phase complete');
   }
 
   // Phase 2: Execution
@@ -173,70 +173,70 @@ export async function runOrchestrated(
 // ============================================================================
 
 /**
- * Run the infrastructure phase - build skills and tools in parallel
+ * Run the capability phase - build skills and tools in parallel
  */
-async function runInfrastructurePhase(
+async function runCapabilityPhase(
   outcomeId: string,
   maxWorkers: number
 ): Promise<OrchestrationResult> {
-  const infraTasks = getPendingInfrastructureTasks(outcomeId);
+  const capabilityTasks = getPendingCapabilityTasks(outcomeId);
 
-  if (infraTasks.length === 0) {
+  if (capabilityTasks.length === 0) {
     return {
       success: true,
-      phase: 'infrastructure',
-      message: 'No infrastructure tasks to run',
+      phase: 'capability',
+      message: 'No capability tasks to run',
     };
   }
 
-  console.log(`[Orchestrator] ${infraTasks.length} infrastructure tasks to run`);
+  console.log(`[Orchestrator] ${capabilityTasks.length} capability tasks to run`);
 
   // Ensure workspace exists
   ensureWorkspaceExists(outcomeId);
 
   // Create workers for parallel execution (up to max)
-  const workerCount = Math.min(infraTasks.length, maxWorkers);
+  const workerCount = Math.min(capabilityTasks.length, maxWorkers);
   const workerPromises: Promise<void>[] = [];
 
   for (let i = 0; i < workerCount; i++) {
-    workerPromises.push(runInfrastructureWorker(outcomeId, i));
+    workerPromises.push(runCapabilityWorker(outcomeId, i));
   }
 
   // Wait for all workers to complete
   await Promise.all(workerPromises);
 
-  // Check if all infrastructure tasks are complete
-  if (isPhaseComplete(outcomeId, 'infrastructure')) {
+  // Check if all capability tasks are complete
+  if (isPhaseComplete(outcomeId, 'capability')) {
     return {
       success: true,
-      phase: 'infrastructure',
-      message: 'All infrastructure tasks completed',
+      phase: 'capability',
+      message: 'All capability tasks completed',
     };
   } else {
     const stats = getPhaseStats(outcomeId);
     return {
       success: false,
-      phase: 'infrastructure',
-      message: `Infrastructure phase incomplete: ${stats.infrastructure.failed} failed`,
-      errors: [`${stats.infrastructure.failed} infrastructure tasks failed`],
+      phase: 'capability',
+      message: `Capability phase incomplete: ${stats.capability.failed} failed`,
+      errors: [`${stats.capability.failed} capability tasks failed`],
     };
   }
 }
 
 /**
- * Run a single infrastructure worker that processes tasks until none remain
+ * Run a single capability worker that processes tasks until none remain
  */
-async function runInfrastructureWorker(
+async function runCapabilityWorker(
   outcomeId: string,
   workerIndex: number
 ): Promise<void> {
   // Create worker record
   const worker = createWorker({
     outcome_id: outcomeId,
-    name: `Infrastructure Worker ${workerIndex + 1}`,
+    name: `Capability Worker ${workerIndex + 1}`,
   });
 
-  console.log(`[Orchestrator] Infrastructure worker ${workerIndex} started: ${worker.id}`);
+  console.log(`[Orchestrator] Capability worker ${workerIndex} started: ${worker.id}`);
 
   try {
     // Process tasks until none remain
@@ -247,11 +247,11 @@ async function runInfrastructureWorker(
         break;
       }
 
-      // Claim next infrastructure task
-      const claimResult = claimNextTask(outcomeId, worker.id, 'infrastructure');
+      // Claim next capability task
+      const claimResult = claimNextTask(outcomeId, worker.id, 'capability');
 
       if (!claimResult.success || !claimResult.task) {
-        console.log(`[Orchestrator] Worker ${workerIndex}: No more infrastructure tasks`);
+        console.log(`[Orchestrator] Worker ${workerIndex}: No more capability tasks`);
         break;
       }
 
@@ -266,7 +266,7 @@ async function runInfrastructureWorker(
       try {
         await runWorkerLoop(outcomeId, worker.id, {
           singleTask: true,
-          phase: 'infrastructure',
+          phase: 'capability',
         });
 
         // Task should be marked complete by worker loop
@@ -278,7 +278,7 @@ async function runInfrastructureWorker(
     }
   } finally {
     updateWorker(worker.id, { status: 'completed' });
-    console.log(`[Orchestrator] Infrastructure worker ${workerIndex} stopped`);
+    console.log(`[Orchestrator] Capability worker ${workerIndex} stopped`);
   }
 }
 
@@ -340,9 +340,9 @@ async function runExecutionPhase(
 // ============================================================================
 
 /**
- * Validate all infrastructure (skills and tools) created during phase 1
+ * Validate all capabilities (skills and tools) created during phase 1
  */
-async function validateInfrastructure(outcomeId: string): Promise<{
+async function validateCapabilities(outcomeId: string): Promise<{
   valid: boolean;
   errors: string[];
   warnings: string[];
@@ -457,10 +457,10 @@ export function getOrchestrationState(outcomeId: string): OrchestrationState | n
   const activeWorkers = getActiveWorkersByOutcome(outcomeId);
   const stats = getPhaseStats(outcomeId);
 
-  let currentPhase: 'infrastructure' | 'execution' | 'complete' = 'execution';
+  let currentPhase: 'capability' | 'execution' | 'complete' = 'execution';
 
-  if (outcome.infrastructure_ready === 0 || outcome.infrastructure_ready === 1) {
-    currentPhase = 'infrastructure';
+  if (outcome.capability_ready === 0 || outcome.capability_ready === 1) {
+    currentPhase = 'capability';
   } else if (
     stats.execution.total > 0 &&
     stats.execution.completed === stats.execution.total
@@ -469,18 +469,18 @@ export function getOrchestrationState(outcomeId: string): OrchestrationState | n
   }
 
   // Categorize workers by what phase they're working on
-  const infrastructureWorkers: string[] = [];
+  const capabilityWorkers: string[] = [];
   const executionWorkers: string[] = [];
 
   for (const worker of activeWorkers) {
     // Check worker's current task phase
-    const tasks = getTasksByPhase(outcomeId, 'infrastructure');
-    const workerInfraTasks = tasks.filter(
+    const tasks = getTasksByPhase(outcomeId, 'capability');
+    const workerCapabilityTasks = tasks.filter(
       t => t.claimed_by === worker.id && t.status !== 'completed'
     );
 
-    if (workerInfraTasks.length > 0) {
-      infrastructureWorkers.push(worker.id);
+    if (workerCapabilityTasks.length > 0) {
+      capabilityWorkers.push(worker.id);
     } else {
       executionWorkers.push(worker.id);
     }
@@ -489,7 +489,7 @@ export function getOrchestrationState(outcomeId: string): OrchestrationState | n
   return {
     outcomeId,
     currentPhase,
-    infrastructureWorkers,
+    capabilityWorkers,
     executionWorkers,
   };
 }
@@ -499,7 +499,7 @@ export function getOrchestrationState(outcomeId: string): OrchestrationState | n
  */
 export function isReadyForExecution(outcomeId: string): boolean {
   const outcome = getOutcomeById(outcomeId);
-  return outcome?.infrastructure_ready === 2;
+  return outcome?.capability_ready === 2;
 }
 
 /**

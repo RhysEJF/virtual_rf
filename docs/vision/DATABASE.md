@@ -108,7 +108,7 @@ CREATE TABLE outcomes (
   brief TEXT,
   intent TEXT,                   -- JSON: PRD structure
   timeline TEXT,
-  infrastructure_ready INTEGER DEFAULT 0,  -- 0/1/2
+  capability_ready INTEGER DEFAULT 0,  -- 0/1/2
   parent_id TEXT,                -- Hierarchical outcomes
   depth INTEGER DEFAULT 0,
   working_directory TEXT,
@@ -145,8 +145,8 @@ CREATE TABLE tasks (
   completed_at TEXT,
   from_review INTEGER DEFAULT 0,
   review_cycle INTEGER,
-  phase TEXT DEFAULT 'execution', -- infrastructure/execution
-  infra_type TEXT,                -- skill/tool
+  phase TEXT DEFAULT 'execution', -- capability/execution
+  capability_type TEXT,           -- skill/tool
   required_skills TEXT,           -- JSON array
   task_intent TEXT,
   task_approach TEXT,

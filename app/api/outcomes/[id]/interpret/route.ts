@@ -142,7 +142,7 @@ Think of this as a conversation where you're collaboratively building a plan tog
 
 OUTCOME: ${outcome.name}
 STATUS: ${outcome.status}
-INFRASTRUCTURE STATUS: ${outcome.infrastructure_ready === 2 ? 'Ready (skills built)' : outcome.infrastructure_ready === 1 ? 'Building (skills in progress)' : 'Not started (no skills yet)'}
+CAPABILITY STATUS: ${outcome.capability_ready === 2 ? 'Ready (skills built)' : outcome.capability_ready === 1 ? 'Building (skills in progress)' : 'Not started (no skills yet)'}
 
 SKILLS FOR THIS OUTCOME:
 ${skillsSummary}
@@ -167,11 +167,11 @@ USER REQUEST:
 
 SYSTEM ARCHITECTURE - Skills-First Pattern:
 This system uses a TWO-PHASE approach:
-1. INFRASTRUCTURE PHASE: Build skills (reusable knowledge/instructions) before executing work
+1. CAPABILITY PHASE: Build skills (reusable knowledge/instructions) before executing work
 2. EXECUTION PHASE: Workers use the skills to complete tasks
 
 If the user asks about skills or if the work would benefit from building skills first:
-- Suggest "build_infrastructure" action to create skills before execution
+- Suggest "build_capabilities" action to create skills before execution
 - Skills are markdown files that teach the AI how to do specific tasks for this project
 
 Analyze this request and suggest appropriate actions. Consider:

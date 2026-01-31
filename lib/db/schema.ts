@@ -50,6 +50,14 @@ export type SupervisorAlertType =
 export type SupervisorAlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 
+// HOMЯ Protocol types
+export type HomrQuality = 'good' | 'needs_work' | 'off_rails';
+export type HomrEscalationStatus = 'pending' | 'answered' | 'dismissed';
+export type HomrActivityType = 'observation' | 'steering' | 'escalation' | 'resolution';
+export type HomrDriftType = 'scope_creep' | 'wrong_direction' | 'missed_requirement' | 'contradicts_design';
+export type HomrDiscoveryType = 'constraint' | 'dependency' | 'pattern' | 'decision' | 'blocker';
+export type HomrAmbiguityType = 'unclear_requirement' | 'multiple_approaches' | 'blocking_decision' | 'contradicting_info';
+
 // Git workflow modes for outcomes
 export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 
@@ -69,7 +77,7 @@ export interface Outcome {
   brief: string | null;             // Original user input/ramble
   intent: string | null;            // PRD - the WHAT (JSON)
   timeline: string | null;          // Target date or "ongoing"
-  infrastructure_ready: number;     // 0 = not started, 1 = in progress, 2 = complete
+  capability_ready: number;         // 0 = not started, 1 = in progress, 2 = complete
   created_at: number;
   updated_at: number;
   last_activity_at: number;         // For recency-based sorting
@@ -108,8 +116,10 @@ export interface Collaborator {
   accepted_at: number | null;
 }
 
-export type TaskPhase = 'infrastructure' | 'execution';
-export type InfraType = 'skill' | 'tool' | 'config';
+export type TaskPhase = 'capability' | 'execution';
+export type CapabilityType = 'skill' | 'tool' | 'config';
+/** @deprecated Use CapabilityType instead */
+export type InfraType = CapabilityType;
 
 export interface Task {
   id: string;
@@ -132,8 +142,8 @@ export interface Task {
   from_review: boolean;
   review_cycle: number | null;
   // For skill-first orchestration
-  phase: TaskPhase;                 // 'infrastructure' | 'execution'
-  infra_type: InfraType | null;     // 'skill' | 'tool' | 'config' | null
+  phase: TaskPhase;                 // 'capability' | 'execution'
+  capability_type: CapabilityType | null;  // 'skill' | 'tool' | 'config' | null
   // Skill dependencies
   required_skills: string | null;   // JSON array of skill names this task requires
   // Enriched task context (optional per-task PRD/approach)
@@ -298,6 +308,136 @@ export interface SupervisorAlert {
 }
 
 // ============================================================================
+// HOMЯ Protocol Entities
+// ============================================================================
+
+export interface HomrDriftItem {
+  type: HomrDriftType;
+  description: string;
+  severity: 'low' | 'medium' | 'high';
+  evidence: string;
+}
+
+export interface HomrDiscovery {
+  type: HomrDiscoveryType;
+  content: string;
+  relevantTasks: string[];
+  source: string;
+}
+
+export interface HomrQualityIssue {
+  type: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface HomrAmbiguitySignal {
+  detected: boolean;
+  type: HomrAmbiguityType;
+  description: string;
+  evidence: string[];
+  affectedTasks: string[];
+  suggestedQuestion: string;
+  options?: HomrQuestionOption[];
+}
+
+export interface HomrQuestionOption {
+  id: string;
+  label: string;
+  description: string;
+  implications: string;
+}
+
+export interface HomrDecision {
+  id: string;
+  content: string;
+  madeBy: 'human' | 'worker' | 'homr';
+  madeAt: number;
+  context: string;
+  affectedAreas: string[];
+}
+
+export interface HomrConstraint {
+  id: string;
+  type: 'technical' | 'business' | 'dependency' | 'resource';
+  content: string;
+  discoveredAt: number;
+  source: string;
+  active: boolean;
+}
+
+export interface HomrContextInjection {
+  id: string;
+  type: 'discovery' | 'warning' | 'constraint' | 'pattern' | 'decision';
+  content: string;
+  source: string;
+  priority: 'must_know' | 'should_know' | 'nice_to_know';
+  targetTaskId: string;
+  createdAt: number;
+}
+
+// HOMЯ Context Store (database entity)
+export interface HomrContext {
+  id: string;
+  outcome_id: string;
+  created_at: number;
+  updated_at: number;
+  discoveries: string;              // JSON array of HomrDiscovery
+  decisions: string;                // JSON array of HomrDecision
+  constraints: string;              // JSON array of HomrConstraint
+  injections: string;               // JSON array of HomrContextInjection
+  tasks_observed: number;
+  discoveries_extracted: number;
+  escalations_created: number;
+  steering_actions: number;
+}
+
+// HOMЯ Observation (database entity)
+export interface HomrObservation {
+  id: string;
+  outcome_id: string;
+  task_id: string;
+  created_at: number;
+  on_track: number;                 // 0 or 1 (boolean in SQLite)
+  alignment_score: number;
+  quality: HomrQuality;
+  drift: string;                    // JSON array of HomrDriftItem
+  discoveries: string;              // JSON array of HomrDiscovery
+  issues: string;                   // JSON array of HomrQualityIssue
+  has_ambiguity: number;            // 0 or 1 (boolean in SQLite)
+  ambiguity_data: string | null;    // JSON of HomrAmbiguitySignal
+  summary: string;
+}
+
+// HOMЯ Escalation (database entity)
+export interface HomrEscalation {
+  id: string;
+  outcome_id: string;
+  created_at: number;
+  status: HomrEscalationStatus;
+  trigger_type: string;
+  trigger_task_id: string;
+  trigger_evidence: string;         // JSON array
+  question_text: string;
+  question_context: string;
+  question_options: string;         // JSON array of HomrQuestionOption
+  affected_tasks: string;           // JSON array of task IDs
+  answer_option: string | null;
+  answer_context: string | null;
+  answered_at: number | null;
+}
+
+// HOMЯ Activity Log Entry (database entity)
+export interface HomrActivityLogEntry {
+  id: string;
+  outcome_id: string;
+  created_at: number;
+  type: HomrActivityType;
+  details: string;                  // JSON object
+  summary: string;
+}
+
+// ============================================================================
 // Parsed/Enriched Types
 // ============================================================================
 
@@ -417,7 +557,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
   brief TEXT,
   intent TEXT,
   timeline TEXT,
-  infrastructure_ready INTEGER NOT NULL DEFAULT 0,
+  capability_ready INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   last_activity_at INTEGER NOT NULL,
@@ -478,7 +618,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   from_review INTEGER NOT NULL DEFAULT 0,
   review_cycle INTEGER,
   phase TEXT NOT NULL DEFAULT 'execution',
-  infra_type TEXT,
+  capability_type TEXT,
   required_skills TEXT,
   -- Enriched task context (optional per-task PRD/approach)
   task_intent TEXT,
@@ -802,6 +942,82 @@ CREATE INDEX IF NOT EXISTS idx_pattern_detections_worker ON pattern_detections(w
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_outcome ON pattern_detections(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_severity ON pattern_detections(severity);
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_time ON pattern_detections(timestamp DESC);
+
+-- ============================================================================
+-- HOMЯ Protocol Tables
+-- ============================================================================
+
+-- HOMЯ Context Store: Per-outcome cross-task memory
+CREATE TABLE IF NOT EXISTS homr_context (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL REFERENCES outcomes(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  discoveries TEXT NOT NULL DEFAULT '[]',
+  decisions TEXT NOT NULL DEFAULT '[]',
+  constraints TEXT NOT NULL DEFAULT '[]',
+  injections TEXT NOT NULL DEFAULT '[]',
+  tasks_observed INTEGER NOT NULL DEFAULT 0,
+  discoveries_extracted INTEGER NOT NULL DEFAULT 0,
+  escalations_created INTEGER NOT NULL DEFAULT 0,
+  steering_actions INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_homr_context_outcome ON homr_context(outcome_id);
+
+-- HOMЯ Observations: Task observation records
+CREATE TABLE IF NOT EXISTS homr_observations (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL REFERENCES outcomes(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  on_track INTEGER NOT NULL,
+  alignment_score INTEGER NOT NULL,
+  quality TEXT NOT NULL,
+  drift TEXT NOT NULL DEFAULT '[]',
+  discoveries TEXT NOT NULL DEFAULT '[]',
+  issues TEXT NOT NULL DEFAULT '[]',
+  has_ambiguity INTEGER NOT NULL DEFAULT 0,
+  ambiguity_data TEXT,
+  summary TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_homr_observations_outcome ON homr_observations(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_homr_observations_task ON homr_observations(task_id);
+
+-- HOMЯ Escalations: Human escalation questions
+CREATE TABLE IF NOT EXISTS homr_escalations (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL REFERENCES outcomes(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  trigger_type TEXT NOT NULL,
+  trigger_task_id TEXT NOT NULL,
+  trigger_evidence TEXT NOT NULL,
+  question_text TEXT NOT NULL,
+  question_context TEXT NOT NULL,
+  question_options TEXT NOT NULL,
+  affected_tasks TEXT NOT NULL DEFAULT '[]',
+  answer_option TEXT,
+  answer_context TEXT,
+  answered_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_homr_escalations_outcome ON homr_escalations(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_homr_escalations_status ON homr_escalations(status);
+
+-- HOMЯ Activity Log: Activity tracking
+CREATE TABLE IF NOT EXISTS homr_activity_log (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL REFERENCES outcomes(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  details TEXT NOT NULL,
+  summary TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_homr_activity_outcome ON homr_activity_log(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_homr_activity_type ON homr_activity_log(type);
 `;
 
 // ============================================================================

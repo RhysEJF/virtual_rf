@@ -8,7 +8,7 @@
 
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
-import type { Task, TaskStatus, TaskPhase, InfraType } from './schema';
+import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
 import { touchOutcome } from './outcomes';
 
 // ============================================================================
@@ -25,7 +25,7 @@ export interface CreateTaskInput {
   from_review?: boolean;
   review_cycle?: number;
   phase?: TaskPhase;
-  infra_type?: InfraType;
+  capability_type?: CapabilityType;
   required_skills?: string[];
   // Enriched task context
   task_intent?: string;
@@ -44,7 +44,7 @@ export function createTask(input: CreateTaskInput): Task {
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
-      from_review, review_cycle, phase, infra_type, required_skills,
+      from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, created_at, updated_at
     )
     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -61,7 +61,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.from_review ? 1 : 0,
     input.review_cycle ?? null,
     input.phase || 'execution',
-    input.infra_type || null,
+    input.capability_type || null,
     requiredSkillsJson,
     input.task_intent || null,
     input.task_approach || null,
@@ -147,13 +147,13 @@ export function getTasksByPhase(outcomeId: string, phase: TaskPhase): Task[] {
 }
 
 /**
- * Get pending infrastructure tasks for an outcome
+ * Get pending capability tasks for an outcome
  */
-export function getPendingInfrastructureTasks(outcomeId: string): Task[] {
+export function getPendingCapabilityTasks(outcomeId: string): Task[] {
   const db = getDb();
   const rows = db.prepare(`
     SELECT * FROM tasks
-    WHERE outcome_id = ? AND phase = 'infrastructure' AND status = 'pending'
+    WHERE outcome_id = ? AND phase = 'capability' AND status = 'pending'
     ORDER BY priority ASC, score DESC
   `).all(outcomeId) as Task[];
 
@@ -162,6 +162,9 @@ export function getPendingInfrastructureTasks(outcomeId: string): Task[] {
     from_review: Boolean(row.from_review),
   }));
 }
+
+/** @deprecated Use getPendingCapabilityTasks instead */
+export const getPendingInfrastructureTasks = getPendingCapabilityTasks;
 
 /**
  * Check if all tasks in a phase are complete
@@ -184,18 +187,18 @@ export function isPhaseComplete(outcomeId: string, phase: TaskPhase): boolean {
  * Get count of tasks by phase and status
  */
 export function getPhaseStats(outcomeId: string): {
-  infrastructure: { total: number; pending: number; completed: number; failed: number };
+  capability: { total: number; pending: number; completed: number; failed: number };
   execution: { total: number; pending: number; completed: number; failed: number };
 } {
   const db = getDb();
 
-  const infraRow = db.prepare(`
+  const capabilityRow = db.prepare(`
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-    FROM tasks WHERE outcome_id = ? AND phase = 'infrastructure'
+    FROM tasks WHERE outcome_id = ? AND phase = 'capability'
   `).get(outcomeId) as { total: number; pending: number; completed: number; failed: number };
 
   const execRow = db.prepare(`
@@ -208,7 +211,7 @@ export function getPhaseStats(outcomeId: string): {
   `).get(outcomeId) as { total: number; pending: number; completed: number; failed: number };
 
   return {
-    infrastructure: infraRow,
+    capability: capabilityRow,
     execution: execRow,
   };
 }

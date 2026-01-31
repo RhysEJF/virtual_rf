@@ -18,7 +18,7 @@ interface RouteContext {
 
 interface SuggestedAction {
   id: string;
-  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'build_infrastructure' | 'start_worker' | 'pause_workers' | 'run_review';
+  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'build_capabilities' | 'start_worker' | 'pause_workers' | 'run_review';
   description: string;
   details: string;
   data?: Record<string, unknown>;
@@ -109,17 +109,17 @@ export async function POST(
 
             updateOutcome(outcomeId, { intent: JSON.stringify(currentIntent) });
 
-            // Reset infrastructure_ready when intent changes significantly - new requirements may need different skills
+            // Reset capability_ready when intent changes significantly - new requirements may need different skills
             // Only reset if summary or success criteria changed (not just item status updates)
             if (data.new_summary || data.new_success_criteria) {
-              updateOutcome(outcomeId, { infrastructure_ready: 0 });
+              updateOutcome(outcomeId, { capability_ready: 0 });
             }
 
             results.push({
               actionId: action.id,
               success: true,
               message: (data.new_summary || data.new_success_criteria)
-                ? 'Intent updated (infrastructure will be re-evaluated)'
+                ? 'Intent updated (capabilities will be re-evaluated)'
                 : 'Intent updated',
             });
             break;
@@ -137,15 +137,15 @@ export async function POST(
               const newApproach = data.new_approach as string;
               upsertDesignDoc(outcomeId, newApproach, currentVersion + 1);
 
-              // Reset infrastructure_ready when approach changes - new approach may need different skills
-              // This forces the system to re-evaluate infrastructure needs before next worker run
-              updateOutcome(outcomeId, { infrastructure_ready: 0 });
+              // Reset capability_ready when approach changes - new approach may need different skills
+              // This forces the system to re-evaluate capability needs before next worker run
+              updateOutcome(outcomeId, { capability_ready: 0 });
             }
 
             results.push({
               actionId: action.id,
               success: true,
-              message: 'Approach updated (infrastructure will be re-evaluated)',
+              message: 'Approach updated (capabilities will be re-evaluated)',
             });
             break;
           }
@@ -174,13 +174,13 @@ export async function POST(
             break;
           }
 
-          case 'build_infrastructure': {
-            // Trigger infrastructure building (skills/tools) before execution
+          case 'build_capabilities': {
+            // Trigger capability building (skills/tools) before execution
             const data = action.data || {};
             const skillNames = (data.skill_names || []) as string[];
 
             try {
-              // Start orchestrated execution which builds infrastructure first
+              // Start orchestrated execution which builds capabilities first
               const orchResponse = await fetch(
                 `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/outcomes/${outcomeId}/orchestrate`,
                 {
@@ -199,21 +199,21 @@ export async function POST(
                   actionId: action.id,
                   success: true,
                   message: skillNames.length > 0
-                    ? `Building infrastructure with skills: ${skillNames.join(', ')}`
-                    : 'Building infrastructure (analyzing what skills are needed)',
+                    ? `Building capabilities with skills: ${skillNames.join(', ')}`
+                    : 'Building capabilities (analyzing what skills are needed)',
                 });
               } else {
                 results.push({
                   actionId: action.id,
                   success: false,
-                  message: orchData.error || 'Failed to start infrastructure build',
+                  message: orchData.error || 'Failed to start capability build',
                 });
               }
             } catch (orchError) {
               results.push({
                 actionId: action.id,
                 success: false,
-                message: 'Failed to trigger infrastructure build',
+                message: 'Failed to trigger capability build',
               });
             }
             break;

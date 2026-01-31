@@ -262,7 +262,7 @@ export interface UpdateOutcomeInput {
   brief?: string;
   intent?: string;
   timeline?: string;
-  infrastructure_ready?: number;
+  capability_ready?: number;
   // Hierarchy
   parent_id?: string | null;  // Set to null to make root, or ID to re-parent
   // Git configuration
@@ -305,9 +305,9 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
     updates.push('timeline = ?');
     values.push(input.timeline);
   }
-  if (input.infrastructure_ready !== undefined) {
-    updates.push('infrastructure_ready = ?');
-    values.push(input.infrastructure_ready);
+  if (input.capability_ready !== undefined) {
+    updates.push('capability_ready = ?');
+    values.push(input.capability_ready);
   }
   // Hierarchy - handle parent_id changes
   if (input.parent_id !== undefined) {
@@ -418,17 +418,17 @@ export function archiveOutcome(id: string): Outcome | null {
 }
 
 // ============================================================================
-// Infrastructure Status (Computed)
+// Capability Status (Computed)
 // ============================================================================
 
 /**
- * Evaluate what infrastructure_ready should be based on actual task state.
+ * Evaluate what capability_ready should be based on actual task state.
  * Returns:
- *   0 = Infrastructure needed but not started (pending infra tasks, none completed)
- *   1 = Infrastructure in progress (some completed, some pending)
- *   2 = Infrastructure complete (all infra tasks completed, or no infra tasks)
+ *   0 = Capability phase needed but not started (pending capability tasks, none completed)
+ *   1 = Capability phase in progress (some completed, some pending)
+ *   2 = Capability phase complete (all capability tasks completed, or no capability tasks)
  */
-export function evaluateInfrastructureStatus(outcomeId: string): 0 | 1 | 2 {
+export function evaluateCapabilityStatus(outcomeId: string): 0 | 1 | 2 {
   const db = getDb();
 
   const stats = db.prepare(`
@@ -439,7 +439,7 @@ export function evaluateInfrastructureStatus(outcomeId: string): 0 | 1 | 2 {
       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
     FROM tasks
-    WHERE outcome_id = ? AND phase = 'infrastructure'
+    WHERE outcome_id = ? AND phase = 'capability'
   `).get(outcomeId) as {
     total: number;
     pending: number;
@@ -448,12 +448,12 @@ export function evaluateInfrastructureStatus(outcomeId: string): 0 | 1 | 2 {
     failed: number;
   };
 
-  // No infrastructure tasks = infrastructure is ready
+  // No capability tasks = capability phase is ready
   if (stats.total === 0) {
     return 2;
   }
 
-  // All infrastructure tasks completed (or failed but none pending)
+  // All capability tasks completed (or failed but none pending)
   if (stats.pending === 0 && stats.in_progress === 0) {
     return 2;
   }
@@ -468,19 +468,19 @@ export function evaluateInfrastructureStatus(outcomeId: string): 0 | 1 | 2 {
 }
 
 /**
- * Sync outcome's infrastructure_ready with actual task state.
+ * Sync outcome's capability_ready with actual task state.
  * Call this after startup cleanup or when resuming work.
  * Returns true if the status was changed.
  */
-export function syncInfrastructureStatus(outcomeId: string): boolean {
+export function syncCapabilityStatus(outcomeId: string): boolean {
   const outcome = getOutcomeById(outcomeId);
   if (!outcome) return false;
 
-  const computed = evaluateInfrastructureStatus(outcomeId);
+  const computed = evaluateCapabilityStatus(outcomeId);
 
-  if (outcome.infrastructure_ready !== computed) {
-    updateOutcome(outcomeId, { infrastructure_ready: computed });
-    console.log(`[DB Sync] Updated infrastructure_ready for ${outcomeId}: ${outcome.infrastructure_ready} → ${computed}`);
+  if (outcome.capability_ready !== computed) {
+    updateOutcome(outcomeId, { capability_ready: computed });
+    console.log(`[DB Sync] Updated capability_ready for ${outcomeId}: ${outcome.capability_ready} → ${computed}`);
     return true;
   }
 
@@ -488,21 +488,28 @@ export function syncInfrastructureStatus(outcomeId: string): boolean {
 }
 
 /**
- * Sync infrastructure status for all active outcomes.
+ * Sync capability status for all active outcomes.
  * Call this during startup cleanup.
  */
-export function syncAllInfrastructureStatus(): number {
+export function syncAllCapabilityStatus(): number {
   const activeOutcomes = getActiveOutcomes();
   let updated = 0;
 
   for (const outcome of activeOutcomes) {
-    if (syncInfrastructureStatus(outcome.id)) {
+    if (syncCapabilityStatus(outcome.id)) {
       updated++;
     }
   }
 
   return updated;
 }
+
+/** @deprecated Use evaluateCapabilityStatus instead */
+export const evaluateInfrastructureStatus = evaluateCapabilityStatus;
+/** @deprecated Use syncCapabilityStatus instead */
+export const syncInfrastructureStatus = syncCapabilityStatus;
+/** @deprecated Use syncAllCapabilityStatus instead */
+export const syncAllInfrastructureStatus = syncAllCapabilityStatus;
 
 // Design Doc helpers
 export function getDesignDoc(outcomeId: string): DesignDoc | null {

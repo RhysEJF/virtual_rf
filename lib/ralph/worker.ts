@@ -49,6 +49,7 @@ import {
   areSkillDependenciesMet,
   resolveSkillDependencies,
 } from '../agents/skill-dependency-resolver';
+import * as homr from '../homr';
 
 // ============================================================================
 // Types
@@ -103,7 +104,8 @@ function generateTaskInstructions(
   outcomeName: string,
   intent: Intent | null,
   task: Task,
-  additionalSkillContext?: string
+  additionalSkillContext?: string,
+  outcomeId?: string
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
@@ -116,13 +118,19 @@ function generateTaskInstructions(
     .filter(Boolean)
     .join('\n\n');
 
+  // Get HOMЯ context (cross-task learnings) if available
+  let homrContext = '';
+  if (outcomeId && homr.isEnabled(outcomeId)) {
+    homrContext = homr.buildTaskContext(task.id, outcomeId);
+  }
+
   return `# Current Task
 
 ## Outcome: ${outcomeName}
 ${intentSummary}
 
 ---
-
+${homrContext ? `\n${homrContext}` : ''}
 ## Your Current Task
 
 **ID:** ${task.id}
@@ -456,7 +464,7 @@ export async function startRalphWorker(
 
         // Write CLAUDE.md and progress.txt
         const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
-        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task));
+        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task, undefined, outcomeId));
 
         const progressPath = join(taskWorkspace, 'progress.txt');
         writeFileSync(progressPath, generateInitialProgress(task));
@@ -495,6 +503,31 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             content: `Completed: ${task.title}`,
             full_output: taskResult.fullOutput,
           });
+
+          // HOMЯ observation - analyze the completed task
+          if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
+            try {
+              appendLog(`Running HOMЯ observation...`);
+              const observationResult = await homr.observeAndProcess({
+                task,
+                fullOutput: taskResult.fullOutput,
+                intent,
+                outcomeId,
+              });
+
+              if (observationResult.observation) {
+                appendLog(`HOMЯ: ${observationResult.observation.summary}`);
+                if (observationResult.escalated) {
+                  appendLog(`HOMЯ: Escalation created - human input needed`);
+                }
+                if (observationResult.steered) {
+                  appendLog(`HOMЯ: Steering actions executed`);
+                }
+              }
+            } catch (homrError) {
+              appendLog(`HOMЯ observation failed: ${homrError instanceof Error ? homrError.message : 'Unknown error'}`);
+            }
+          }
         } else {
           failTask(task.id);
           appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
@@ -914,11 +947,11 @@ export async function runWorkerLoop(
       mkdirSync(taskWorkspace, { recursive: true });
     }
 
-    // Write CLAUDE.md with skill context
+    // Write CLAUDE.md with skill context and HOMЯ context
     const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
     writeFileSync(
       claudeMdPath,
-      generateTaskInstructions(outcome.name, intent, task, skillContext)
+      generateTaskInstructions(outcome.name, intent, task, skillContext, outcomeId)
     );
 
     const progressPath = join(taskWorkspace, 'progress.txt');
@@ -957,6 +990,21 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         content: `Completed: ${task.title}`,
         full_output: taskResult.fullOutput,
       });
+
+      // HOMЯ observation - analyze the completed task
+      if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
+        try {
+          appendLog(`Running HOMЯ observation...`);
+          await homr.observeAndProcess({
+            task,
+            fullOutput: taskResult.fullOutput,
+            intent,
+            outcomeId,
+          });
+        } catch (homrError) {
+          appendLog(`HOMЯ observation failed: ${homrError instanceof Error ? homrError.message : 'Unknown error'}`);
+        }
+      }
     } else {
       failTask(task.id);
       appendLog(`Task failed: ${task.title} - ${taskResult.error}`);

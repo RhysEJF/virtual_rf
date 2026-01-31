@@ -2,7 +2,24 @@
 
 > Detailed UI mockups, interaction patterns, and design rationale for the AI workforce management system.
 
-**Related:** See [VISION.md](./VISION.md) for high-level philosophy and architecture.
+---
+
+> **NOTE FOR AI AGENTS AND DEVELOPERS**
+>
+> This document is the **original design spec** written at project inception. The UI mockups and patterns here informed the build but may not match the current implementation exactly.
+>
+> **For up-to-date documentation, see:**
+> - [docs/vision/README.md](./docs/vision/README.md) - Index of modular vision docs
+> - [docs/vision/UI.md](./docs/vision/UI.md) - Current UI components and pages
+> - [docs/vision/DATABASE.md](./docs/vision/DATABASE.md) - Current schema (18 tables)
+>
+> The modular vision docs in `docs/vision/` describe **what exists today** based on code audits.
+>
+> **When making changes:** Update the relevant modular doc, not this file.
+
+---
+
+**Related:** See [VISION.md](./VISION.md) for original high-level philosophy.
 
 ---
 

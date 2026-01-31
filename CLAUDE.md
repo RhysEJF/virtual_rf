@@ -6,7 +6,21 @@
 
 This codebase is the Digital Twin system - an AI-powered personal assistant that routes requests, spawns AI workers, and self-improves over time.
 
-See `VISION.md` for the complete vision document.
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| **[docs/vision/README.md](./docs/vision/README.md)** | **Start here** - Index of modular vision docs |
+| [docs/vision/*.md](./docs/vision/) | Per-module documentation (Dispatcher, Worker, Skills, etc.) |
+| [docs/homr/VISION.md](./docs/homr/VISION.md) | HOMЯ Protocol - Intelligent orchestration layer above Ralph |
+| [docs/homr/DESIGN.md](./docs/homr/DESIGN.md) | HOMЯ Protocol - Technical architecture |
+| [docs/IDEAS.md](./docs/IDEAS.md) | Future improvement ideas |
+| [VISION.md](./VISION.md) | Original vision (historical reference) |
+| [DESIGN.md](./DESIGN.md) | Original design spec (historical reference) |
+
+**When working on a specific module**, read its vision doc first (e.g., `docs/vision/WORKER.md` before changing `lib/ralph/worker.ts`).
+
+**After making changes**, run `/update-docs` or ask Claude to update the relevant vision docs. See `skills/update-docs.md` for the process.
 
 ## Tech Stack
 

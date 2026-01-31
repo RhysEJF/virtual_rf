@@ -2,9 +2,33 @@
 
 > A personal AI workforce management system that compounds knowledge and capability over time.
 
+---
+
+> **NOTE FOR AI AGENTS AND DEVELOPERS**
+>
+> This document is the **original vision** written at project inception. It captures the philosophy and goals but may not reflect the current implementation.
+>
+> **For up-to-date documentation, see the modular vision docs:**
+> - [docs/vision/README.md](./docs/vision/README.md) - Index of all modules
+> - [docs/vision/DISPATCHER.md](./docs/vision/DISPATCHER.md) - Request routing
+> - [docs/vision/ORCHESTRATION.md](./docs/vision/ORCHESTRATION.md) - Two-phase execution
+> - [docs/vision/WORKER.md](./docs/vision/WORKER.md) - Ralph task execution
+> - [docs/vision/SKILLS.md](./docs/vision/SKILLS.md) - Skill system
+> - [docs/vision/REVIEW.md](./docs/vision/REVIEW.md) - Quality assurance
+> - [docs/vision/SUPERVISOR.md](./docs/vision/SUPERVISOR.md) - Safety monitoring
+> - [docs/vision/DATABASE.md](./docs/vision/DATABASE.md) - Data layer
+> - [docs/vision/UI.md](./docs/vision/UI.md) - Frontend
+> - [docs/vision/INTEGRATION.md](./docs/vision/INTEGRATION.md) - External systems
+> - [docs/vision/ANALYTICS.md](./docs/vision/ANALYTICS.md) - Logging and improvement
+>
+> **When making changes:** Update the relevant modular doc in `docs/vision/`, not this file.
+
+---
+
 **Related Documents:**
-- [DESIGN.md](./DESIGN.md) - Detailed UI mockups, interaction patterns, and design rationale
-- [CLAUDE.md](./CLAUDE.md) - Project coding standards for AI agents
+- [DESIGN.md](./DESIGN.md) - Original detailed design (historical)
+- [CLAUDE.md](./CLAUDE.md) - Project coding standards and current progress
+- [docs/IDEAS.md](./docs/IDEAS.md) - Future improvement ideas
 
 ---
 

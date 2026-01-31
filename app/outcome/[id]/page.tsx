@@ -190,6 +190,12 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [savingIntent, setSavingIntent] = useState(false);
   const [savingApproach, setSavingApproach] = useState(false);
 
+  // Optimize/ramble states
+  const [intentRamble, setIntentRamble] = useState('');
+  const [approachRamble, setApproachRamble] = useState('');
+  const [optimizingIntent, setOptimizingIntent] = useState(false);
+  const [optimizingApproach, setOptimizingApproach] = useState(false);
+
   // Review response state
   const [lastReviewResponse, setLastReviewResponse] = useState<string | null>(null);
   const [showReviewDetails, setShowReviewDetails] = useState(false);
@@ -468,6 +474,62 @@ export default function OutcomeDetailPage(): JSX.Element {
       toast({ type: 'error', message: 'Failed to save approach' });
     } finally {
       setSavingApproach(false);
+    }
+  };
+
+  // Optimize intent handler
+  const handleOptimizeIntent = async () => {
+    if (!intentRamble.trim()) {
+      toast({ type: 'warning', message: 'Enter some text to optimize' });
+      return;
+    }
+    setOptimizingIntent(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/optimize-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ramble: intentRamble }),
+      });
+      if (response.ok) {
+        toast({ type: 'success', message: 'Intent optimized' });
+        setIntentRamble('');
+        fetchOutcome();
+      } else {
+        const data = await response.json();
+        toast({ type: 'error', message: data.error || 'Failed to optimize intent' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to optimize intent' });
+    } finally {
+      setOptimizingIntent(false);
+    }
+  };
+
+  // Optimize approach handler
+  const handleOptimizeApproach = async () => {
+    if (!approachRamble.trim()) {
+      toast({ type: 'warning', message: 'Enter some text to optimize' });
+      return;
+    }
+    setOptimizingApproach(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/optimize-approach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ramble: approachRamble }),
+      });
+      if (response.ok) {
+        toast({ type: 'success', message: 'Approach optimized' });
+        setApproachRamble('');
+        fetchOutcome();
+      } else {
+        const data = await response.json();
+        toast({ type: 'error', message: data.error || 'Failed to optimize approach' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to optimize approach' });
+    } finally {
+      setOptimizingApproach(false);
     }
   };
 
@@ -855,8 +917,27 @@ export default function OutcomeDetailPage(): JSX.Element {
                         </div>
                       )}
                       {!intent?.summary && (
-                        <p className="text-text-tertiary text-sm">No intent defined yet. Use the chat to describe what you want.</p>
+                        <p className="text-text-tertiary text-sm mb-3">No intent defined yet. Describe what you want below.</p>
                       )}
+                      {/* Ramble box for intent optimization */}
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <textarea
+                          value={intentRamble}
+                          onChange={(e) => setIntentRamble(e.target.value)}
+                          placeholder="Describe what this outcome should achieve... (ramble here, then click Optimize)"
+                          className="w-full h-24 p-3 text-sm bg-bg-secondary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                        />
+                        <div className="flex justify-end mt-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleOptimizeIntent}
+                            disabled={optimizingIntent || !intentRamble.trim()}
+                          >
+                            {optimizingIntent ? 'Optimizing...' : 'Optimize'}
+                          </Button>
+                        </div>
+                      </div>
                     </>
                   )}
                 </CollapsibleSection>
@@ -889,7 +970,7 @@ export default function OutcomeDetailPage(): JSX.Element {
                   ) : (
                     <>
                       {outcome.design_doc ? (
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start mb-4">
                           <p className="text-text-secondary text-sm whitespace-pre-wrap flex-1">
                             {outcome.design_doc.approach}
                           </p>
@@ -898,10 +979,29 @@ export default function OutcomeDetailPage(): JSX.Element {
                           </Button>
                         </div>
                       ) : (
-                        <p className="text-text-tertiary text-sm">
-                          No design doc yet. Use the chat to describe your approach.
+                        <p className="text-text-tertiary text-sm mb-3">
+                          No design doc yet. Describe your approach below.
                         </p>
                       )}
+                      {/* Ramble box for approach optimization */}
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <textarea
+                          value={approachRamble}
+                          onChange={(e) => setApproachRamble(e.target.value)}
+                          placeholder="Describe how to approach this... (ramble here, then click Optimize)"
+                          className="w-full h-24 p-3 text-sm bg-bg-secondary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                        />
+                        <div className="flex justify-end mt-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleOptimizeApproach}
+                            disabled={optimizingApproach || !approachRamble.trim()}
+                          >
+                            {optimizingApproach ? 'Optimizing...' : 'Optimize'}
+                          </Button>
+                        </div>
+                      </div>
                     </>
                   )}
                 </CollapsibleSection>

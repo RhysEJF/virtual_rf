@@ -44,6 +44,7 @@ As James Phoenix noted: "The PRD shows WHAT the app will do, the Design shows HO
 | Module | Vision | Design | Purpose |
 |--------|--------|--------|---------|
 | **API** | [API.md](./API.md) | [Design](../design/API.md) | Unified conversational API layer |
+| **CLI** | [CLI.md](./CLI.md) | [Design](../design/CLI.md) | Terminal interface (`rf` command) |
 | **Deployment** | [DEPLOYMENT.md](./DEPLOYMENT.md) | [Design](../design/DEPLOYMENT.md) | Always-on hosting and chat interfaces |
 | **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Design](../design/DISPATCHER.md) | Request routing and classification |
 | **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Design](../design/ORCHESTRATION.md) | Two-phase execution management |

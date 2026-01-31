@@ -26,6 +26,7 @@
 | Module | Design Doc | Vision Doc | Description |
 |--------|------------|------------|-------------|
 | **API** | [API.md](./API.md) | [Vision](../vision/API.md) | Conversational API and session management |
+| **CLI** | [CLI.md](./CLI.md) | [Vision](../vision/CLI.md) | Terminal interface (`rf` command) |
 | **Deployment** | [DEPLOYMENT.md](./DEPLOYMENT.md) | [Vision](../vision/DEPLOYMENT.md) | Mac Mini, Cloudflare Tunnel, Telegram |
 | **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Vision](../vision/DISPATCHER.md) | Request classification and routing implementation |
 | **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Vision](../vision/ORCHESTRATION.md) | Two-phase execution flow and APIs |

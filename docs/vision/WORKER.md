@@ -19,18 +19,20 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Atomic task claiming | Complete |
+| Heartbeat mechanism | Complete |
+| Skill context injection | Complete |
+| Full output capture | Complete |
+| PID tracking | Complete |
+| Intervention handling | Complete |
+| Git worktree support | Complete |
+| HOMЯ integration | Complete |
 
-This is the largest module (29KB). It handles:
-- Atomic task claiming via SQLite transactions
-- Heartbeat mechanism for liveness detection
-- Skill context injection
-- Full output capture for episodic memory
-- Intervention handling (pause, redirect)
-- PID tracking for reliable process management
-- Git worktree support for parallel isolation
+**Overall:** Complete and production-ready (largest module at 29KB)
 
 ---
 
@@ -38,18 +40,7 @@ This is the largest module (29KB). It handles:
 
 ### Atomic Task Claiming
 
-Multiple workers can safely race to claim tasks using SQLite's IMMEDIATE transactions:
-
-```sql
-BEGIN IMMEDIATE;
-SELECT * FROM tasks
-  WHERE outcome_id = ? AND status = 'pending'
-  ORDER BY priority ASC LIMIT 1;
-UPDATE tasks SET status = 'claimed', claimed_by = ? WHERE id = ?;
-COMMIT;
-```
-
-Only one worker wins each task. Losers retry for the next one.
+Multiple workers can safely race to claim tasks. Uses SQLite's IMMEDIATE transactions to ensure only one worker wins each task. Losers retry for the next one.
 
 ### Heartbeat Mechanism
 
@@ -87,146 +78,41 @@ Every Claude response is captured in `progress_entries.full_output`. This provid
 - Debugging capability
 - Training data for improvements
 
----
+### HOMЯ Integration
 
-## Components
+After each task completes, if HOMЯ is enabled:
+1. Worker sends task output to HOMЯ for observation
+2. HOMЯ analyzes output for alignment, drift, and discoveries
+3. HOMЯ injects context from prior tasks into upcoming tasks
+4. HOMЯ can detect failure patterns and auto-pause the worker
 
-### Primary Files
+**Failure Pattern Detection:**
+- HOMЯ monitors recent observations for consecutive failures
+- After 3+ failures in a row, HOMЯ creates an escalation
+- All active workers are automatically paused
+- Human must decide: pause, continue with guidance, or skip failing tasks
 
-| File | Purpose |
-|------|---------|
-| `lib/ralph/worker.ts` | Main worker logic (29KB) |
-| `lib/db/workers.ts` | Worker database operations |
-| `lib/db/tasks.ts` | Task claiming and status |
-| `lib/db/progress.ts` | Progress entry recording |
-
-### Worker Loop
-
-```
-startRalphWorker(config)
-         │
-         ▼
-┌─────────────────────────────┐
-│    Create worker record     │
-│    Initialize workspace     │
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐◀──────────┐
-│    Claim next pending task  │           │
-└─────────────┬───────────────┘           │
-              │                           │
-         ┌────┴────┐                      │
-         ▼         ▼                      │
-     No tasks    Got task                 │
-         │         │                      │
-         ▼         ▼                      │
-      Done    ┌─────────────────┐         │
-              │ Start task      │         │
-              │ Build context   │         │
-              │ Write CLAUDE.md │         │
-              └────────┬────────┘         │
-                       │                  │
-                       ▼                  │
-              ┌─────────────────┐         │
-              │ Spawn Claude    │         │
-              │ --dangerously-  │         │
-              │ skip-permissions│         │
-              └────────┬────────┘         │
-                       │                  │
-                       ▼                  │
-              ┌─────────────────┐         │
-              │ Monitor         │         │
-              │ progress.txt    │         │
-              │ Send heartbeats │         │
-              └────────┬────────┘         │
-                       │                  │
-              ┌────────┴────────┐         │
-              ▼                 ▼         │
-           DONE              ERROR        │
-              │                 │         │
-              ▼                 ▼         │
-         Complete task    Fail task       │
-              │                 │         │
-              └────────┬────────┘         │
-                       │                  │
-                       ▼                  │
-              Record full output          │
-                       │                  │
-                       └──────────────────┘
-```
+This makes Ralph "smarter" by letting HOMЯ provide oversight and coordination across tasks.
 
 ---
 
-## Configuration
+## Behaviors
 
-```typescript
-interface RalphConfig {
-  outcomeId: string;
-  workspacePath?: string;      // Default: workspaces/out_{id}
-  maxIterations?: number;      // Default: 50
-  heartbeatIntervalMs?: number; // Default: 30000 (30s)
-  useWorktree?: boolean;       // Git worktree for isolation
-}
-```
+1. **Self-organizing** - Workers claim work without central coordination
+2. **Resilient** - Heartbeat enables detection and recovery of failed workers
+3. **Context-rich** - Each task runs with full outcome + skill context
+4. **Observable** - Progress and full output captured for visibility
+5. **Controllable** - Can be paused, redirected, or killed via interventions
 
 ---
 
-## Dependencies
+## Success Criteria
 
-**Uses:**
-- `lib/claude/client.ts` - (indirectly, spawns CLI)
-- `lib/db/tasks.ts` - Task claiming
-- `lib/db/workers.ts` - Worker state
-- `lib/db/progress.ts` - Progress recording
-- `lib/agents/skill-manager.ts` - Skill loading
-- `lib/workspace/detector.ts` - Workspace paths
-
-**Used by:**
-- `lib/ralph/orchestrator.ts` - Spawns workers
-- `app/api/outcomes/[id]/workers/route.ts` - Manual spawn
-
----
-
-## Process Management
-
-### PID Tracking
-
-Workers store their Claude process PID in the database:
-```typescript
-updateWorker(workerId, { pid: claudeProcess.pid });
-```
-
-This enables:
-- Reliable pause (sends SIGTERM to actual process)
-- Stop (sends SIGKILL if SIGTERM fails)
-- Orphan detection (process died but worker still "running")
-
-### Intervention Handling
-
-Workers check for pending interventions each iteration:
-```typescript
-const interventions = getPendingInterventionsForWorker(workerId);
-for (const intervention of interventions) {
-  if (intervention.type === 'pause') {
-    // Stop loop, mark worker paused
-  }
-}
-```
-
----
-
-## Workspace Structure
-
-```
-workspaces/out_{outcomeId}/
-├── skills/              # Outcome-specific skills
-├── tools/               # Outcome-specific tools
-├── task_{taskId}/       # Per-task working directory
-│   ├── CLAUDE.md        # Instructions for this task
-│   └── progress.txt     # Status updates
-└── worker-{workerId}.log
-```
+- Tasks complete successfully without manual intervention
+- Multiple workers don't conflict on same task
+- Stale workers are detected and cleaned up
+- Full output is captured for every task
+- Interventions are handled promptly
 
 ---
 
@@ -236,6 +122,16 @@ workspaces/out_{outcomeId}/
 
 2. **Task timeout** - What if a task runs forever? Currently relies on Supervisor detection (10 min threshold).
 
-3. **Retry logic** - Failed tasks increment `attempts`. When should we give up? Currently uses `max_attempts` field but logic is simple.
+3. ~~**Retry logic** - Failed tasks increment `attempts`. When should we give up?~~
+   **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3).
 
 4. **Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.
+
+---
+
+## Related
+
+- **Design:** [WORKER.md](../design/WORKER.md) - Implementation details and configuration
+- **Vision:** [SUPERVISOR.md](./SUPERVISOR.md) - How workers are monitored
+- **Vision:** [SKILLS.md](./SKILLS.md) - How skills are loaded
+- **Vision:** [HOMЯ](../homr/VISION.md) - How workers are observed and coordinated

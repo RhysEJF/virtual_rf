@@ -513,10 +513,18 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
                 fullOutput: taskResult.fullOutput,
                 intent,
                 outcomeId,
+                workerId,
               });
 
               if (observationResult.observation) {
                 appendLog(`HOMЯ: ${observationResult.observation.summary}`);
+                if (observationResult.failurePatternDetected) {
+                  appendLog(`HOMЯ: Failure pattern detected - consecutive failures`);
+                  if (observationResult.workerPaused) {
+                    appendLog(`HOMЯ: Worker paused for review - awaiting human input`);
+                    workerState.running = false; // Stop the worker loop
+                  }
+                }
                 if (observationResult.escalated) {
                   appendLog(`HOMЯ: Escalation created - human input needed`);
                 }
@@ -995,12 +1003,27 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
       if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
         try {
           appendLog(`Running HOMЯ observation...`);
-          await homr.observeAndProcess({
+          const observationResult = await homr.observeAndProcess({
             task,
             fullOutput: taskResult.fullOutput,
             intent,
             outcomeId,
+            workerId,
           });
+
+          if (observationResult.observation) {
+            appendLog(`HOMЯ: ${observationResult.observation.summary}`);
+          }
+          if (observationResult.failurePatternDetected) {
+            appendLog(`HOMЯ: Failure pattern detected - workers paused for review`);
+            // The pause will be picked up by isWorkerPaused() check in next iteration
+          }
+          if (observationResult.escalated) {
+            appendLog(`HOMЯ: Escalation created - human input needed`);
+          }
+          if (observationResult.steered) {
+            appendLog(`HOMЯ: Steering actions executed`);
+          }
         } catch (homrError) {
           appendLog(`HOMЯ observation failed: ${homrError instanceof Error ? homrError.message : 'Unknown error'}`);
         }

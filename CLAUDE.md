@@ -295,6 +295,15 @@ kill -9 <PID>
 - [x] Finds HTML, images, PDFs, etc. in workspaces
 - [x] Quick preview/open for completed work
 
+### HOMЯ Protocol (Complete)
+- [x] Context Store - Cross-task memory and learnings (`lib/db/homr.ts`)
+- [x] Observer - AI analysis of task outputs (`lib/homr/observer.ts`)
+- [x] Steerer - Task modification and context injection (`lib/homr/steerer.ts`)
+- [x] Escalator - Ambiguity detection and human questions (`lib/homr/escalator.ts`)
+- [x] API endpoints for HOMЯ status, context, escalations (`app/api/outcomes/[id]/homr/`)
+- [x] UI components: HomrStatusCard, EscalationAlert, ActivityLogDrawer (`app/components/homr/`)
+- [x] Integration with Ralph worker (observation after task completion)
+
 ### Working Flow
 1. User submits request via CommandBar
 2. Dispatcher classifies it → creates Outcome with intent
@@ -306,10 +315,10 @@ kill -9 <PID>
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
-- [ ] Supervisor agent (watches workers for stuck states)
 - [ ] Self-Improvement Engine (logs bottlenecks, suggests improvements)
 - [ ] Telegram bridge
 - [ ] SSE for live progress updates (currently polls every 5s)
+- [ ] Cross-outcome learning (HOMЯ discoveries shared between outcomes)
 
 ### Key Files to Understand
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
@@ -318,6 +327,9 @@ kill -9 <PID>
 - `lib/agents/capability-planner.ts` - Analyzes outcomes, plans skills/tools
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues
+- `lib/homr/index.ts` - HOMЯ Protocol main exports (observe, steer, escalate)
+- `lib/homr/observer.ts` - Task output analysis with Claude
+- `lib/homr/escalator.ts` - Ambiguity detection and human escalation
 - `app/outcome/[id]/page.tsx` - Main outcome management UI
 - `app/api/outcomes/[id]/iterate/route.ts` - Post-completion feedback
 

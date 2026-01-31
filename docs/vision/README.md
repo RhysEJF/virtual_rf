@@ -1,39 +1,59 @@
 # Vision Documents
 
-> Modular documentation for each major system in Digital Twin.
+> WHAT each module does - purpose, behaviors, success criteria, status.
+
+---
+
+## Two-Document System
+
+Digital Twin documentation is split into two types:
+
+| Doc Type | Location | Contains |
+|----------|----------|----------|
+| **Vision** (this folder) | `docs/vision/` | WHAT - Purpose, behaviors, success criteria, status |
+| **Design** | `docs/design/` | HOW - Implementation, APIs, file paths, code snippets |
+
+**Why separate them?**
+
+As James Phoenix noted: "The PRD shows WHAT the app will do, the Design shows HOW. You can change the design doc, but the PRD stays the same in terms of its original intent."
+
+- Vision docs are stable - they capture intent and track if we've achieved it
+- Design docs can evolve - implementation details change without changing the goal
 
 ---
 
 ## How to Use These Docs
 
-Each vision doc describes **what a module does today** based on the actual code. They're organized by system, not by feature or phase.
-
 **When to read a vision doc:**
-- You're about to work on that module
-- You need to understand how something works
-- You're debugging an issue in that area
+- You need to understand what a module should do
+- You want to check if a capability is implemented
+- You're reviewing the system's current state
 
-**When to update a vision doc:**
-- You've changed how the module works
-- You've added significant new functionality
-- The "Open Questions" have been resolved
+**When to read the design doc:**
+- You need implementation details
+- You're looking for file paths or code examples
+- You want API request/response formats
+
+**When to update:**
+- Use the [update-docs skill](/skills/update-docs.md) for guidance on updating both doc types
 
 ---
 
 ## Module Index
 
-| Module | Purpose | Key Entry Point |
-|--------|---------|-----------------|
-| [DISPATCHER](./DISPATCHER.md) | Request routing and classification | `lib/agents/dispatcher.ts` |
-| [ORCHESTRATION](./ORCHESTRATION.md) | Two-phase execution management | `lib/ralph/orchestrator.ts` |
-| [WORKER](./WORKER.md) | Task execution engine (Ralph) | `lib/ralph/worker.ts` |
-| [SKILLS](./SKILLS.md) | Reusable instruction system | `lib/agents/skill-manager.ts` |
-| [REVIEW](./REVIEW.md) | Quality assurance and iteration | `lib/agents/reviewer.ts` |
-| [SUPERVISOR](./SUPERVISOR.md) | Safety monitoring and alerts | `lib/supervisor/index.ts` |
-| [DATABASE](./DATABASE.md) | Data layer and schema | `lib/db/` |
-| [UI](./UI.md) | Frontend components and pages | `app/components/` |
-| [INTEGRATION](./INTEGRATION.md) | External systems (Claude, Git) | `lib/claude/client.ts` |
-| [ANALYTICS](./ANALYTICS.md) | Logging, costs, self-improvement | `lib/agents/self-improvement.ts` |
+| Module | Vision | Design | Purpose |
+|--------|--------|--------|---------|
+| **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Design](../design/DISPATCHER.md) | Request routing and classification |
+| **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Design](../design/ORCHESTRATION.md) | Two-phase execution management |
+| **Worker** | [WORKER.md](./WORKER.md) | [Design](../design/WORKER.md) | Task execution engine (Ralph) |
+| **HOMЯ** | [HOMЯ](../homr/VISION.md) | [Design](../homr/DESIGN.md) | Intelligent orchestration layer |
+| **Skills** | [SKILLS.md](./SKILLS.md) | [Design](../design/SKILLS.md) | Reusable instruction system |
+| **Review** | [REVIEW.md](./REVIEW.md) | [Design](../design/REVIEW.md) | Quality assurance and iteration |
+| **Supervisor** | [SUPERVISOR.md](./SUPERVISOR.md) | [Design](../design/SUPERVISOR.md) | Safety monitoring and alerts |
+| **Database** | [DATABASE.md](./DATABASE.md) | [Design](../design/DATABASE.md) | Data layer and schema |
+| **UI** | [UI.md](./UI.md) | [Design](../design/UI.md) | Frontend components and pages |
+| **Integration** | [INTEGRATION.md](./INTEGRATION.md) | [Design](../design/INTEGRATION.md) | External systems (Claude, Git) |
+| **Analytics** | [ANALYTICS.md](./ANALYTICS.md) | [Design](../design/ANALYTICS.md) | Logging, costs, self-improvement |
 
 ---
 
@@ -55,18 +75,20 @@ User Input
     ┌────┴────┐
     ▼         ▼
 ┌───────┐ ┌───────┐
-│SKILLS │ │WORKER │ ← Infrastructure phase builds skills
+│SKILLS │ │WORKER │ ← Capability phase builds skills
 └───────┘ └───┬───┘   Execution phase runs tasks
               │
-              ▼
-       ┌────────────┐
-       │  REVIEW    │ ← Checks quality, creates fix tasks
-       └──────┬─────┘
-              │
-              ▼
-       ┌────────────┐
-       │ SUPERVISOR │ ← Monitors for stuck/failed states
-       └────────────┘
+              ├────────────────────┐
+              ▼                    ▼
+       ┌────────────┐      ┌────────────┐
+       │   HOMЯ     │ ←──→ │  REVIEW    │ ← HOMЯ observes tasks, steers work
+       └──────┬─────┘      └──────┬─────┘   Review checks quality at intervals
+              │                   │
+              └─────────┬─────────┘
+                        ▼
+                 ┌────────────┐
+                 │ SUPERVISOR │ ← Monitors for stuck/failed states
+                 └────────────┘
 ```
 
 **Supporting Systems:**
@@ -79,11 +101,7 @@ User Input
 
 ## Related Documents
 
-- `../homr/VISION.md` - HOMЯ Protocol vision (intelligent orchestration above Ralph)
-- `../homr/DESIGN.md` - HOMЯ Protocol technical architecture
-- `../IDEAS.md` - Future improvement ideas (not yet approved)
-- `../HIERARCHICAL_OUTCOMES.md` - Nested outcomes feature design
-- `../SUPERVISOR_DESIGN.md` - Detailed supervisor design
-- `../RALPH_UNLEASHED.md` - Vision for enhanced worker capabilities
-- `../../VISION.md` - Original north star document (historical)
-- `../../DESIGN.md` - Original detailed design (historical)
+- [Design Docs](../design/README.md) - HOW each module is implemented
+- [HOMЯ Protocol](../homr/VISION.md) - Intelligent orchestration layer
+- [IDEAS.md](../IDEAS.md) - Future improvement ideas
+- [VISION.md](../../VISION.md) - Original north star document (historical)

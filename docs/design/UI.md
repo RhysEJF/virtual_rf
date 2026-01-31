@@ -88,7 +88,7 @@ app/
 | ToolsSection | `ToolsSection.tsx` | Tools with sync status |
 | SkillDetailModal | `SkillDetailModal.tsx` | Skill viewer |
 | GitConfigSection | `GitConfigSection.tsx` | Git workflow config |
-| SaveTargetsSection | `SaveTargetsSection.tsx` | Repository sync config |
+| SaveTargetsSection | `SaveTargetsSection.tsx` | Repository sync config with inheritance |
 | IterateSection | `IterateSection.tsx` | Post-completion feedback |
 | InterventionForm | `InterventionForm.tsx` | Send worker instructions |
 | SupervisorAlerts | `SupervisorAlerts.tsx` | Safety alerts |

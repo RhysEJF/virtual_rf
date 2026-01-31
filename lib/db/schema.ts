@@ -62,9 +62,7 @@ export type HomrAmbiguityType = 'unclear_requirement' | 'multiple_approaches' | 
 export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 
 // Repository configuration for skills/tools/files/outputs
-export type RepositoryType = 'private' | 'team';
-export type ContentType = 'outputs' | 'skills' | 'tools' | 'files' | 'all';
-export type SaveTarget = 'local' | 'private' | 'team';
+export type SaveTarget = 'local' | 'repo' | 'inherit';
 
 // ============================================================================
 // Core Entities
@@ -100,12 +98,13 @@ export interface Outcome {
   supervisor_enabled: boolean;      // Should supervisor monitor this outcome
   pause_sensitivity: PauseSensitivity;  // How aggressive auto-pause should be
   cot_review_frequency: CoTReviewFrequency; // How often to run AI review
-  // Repository save targets (where content goes by default)
-  output_target: SaveTarget;        // 'local' | 'private' | 'team'
+  // Repository configuration (per-outcome with inheritance)
+  repository_id: string | null;     // FK to repositories (null = no repo / inherit from parent)
+  output_target: SaveTarget;        // 'local' | 'repo' | 'inherit'
   skill_target: SaveTarget;
   tool_target: SaveTarget;
   file_target: SaveTarget;
-  auto_save: boolean;               // Auto-save as workers build
+  auto_save: boolean | 'inherit';   // Auto-save as workers build (or inherit from parent)
 }
 
 export interface DesignDoc {
@@ -231,15 +230,10 @@ export interface Skill {
 
 export interface Repository {
   id: string;
-  name: string;
-  type: RepositoryType;             // 'private' | 'team'
-  content_type: ContentType;        // 'outputs' | 'skills' | 'tools' | 'files' | 'all'
-  repo_url: string | null;          // git remote URL
-  local_path: string;               // local clone path
-  branch: string;                   // default 'main'
-  auto_push: boolean;               // push immediately after adding
-  require_pr: boolean;              // require PR for team repos
-  last_synced_at: number | null;
+  name: string;                     // Descriptive name (e.g., "Client A Shared", "Personal Archive")
+  local_path: string;               // Local clone path
+  remote_url: string | null;        // Git remote URL (null for local-only)
+  auto_push: boolean;               // Push immediately after committing
   created_at: number;
   updated_at: number;
 }
@@ -252,9 +246,8 @@ export interface OutcomeItem {
   item_type: OutcomeItemType;       // 'output' | 'skill' | 'tool' | 'file'
   filename: string;
   file_path: string;
-  target_override: SaveTarget | null;  // null = use outcome default
-  synced_to_private: boolean;
-  synced_to_team: boolean;
+  target_override: SaveTarget | null;  // null = use outcome default, 'local' | 'repo' | 'inherit'
+  synced_to: string | null;         // Repository ID it was synced to (null = local only)
   last_synced_at: number | null;
   created_at: number;
   updated_at: number;
@@ -764,18 +757,13 @@ CREATE TABLE IF NOT EXISTS skills (
 -- Repository Configuration Tables
 -- ============================================================================
 
--- Repositories: Configured git repos for storing content
+-- Repositories: Named git repos for syncing content (used by outcomes)
 CREATE TABLE IF NOT EXISTS repositories (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,              -- 'private' | 'team'
-  content_type TEXT NOT NULL,      -- 'outputs' | 'skills' | 'tools' | 'files' | 'all'
-  repo_url TEXT,                   -- git remote URL (null for local-only)
-  local_path TEXT NOT NULL,        -- local clone path
-  branch TEXT NOT NULL DEFAULT 'main',
+  name TEXT NOT NULL,              -- Descriptive name (e.g., "Client A Shared")
+  local_path TEXT NOT NULL,        -- Local clone path
+  remote_url TEXT,                 -- Git remote URL (null for local-only)
   auto_push INTEGER NOT NULL DEFAULT 1,
-  require_pr INTEGER NOT NULL DEFAULT 0,
-  last_synced_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -787,20 +775,17 @@ CREATE TABLE IF NOT EXISTS outcome_items (
   item_type TEXT NOT NULL,         -- 'output' | 'skill' | 'tool' | 'file'
   filename TEXT NOT NULL,
   file_path TEXT NOT NULL,
-  target_override TEXT,            -- null = use outcome default, or 'local' | 'private' | 'team'
-  synced_to_private INTEGER NOT NULL DEFAULT 0,
-  synced_to_team INTEGER NOT NULL DEFAULT 0,
+  target_override TEXT,            -- null = use outcome default, or 'local' | 'repo' | 'inherit'
+  synced_to TEXT,                  -- Repository ID synced to (null = local only)
   last_synced_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(outcome_id, item_type, filename)
 );
 
-CREATE INDEX IF NOT EXISTS idx_repositories_type ON repositories(type);
-CREATE INDEX IF NOT EXISTS idx_repositories_content_type ON repositories(content_type);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type);
-CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to_private, synced_to_team);
+CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to);
 
 -- Cost tracking
 CREATE TABLE IF NOT EXISTS cost_log (
@@ -1217,10 +1202,25 @@ ALTER TABLE outcomes ADD COLUMN create_pr_on_complete INTEGER NOT NULL DEFAULT 0
 `;
 
 export const REPO_CONFIG_MIGRATION_SQL = `
--- Add repository save target columns to outcomes table
+-- Add repository configuration columns to outcomes table
+ALTER TABLE outcomes ADD COLUMN repository_id TEXT REFERENCES repositories(id) ON DELETE SET NULL;
 ALTER TABLE outcomes ADD COLUMN output_target TEXT NOT NULL DEFAULT 'local';
 ALTER TABLE outcomes ADD COLUMN skill_target TEXT NOT NULL DEFAULT 'local';
 ALTER TABLE outcomes ADD COLUMN tool_target TEXT NOT NULL DEFAULT 'local';
 ALTER TABLE outcomes ADD COLUMN file_target TEXT NOT NULL DEFAULT 'local';
-ALTER TABLE outcomes ADD COLUMN auto_save INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE outcomes ADD COLUMN auto_save TEXT NOT NULL DEFAULT '0';
+`;
+
+export const REPO_INHERITANCE_MIGRATION_SQL = `
+-- Migration for repository inheritance model
+-- Updates existing data to new schema
+
+-- Update target values from 'private'/'team' to 'repo'
+UPDATE outcomes SET output_target = 'repo' WHERE output_target IN ('private', 'team');
+UPDATE outcomes SET skill_target = 'repo' WHERE skill_target IN ('private', 'team');
+UPDATE outcomes SET tool_target = 'repo' WHERE tool_target IN ('private', 'team');
+UPDATE outcomes SET file_target = 'repo' WHERE file_target IN ('private', 'team');
+
+-- Update outcome_items target_override values
+UPDATE outcome_items SET target_override = 'repo' WHERE target_override IN ('private', 'team');
 `;

@@ -80,9 +80,17 @@ CREATE TABLE outcomes (
   supervisor_enabled INTEGER DEFAULT 1,
   pause_sensitivity TEXT DEFAULT 'medium',
   consecutive_clean_reviews INTEGER DEFAULT 0,
+  -- Repository configuration (inheritance-aware)
+  repository_id TEXT,            -- FK to repositories (null = inherit from parent)
+  output_target TEXT DEFAULT 'local',   -- local/repo/inherit
+  skill_target TEXT DEFAULT 'local',    -- local/repo/inherit
+  tool_target TEXT DEFAULT 'local',     -- local/repo/inherit
+  file_target TEXT DEFAULT 'local',     -- local/repo/inherit
+  auto_save TEXT DEFAULT '0',           -- 0/1/inherit
   created_at TEXT,
   updated_at TEXT,
-  last_activity_at TEXT
+  last_activity_at TEXT,
+  FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE SET NULL
 );
 ```
 
@@ -243,15 +251,15 @@ CREATE TABLE supervisor_alerts (
 CREATE TABLE repositories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL,            -- private/team
-  local_path TEXT NOT NULL,
-  remote_url TEXT,
-  content_type TEXT NOT NULL,    -- outputs/skills/tools/files/all
-  auto_push INTEGER DEFAULT 1,
+  local_path TEXT NOT NULL,      -- Local git repo path
+  remote_url TEXT,               -- Optional remote URL
+  auto_push INTEGER DEFAULT 1,   -- Auto-push after commits
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 ```
+
+**Note:** Repositories are no longer typed as "private" or "team". Instead, each outcome specifies its own repository via `repository_id`, with inheritance through the parent chain.
 
 ### outcome_items
 
@@ -262,14 +270,39 @@ CREATE TABLE outcome_items (
   item_type TEXT NOT NULL,       -- skill/tool/file/output
   filename TEXT NOT NULL,
   file_path TEXT NOT NULL,
-  target_override TEXT,          -- local/private/team (NULL = use default)
-  synced_to TEXT,                -- local/private/team (current sync state)
+  target_override TEXT,          -- local/repo/inherit (NULL = use outcome default)
+  synced_to TEXT,                -- Repository ID if synced (NULL = local only)
   last_synced_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   UNIQUE(outcome_id, item_type, filename)
 );
+```
+
+### Repository Inheritance Functions
+
+```typescript
+// lib/db/repositories.ts
+
+// Get effective repository by walking up outcome hierarchy
+function getEffectiveRepository(outcomeId: string): Repository | null
+
+// Get effective save target for a content type
+function getEffectiveTarget(
+  outcomeId: string,
+  targetType: 'output_target' | 'skill_target' | 'tool_target' | 'file_target'
+): 'local' | 'repo'
+
+// Get all effective settings (resolved through inheritance)
+function getEffectiveRepoSettings(outcomeId: string): {
+  repository: Repository | null;
+  output_target: 'local' | 'repo';
+  skill_target: 'local' | 'repo';
+  tool_target: 'local' | 'repo';
+  file_target: 'local' | 'repo';
+  auto_save: boolean;
+}
 ```
 
 ### activity_log

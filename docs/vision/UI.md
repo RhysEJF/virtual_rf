@@ -30,6 +30,7 @@ The UI is the user's window into Digital Twin. It provides:
 | Responsive design | Complete |
 | Settings page (repositories) | Complete |
 | Save targets configuration | Complete |
+| Repository inheritance UI | Complete |
 | Tools section with sync status | Complete |
 
 **Overall:** Complete and production-ready (30+ components, 5 pages)

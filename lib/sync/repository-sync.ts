@@ -2,6 +2,7 @@
  * Repository Sync Logic
  *
  * Handles syncing skills, tools, files, and outputs to configured repositories.
+ * Supports inheritance - resolves effective repository through outcome hierarchy.
  */
 
 import fs from 'fs';
@@ -9,13 +10,15 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { getOutcomeById } from '../db/outcomes';
 import {
-  getRepositoryFor,
+  getEffectiveRepository,
+  getEffectiveRepoSettings,
   upsertOutcomeItem,
   markItemSynced,
-  getEffectiveSaveTarget,
+  markItemUnsynced,
   getOutcomeItem,
+  updateOutcomeItem,
 } from '../db/repositories';
-import type { SaveTarget, OutcomeItemType, Repository } from '../db/schema';
+import type { OutcomeItemType, Repository } from '../db/schema';
 
 // ============================================================================
 // Types
@@ -23,8 +26,9 @@ import type { SaveTarget, OutcomeItemType, Repository } from '../db/schema';
 
 export interface SyncResult {
   success: boolean;
-  target: SaveTarget;
+  target: 'local' | 'repo';
   repository?: string;
+  repositoryId?: string;
   error?: string;
 }
 
@@ -148,39 +152,23 @@ export async function syncItem(
       file_path: sourcePath,
     });
 
-    // Determine effective target
-    const target = getEffectiveSaveTarget(item, {
-      output_target: outcome.output_target,
-      skill_target: outcome.skill_target,
-      tool_target: outcome.tool_target,
-      file_target: outcome.file_target,
-    });
+    // Get effective settings (resolves inheritance)
+    const settings = getEffectiveRepoSettings(outcomeId);
+
+    // Determine if this content type should go to repo
+    const targetKey = `${itemType}_target` as 'output_target' | 'skill_target' | 'tool_target' | 'file_target';
+    const target = settings[targetKey];
 
     // If local, nothing to sync
-    if (target === 'local') {
+    if (target === 'local' || !settings.repository) {
       return { success: true, target: 'local' };
     }
 
-    // Get the repository for this target and content type
-    const contentTypeMap: Record<OutcomeItemType, 'outputs' | 'skills' | 'tools' | 'files'> = {
-      output: 'outputs',
-      skill: 'skills',
-      tool: 'tools',
-      file: 'files',
-    };
-
-    const repo = getRepositoryFor(contentTypeMap[itemType], target);
-    if (!repo) {
-      return {
-        success: false,
-        target,
-        error: `No ${target} repository configured for ${itemType}s`,
-      };
-    }
+    const repo = settings.repository;
 
     // Check source file exists
     if (!fs.existsSync(sourcePath)) {
-      return { success: false, target, error: 'Source file not found' };
+      return { success: false, target: 'repo', error: 'Source file not found' };
     }
 
     // Get destination path and ensure directory exists
@@ -209,12 +197,13 @@ export async function syncItem(
     }
 
     // Mark as synced
-    markItemSynced(item.id, target);
+    markItemSynced(item.id, repo.id);
 
     return {
       success: true,
-      target,
+      target: 'repo',
       repository: repo.name,
+      repositoryId: repo.id,
     };
   } catch (error) {
     console.error('[Sync] Error syncing item:', error);
@@ -282,11 +271,10 @@ export async function onSkillBuilt(
   outcomeId: string,
   skillPath: string
 ): Promise<SyncResult | null> {
-  const outcome = getOutcomeById(outcomeId);
-  if (!outcome) return null;
+  const settings = getEffectiveRepoSettings(outcomeId);
 
   // Check if auto-save is enabled
-  if (!outcome.auto_save) {
+  if (!settings.auto_save) {
     console.log('[Sync] Auto-save disabled, skipping skill sync');
     return null;
   }
@@ -303,10 +291,9 @@ export async function onToolBuilt(
   outcomeId: string,
   toolPath: string
 ): Promise<SyncResult | null> {
-  const outcome = getOutcomeById(outcomeId);
-  if (!outcome) return null;
+  const settings = getEffectiveRepoSettings(outcomeId);
 
-  if (!outcome.auto_save) {
+  if (!settings.auto_save) {
     console.log('[Sync] Auto-save disabled, skipping tool sync');
     return null;
   }
@@ -320,13 +307,13 @@ export async function onToolBuilt(
 // ============================================================================
 
 /**
- * Manually promote an item to a different target
+ * Manually promote an item to repo or demote to local
  */
 export async function promoteItem(
   outcomeId: string,
   itemType: OutcomeItemType,
   filename: string,
-  newTarget: SaveTarget
+  newTarget: 'local' | 'repo'
 ): Promise<SyncResult> {
   try {
     // Get the existing item
@@ -336,15 +323,25 @@ export async function promoteItem(
     }
 
     // Update the target override
-    const { updateOutcomeItem } = await import('../db/repositories');
     updateOutcomeItem(item.id, { target_override: newTarget });
 
-    // If new target is local, we're done (just removed from sync)
+    // If new target is local, we're done (just mark as unsynced)
     if (newTarget === 'local') {
+      markItemUnsynced(item.id);
       return { success: true, target: 'local' };
     }
 
-    // Sync to the new target
+    // Get effective repository
+    const repo = getEffectiveRepository(outcomeId);
+    if (!repo) {
+      return {
+        success: false,
+        target: 'repo',
+        error: 'No repository configured for this outcome',
+      };
+    }
+
+    // Sync to the repository
     return syncItem(outcomeId, itemType, filename, item.file_path, {
       commitMessage: `Promote ${itemType}: ${filename}`,
     });

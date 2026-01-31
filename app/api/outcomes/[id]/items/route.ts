@@ -169,11 +169,10 @@ export async function PATCH(
     }
 
     if (action === 'promote') {
-      // Validate target
-      const validTargets: SaveTarget[] = ['local', 'private', 'team'];
-      if (!validTargets.includes(target)) {
+      // Validate target (only 'local' or 'repo' for promotion)
+      if (target !== 'local' && target !== 'repo') {
         return NextResponse.json(
-          { error: 'Invalid target. Must be: local, private, or team' },
+          { error: 'Invalid target. Must be: local or repo' },
           { status: 400 }
         );
       }
@@ -189,10 +188,10 @@ export async function PATCH(
 
     // Generic update (target_override only)
     if (target) {
-      const validTargets: SaveTarget[] = ['local', 'private', 'team'];
+      const validTargets: SaveTarget[] = ['local', 'repo', 'inherit'];
       if (!validTargets.includes(target)) {
         return NextResponse.json(
-          { error: 'Invalid target' },
+          { error: 'Invalid target. Must be: local, repo, or inherit' },
           { status: 400 }
         );
       }

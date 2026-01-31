@@ -23,7 +23,7 @@ interface OutcomeItem {
   filename: string;
   file_path: string;
   target_override: SaveTarget | null;
-  synced_to: SaveTarget | null;
+  synced_to: string | null;  // Repository ID if synced, null if local only
   last_synced_at: number | null;
 }
 
@@ -31,10 +31,9 @@ interface ToolsSectionProps {
   outcomeId: string;
 }
 
-const TARGET_LABELS: Record<SaveTarget, string> = {
+const TARGET_LABELS: Record<'local' | 'repo', string> = {
   local: 'Local',
-  private: 'Private',
-  team: 'Team',
+  repo: 'Repository',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -144,13 +143,8 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
     if (!item || !item.synced_to) {
       return <Badge variant="default">Local</Badge>;
     }
-    if (item.synced_to === 'private') {
-      return <Badge variant="info">Private</Badge>;
-    }
-    if (item.synced_to === 'team') {
-      return <Badge variant="success">Team</Badge>;
-    }
-    return null;
+    // synced_to now contains a repository ID, meaning it's synced
+    return <Badge variant="success">Synced</Badge>;
   };
 
   if (loading) {
@@ -234,13 +228,13 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-text-tertiary">Save to:</span>
-                      {(['local', 'private', 'team'] as SaveTarget[]).map((target) => (
+                      {(['local', 'repo'] as const).map((target) => (
                         <button
                           key={target}
                           disabled={isPromoting}
                           onClick={() => handlePromote(tool, target)}
                           className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                            item?.synced_to === target || (!item?.synced_to && target === 'local')
+                            (item?.synced_to && target === 'repo') || (!item?.synced_to && target === 'local')
                               ? 'bg-accent text-white'
                               : 'bg-bg-primary text-text-secondary hover:bg-bg-tertiary'
                           } ${isPromoting ? 'opacity-50' : ''}`}

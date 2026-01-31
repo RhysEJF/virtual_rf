@@ -9,8 +9,9 @@ import type { SaveTarget } from '@/lib/db/schema';
 interface Repository {
   id: string;
   name: string;
-  type: 'private' | 'team';
-  content_type: string;
+  local_path: string;
+  remote_url: string | null;
+  auto_push: boolean;
 }
 
 interface SaveTargetsConfig {
@@ -19,6 +20,8 @@ interface SaveTargetsConfig {
   tool_target: SaveTarget;
   file_target: SaveTarget;
   auto_save: boolean;
+  repository_id: string | null;
+  parent_id: string | null;
 }
 
 interface SaveTargetsSectionProps {
@@ -29,14 +32,14 @@ interface SaveTargetsSectionProps {
 
 const TARGET_LABELS: Record<SaveTarget, string> = {
   local: 'Local',
-  private: 'Private',
-  team: 'Team',
+  repo: 'Repository',
+  inherit: 'Inherit',
 };
 
 const TARGET_DESCRIPTIONS: Record<SaveTarget, string> = {
   local: 'Stays in workspace only',
-  private: 'Saved to your private repo',
-  team: 'Saved to team shared repo',
+  repo: 'Saved to configured repository',
+  inherit: 'Inherits from parent outcome',
 };
 
 const CONTENT_TYPES = [
@@ -81,13 +84,14 @@ export function SaveTargetsSection({
       localConfig.skill_target !== config.skill_target ||
       localConfig.tool_target !== config.tool_target ||
       localConfig.file_target !== config.file_target ||
-      localConfig.auto_save !== config.auto_save;
+      localConfig.auto_save !== config.auto_save ||
+      localConfig.repository_id !== config.repository_id;
     setHasChanges(changed);
   }, [localConfig, config]);
 
-  // Check if a target is available (has a configured repo)
-  const hasPrivateRepo = repositories.some(r => r.type === 'private');
-  const hasTeamRepo = repositories.some(r => r.type === 'team');
+  // Get current repository
+  const currentRepo = repositories.find(r => r.id === localConfig.repository_id);
+  const hasParent = !!config.parent_id;
 
   const handleSave = async () => {
     setSaving(true);
@@ -101,6 +105,7 @@ export function SaveTargetsSection({
           tool_target: localConfig.tool_target,
           file_target: localConfig.file_target,
           auto_save: localConfig.auto_save,
+          repository_id: localConfig.repository_id,
         }),
       });
 
@@ -124,12 +129,27 @@ export function SaveTargetsSection({
     setLocalConfig(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleRepoChange = (repoId: string | null) => {
+    setLocalConfig(prev => ({ ...prev, repository_id: repoId }));
+  };
+
   const handleAutoSaveChange = (value: boolean) => {
     setLocalConfig(prev => ({ ...prev, auto_save: value }));
   };
 
-  // Check if repos are configured
-  const needsRepoConfig = !hasPrivateRepo && !hasTeamRepo;
+  // Available targets depend on context
+  const getAvailableTargets = (): SaveTarget[] => {
+    const targets: SaveTarget[] = ['local'];
+    if (currentRepo || hasParent) {
+      targets.push('repo');
+    }
+    if (hasParent) {
+      targets.push('inherit');
+    }
+    return targets;
+  };
+
+  const availableTargets = getAvailableTargets();
 
   return (
     <Card padding="md">
@@ -147,21 +167,40 @@ export function SaveTargetsSection({
       <CardContent>
         {loadingRepos ? (
           <p className="text-text-tertiary text-sm">Loading...</p>
-        ) : needsRepoConfig ? (
-          <div className="p-4 bg-status-warning/10 border border-status-warning/30 rounded-lg">
-            <p className="text-text-primary font-medium">No repositories configured</p>
-            <p className="text-text-secondary text-sm mt-1">
-              Configure repositories in Settings before setting up save targets.
-            </p>
-            <a
-              href="/settings"
-              className="inline-block mt-3 text-sm text-accent hover:underline"
-            >
-              Go to Settings →
-            </a>
-          </div>
         ) : (
           <div className="space-y-4">
+            {/* Repository Selection */}
+            <div className="p-3 bg-bg-secondary rounded-lg">
+              <label className="block text-sm font-medium text-text-primary mb-2">
+                Repository
+              </label>
+              <select
+                value={localConfig.repository_id || ''}
+                onChange={(e) => handleRepoChange(e.target.value || null)}
+                className="w-full p-2 bg-bg-primary border border-border rounded text-text-primary text-sm"
+              >
+                <option value="">
+                  {hasParent ? 'Inherit from parent' : 'No repository (local only)'}
+                </option>
+                {repositories.map(repo => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.name} ({repo.local_path})
+                  </option>
+                ))}
+              </select>
+              {currentRepo && (
+                <p className="text-xs text-text-tertiary mt-1">
+                  {currentRepo.remote_url || 'No remote URL'}
+                  {currentRepo.auto_push && ' (auto-push enabled)'}
+                </p>
+              )}
+              {!currentRepo && hasParent && (
+                <p className="text-xs text-text-tertiary mt-1">
+                  Will use repository from parent outcome
+                </p>
+              )}
+            </div>
+
             {/* Target Grid */}
             <div className="grid grid-cols-4 gap-4">
               {CONTENT_TYPES.map(({ key, label, description }) => (
@@ -173,19 +212,14 @@ export function SaveTargetsSection({
                     <p className="text-xs text-text-tertiary">{description}</p>
                   </div>
                   <div className="space-y-1">
-                    {(['local', 'private', 'team'] as SaveTarget[]).map((target) => {
-                      const isDisabled =
-                        (target === 'private' && !hasPrivateRepo) ||
-                        (target === 'team' && !hasTeamRepo);
+                    {availableTargets.map((target) => {
                       const isSelected = localConfig[key] === target;
 
                       return (
                         <label
                           key={target}
                           className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${
-                            isDisabled
-                              ? 'opacity-50 cursor-not-allowed'
-                              : isSelected
+                            isSelected
                               ? 'bg-accent/10 border border-accent/30'
                               : 'hover:bg-bg-secondary'
                           }`}
@@ -195,13 +229,14 @@ export function SaveTargetsSection({
                             name={key}
                             value={target}
                             checked={isSelected}
-                            disabled={isDisabled}
                             onChange={() => handleTargetChange(key, target)}
                             className="text-accent focus:ring-accent"
                           />
-                          <span className={`text-sm ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
-                            {TARGET_LABELS[target]}
-                          </span>
+                          <div>
+                            <span className={`text-sm ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
+                              {TARGET_LABELS[target]}
+                            </span>
+                          </div>
                         </label>
                       );
                     })}
@@ -224,34 +259,43 @@ export function SaveTargetsSection({
                     Auto-save as workers build
                   </span>
                   <p className="text-xs text-text-tertiary">
-                    Automatically sync items to configured repositories during work
+                    Automatically sync items to repository during work
                   </p>
                 </div>
               </label>
             </div>
 
             {/* Repository info */}
-            <div className="pt-4 border-t border-border">
-              <p className="text-xs text-text-tertiary mb-2">Configured Repositories:</p>
-              <div className="flex flex-wrap gap-2">
-                {hasPrivateRepo && (
-                  <Badge variant="info">
-                    Private: {repositories.find(r => r.type === 'private')?.name}
-                  </Badge>
-                )}
-                {hasTeamRepo && (
-                  <Badge variant="info">
-                    Team: {repositories.find(r => r.type === 'team')?.name}
-                  </Badge>
-                )}
-                {!hasPrivateRepo && (
-                  <Badge variant="warning">No private repo</Badge>
-                )}
-                {!hasTeamRepo && (
-                  <Badge variant="warning">No team repo</Badge>
-                )}
+            {repositories.length > 0 && (
+              <div className="pt-4 border-t border-border">
+                <p className="text-xs text-text-tertiary mb-2">Available Repositories:</p>
+                <div className="flex flex-wrap gap-2">
+                  {repositories.map(repo => (
+                    <Badge
+                      key={repo.id}
+                      variant={repo.id === localConfig.repository_id ? 'success' : 'default'}
+                    >
+                      {repo.name}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {repositories.length === 0 && !hasParent && (
+              <div className="p-4 bg-status-warning/10 border border-status-warning/30 rounded-lg">
+                <p className="text-text-primary font-medium">No repositories configured</p>
+                <p className="text-text-secondary text-sm mt-1">
+                  Configure repositories in Settings to enable syncing to external repos.
+                </p>
+                <a
+                  href="/settings"
+                  className="inline-block mt-3 text-sm text-accent hover:underline"
+                >
+                  Go to Settings
+                </a>
+              </div>
+            )}
 
             {/* Save button */}
             {hasChanges && (

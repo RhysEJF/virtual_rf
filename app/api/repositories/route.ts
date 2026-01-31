@@ -1,55 +1,36 @@
 /**
- * Repositories API Route
+ * Repositories API
  *
- * GET /api/repositories - List all configured repositories
- * POST /api/repositories - Create a new repository configuration
+ * GET /api/repositories - List all repositories
+ * POST /api/repositories - Create a new repository
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAllRepositories,
   createRepository,
-  type CreateRepositoryInput,
+  isRepositoryInUse,
+  getOutcomesUsingRepository,
 } from '@/lib/db/repositories';
-import type { RepositoryType, ContentType } from '@/lib/db/schema';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 
 /**
- * Validate that a path exists and is a directory
+ * Expand ~ to home directory
  */
-function validateLocalPath(localPath: string): { valid: boolean; error?: string } {
-  try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    if (!fs.existsSync(expandedPath)) {
-      return { valid: false, error: 'Path does not exist' };
-    }
-
-    const stats = fs.statSync(expandedPath);
-    if (!stats.isDirectory()) {
-      return { valid: false, error: 'Path is not a directory' };
-    }
-
-    return { valid: true };
-  } catch {
-    return { valid: false, error: 'Invalid path' };
+function expandPath(p: string): string {
+  if (p.startsWith('~')) {
+    return path.join(process.env.HOME || '', p.slice(1));
   }
+  return p;
 }
 
 /**
- * Check if a directory is a git repository
+ * Check if a path is a git repository
  */
-function isGitRepo(localPath: string): boolean {
+function isGitRepo(repoPath: string): boolean {
   try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    const gitDir = path.join(expandedPath, '.git');
+    const gitDir = path.join(expandPath(repoPath), '.git');
     return fs.existsSync(gitDir);
   } catch {
     return false;
@@ -57,141 +38,115 @@ function isGitRepo(localPath: string): boolean {
 }
 
 /**
- * Get the remote URL of a git repository
+ * Get remote URL from a git repository
  */
-function getGitRemoteUrl(localPath: string): string | null {
+function getRemoteUrl(repoPath: string): string | null {
   try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    const result = execSync('git config --get remote.origin.url', {
-      cwd: expandedPath,
+    const { execSync } = require('child_process');
+    const cwd = expandPath(repoPath);
+    const result = execSync('git remote get-url origin 2>/dev/null', {
+      cwd,
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim() || null;
+    }).trim();
+    return result || null;
   } catch {
     return null;
   }
 }
 
 /**
- * Get the current branch of a git repository
+ * GET /api/repositories
+ * List all repositories with git status
  */
-function getGitBranch(localPath: string): string {
-  try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    const result = execSync('git branch --show-current', {
-      cwd: expandedPath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim() || 'main';
-  } catch {
-    return 'main';
-  }
-}
-
 export async function GET(): Promise<NextResponse> {
   try {
     const repositories = getAllRepositories();
 
     // Enrich with git status
-    const enrichedRepos = repositories.map(repo => {
-      const expandedPath = repo.local_path.startsWith('~')
-        ? path.join(process.env.HOME || '', repo.local_path.slice(1))
-        : repo.local_path;
+    const enriched = repositories.map((repo) => {
+      const expandedPath = expandPath(repo.local_path);
+      const exists = fs.existsSync(expandedPath);
+      const isGit = exists && isGitRepo(repo.local_path);
+      const detectedRemote = isGit ? getRemoteUrl(repo.local_path) : null;
 
-      const pathExists = fs.existsSync(expandedPath);
-      const isGit = pathExists && isGitRepo(repo.local_path);
-      const detectedRemote = isGit ? getGitRemoteUrl(repo.local_path) : null;
-      const currentBranch = isGit ? getGitBranch(repo.local_path) : repo.branch;
+      // Get outcomes using this repo
+      const usedBy = getOutcomesUsingRepository(repo.id);
 
       return {
         ...repo,
         status: {
-          pathExists,
+          exists,
           isGitRepo: isGit,
-          detectedRemote,
-          currentBranch,
-          hasRemote: !!repo.repo_url || !!detectedRemote,
+          detectedRemoteUrl: detectedRemote,
+          matchesConfiguredRemote: detectedRemote === repo.remote_url,
         },
+        usedBy,
+        inUse: usedBy.length > 0,
       };
     });
 
-    return NextResponse.json({ repositories: enrichedRepos });
+    return NextResponse.json({ repositories: enriched });
   } catch (error) {
-    console.error('Error fetching repositories:', error);
+    console.error('[Repositories API] Error listing:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch repositories' },
+      { error: 'Failed to list repositories' },
       { status: 500 }
     );
   }
 }
 
+/**
+ * POST /api/repositories
+ * Create a new repository
+ *
+ * Body: {
+ *   name: string,
+ *   local_path: string,
+ *   remote_url?: string,
+ *   auto_push?: boolean
+ * }
+ */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json();
-    const { name, type, content_type, repo_url, local_path, branch, auto_push, require_pr } = body;
+    const { name, local_path, remote_url, auto_push } = body;
 
     // Validate required fields
-    if (!name || !type || !content_type || !local_path) {
+    if (!name || !local_path) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, type, content_type, local_path' },
+        { error: 'name and local_path are required' },
         { status: 400 }
       );
     }
 
-    // Validate type
-    if (type !== 'private' && type !== 'team') {
+    // Check if path exists
+    const expandedPath = expandPath(local_path);
+    if (!fs.existsSync(expandedPath)) {
       return NextResponse.json(
-        { error: 'Invalid type. Must be "private" or "team"' },
+        { error: `Path does not exist: ${local_path}` },
         { status: 400 }
       );
     }
 
-    // Validate content_type
-    const validContentTypes: ContentType[] = ['outputs', 'skills', 'tools', 'files', 'all'];
-    if (!validContentTypes.includes(content_type)) {
+    // Check if it's a git repo
+    if (!isGitRepo(local_path)) {
       return NextResponse.json(
-        { error: `Invalid content_type. Must be one of: ${validContentTypes.join(', ')}` },
-        { status: 400 }
-      );
-    }
-
-    // Validate local path
-    const pathValidation = validateLocalPath(local_path);
-    if (!pathValidation.valid) {
-      return NextResponse.json(
-        { error: pathValidation.error },
+        { error: `Path is not a git repository: ${local_path}` },
         { status: 400 }
       );
     }
 
     // Create the repository
-    const input: CreateRepositoryInput = {
+    const repo = createRepository({
       name,
-      type: type as RepositoryType,
-      content_type: content_type as ContentType,
-      repo_url: repo_url || undefined,
       local_path,
-      branch: branch || 'main',
+      remote_url: remote_url || undefined,
       auto_push: auto_push !== false,
-      require_pr: require_pr === true,
-    };
-
-    const repository = createRepository(input);
-
-    return NextResponse.json({
-      success: true,
-      repository,
     });
+
+    return NextResponse.json({ repository: repo }, { status: 201 });
   } catch (error) {
-    console.error('Error creating repository:', error);
+    console.error('[Repositories API] Error creating:', error);
     return NextResponse.json(
       { error: 'Failed to create repository' },
       { status: 500 }

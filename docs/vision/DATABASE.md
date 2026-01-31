@@ -51,8 +51,17 @@ All state in Digital Twin is persisted to SQLite. The database:
 | **Skills** | Registered global skills |
 | **Interventions** | Human instructions to workers |
 | **Supervisor Alerts** | Safety alerts from monitoring |
-| **Repositories** | External git repos for syncing skills/tools |
+| **Repositories** | External git repos for syncing skills/tools (per-outcome) |
 | **Outcome Items** | Tracked files (skills, tools, outputs) with sync status |
+
+### Repository Inheritance
+
+Repositories can be configured per-outcome with inheritance through the outcome hierarchy:
+
+- Each outcome can specify its own repository OR inherit from parent
+- Save targets (`output_target`, `skill_target`, etc.) can be `local`, `repo`, or `inherit`
+- The `getEffectiveRepository()` function walks up the hierarchy to find the applicable repo
+- This enables different repositories for different clients/teams while supporting nested outcomes
 
 ### Analytics Entities
 

@@ -222,13 +222,14 @@ function runMigrations(database: Database.Database): void {
     console.log(`[DB Migration] HOMЯ Protocol tables: ${homrTables.map(t => t.name).join(', ')}`);
   }
 
-  // Add repository save target columns to outcomes
+  // Add repository configuration columns to outcomes (with inheritance support)
   const repoTargetColumns = [
+    { name: 'repository_id', sql: 'ALTER TABLE outcomes ADD COLUMN repository_id TEXT REFERENCES repositories(id) ON DELETE SET NULL' },
     { name: 'output_target', sql: `ALTER TABLE outcomes ADD COLUMN output_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'skill_target', sql: `ALTER TABLE outcomes ADD COLUMN skill_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'tool_target', sql: `ALTER TABLE outcomes ADD COLUMN tool_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'file_target', sql: `ALTER TABLE outcomes ADD COLUMN file_target TEXT NOT NULL DEFAULT 'local'` },
-    { name: 'auto_save', sql: 'ALTER TABLE outcomes ADD COLUMN auto_save INTEGER NOT NULL DEFAULT 0' },
+    { name: 'auto_save', sql: `ALTER TABLE outcomes ADD COLUMN auto_save TEXT NOT NULL DEFAULT '0'` },
   ];
   const outcomesColsRepo = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
   for (const col of repoTargetColumns) {
@@ -239,14 +240,18 @@ function runMigrations(database: Database.Database): void {
     }
   }
 
-  // Create repositories table if it doesn't exist (it's in SCHEMA_SQL but ensure indexes)
-  database.exec(`CREATE INDEX IF NOT EXISTS idx_repositories_type ON repositories(type)`);
-  database.exec(`CREATE INDEX IF NOT EXISTS idx_repositories_content_type ON repositories(content_type)`);
+  // Migrate old target values ('private'/'team') to new model ('repo')
+  // This handles upgrades from the old schema
+  database.exec(`UPDATE outcomes SET output_target = 'repo' WHERE output_target IN ('private', 'team')`);
+  database.exec(`UPDATE outcomes SET skill_target = 'repo' WHERE skill_target IN ('private', 'team')`);
+  database.exec(`UPDATE outcomes SET tool_target = 'repo' WHERE tool_target IN ('private', 'team')`);
+  database.exec(`UPDATE outcomes SET file_target = 'repo' WHERE file_target IN ('private', 'team')`);
+  database.exec(`UPDATE outcome_items SET target_override = 'repo' WHERE target_override IN ('private', 'team')`);
 
   // Create outcome_items indexes if they don't exist
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type)`);
-  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to_private, synced_to_team)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to)`);
 }
 
 /**

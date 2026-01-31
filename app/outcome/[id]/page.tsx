@@ -53,6 +53,7 @@ interface OutcomeDetail {
   auto_commit: boolean;
   create_pr_on_complete: boolean;
   // Save targets
+  repository_id: string | null;
   output_target: SaveTarget;
   skill_target: SaveTarget;
   tool_target: SaveTarget;
@@ -1227,6 +1228,8 @@ export default function OutcomeDetailPage(): JSX.Element {
               tool_target: outcome.tool_target,
               file_target: outcome.file_target,
               auto_save: outcome.auto_save,
+              repository_id: outcome.repository_id ?? null,
+              parent_id: outcome.parent_id ?? null,
             }}
             onUpdate={fetchOutcome}
           />

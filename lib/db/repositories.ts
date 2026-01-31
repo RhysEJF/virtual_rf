@@ -1,17 +1,17 @@
 /**
  * Repository Configuration CRUD operations
  *
- * Manages configured repositories for storing outputs, skills, tools, and files.
+ * Manages configured repositories for storing outcomes' skills, tools, files, and outputs.
+ * Supports inheritance: child outcomes inherit repository settings from parents.
  */
 
 import { getDb, now } from './index';
 import type {
   Repository,
-  RepositoryType,
-  ContentType,
   OutcomeItem,
   OutcomeItemType,
   SaveTarget,
+  Outcome,
 } from './schema';
 import { generateId } from '../utils/id';
 
@@ -21,23 +21,16 @@ import { generateId } from '../utils/id';
 
 export interface CreateRepositoryInput {
   name: string;
-  type: RepositoryType;
-  content_type: ContentType;
-  repo_url?: string;
   local_path: string;
-  branch?: string;
+  remote_url?: string;
   auto_push?: boolean;
-  require_pr?: boolean;
 }
 
 export interface UpdateRepositoryInput {
   name?: string;
-  repo_url?: string;
   local_path?: string;
-  branch?: string;
+  remote_url?: string;
   auto_push?: boolean;
-  require_pr?: boolean;
-  last_synced_at?: number;
 }
 
 /**
@@ -50,22 +43,17 @@ export function createRepository(input: CreateRepositoryInput): Repository {
 
   const stmt = db.prepare(`
     INSERT INTO repositories (
-      id, name, type, content_type, repo_url, local_path, branch,
-      auto_push, require_pr, created_at, updated_at
+      id, name, local_path, remote_url, auto_push, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     input.name,
-    input.type,
-    input.content_type,
-    input.repo_url || null,
     input.local_path,
-    input.branch || 'main',
+    input.remote_url || null,
     input.auto_push !== false ? 1 : 0,
-    input.require_pr ? 1 : 0,
     timestamp,
     timestamp
   );
@@ -89,39 +77,9 @@ export function getRepositoryById(id: string): Repository | null {
  */
 export function getAllRepositories(): Repository[] {
   const db = getDb();
-  const stmt = db.prepare('SELECT * FROM repositories ORDER BY type, name');
+  const stmt = db.prepare('SELECT * FROM repositories ORDER BY name');
   const rows = stmt.all() as Record<string, unknown>[];
   return rows.map(mapRowToRepository);
-}
-
-/**
- * Get repositories by type
- */
-export function getRepositoriesByType(type: RepositoryType): Repository[] {
-  const db = getDb();
-  const stmt = db.prepare('SELECT * FROM repositories WHERE type = ? ORDER BY name');
-  const rows = stmt.all(type) as Record<string, unknown>[];
-  return rows.map(mapRowToRepository);
-}
-
-/**
- * Get repository for a specific content type and repo type
- */
-export function getRepositoryFor(
-  contentType: ContentType,
-  repoType: RepositoryType
-): Repository | null {
-  const db = getDb();
-  // First try exact match, then fall back to 'all' type
-  const stmt = db.prepare(`
-    SELECT * FROM repositories
-    WHERE type = ? AND (content_type = ? OR content_type = 'all')
-    ORDER BY CASE WHEN content_type = ? THEN 0 ELSE 1 END
-    LIMIT 1
-  `);
-  const row = stmt.get(repoType, contentType, contentType) as Record<string, unknown> | undefined;
-  if (!row) return null;
-  return mapRowToRepository(row);
 }
 
 /**
@@ -139,29 +97,17 @@ export function updateRepository(id: string, input: UpdateRepositoryInput): Repo
     updates.push('name = ?');
     values.push(input.name);
   }
-  if (input.repo_url !== undefined) {
-    updates.push('repo_url = ?');
-    values.push(input.repo_url);
-  }
   if (input.local_path !== undefined) {
     updates.push('local_path = ?');
     values.push(input.local_path);
   }
-  if (input.branch !== undefined) {
-    updates.push('branch = ?');
-    values.push(input.branch);
+  if (input.remote_url !== undefined) {
+    updates.push('remote_url = ?');
+    values.push(input.remote_url);
   }
   if (input.auto_push !== undefined) {
     updates.push('auto_push = ?');
     values.push(input.auto_push ? 1 : 0);
-  }
-  if (input.require_pr !== undefined) {
-    updates.push('require_pr = ?');
-    values.push(input.require_pr ? 1 : 0);
-  }
-  if (input.last_synced_at !== undefined) {
-    updates.push('last_synced_at = ?');
-    values.push(input.last_synced_at);
   }
 
   if (updates.length === 0) return existing;
@@ -186,6 +132,130 @@ export function deleteRepository(id: string): boolean {
   return result.changes > 0;
 }
 
+/**
+ * Check if a repository is in use by any outcome
+ */
+export function isRepositoryInUse(id: string): boolean {
+  const db = getDb();
+  const stmt = db.prepare('SELECT COUNT(*) as count FROM outcomes WHERE repository_id = ?');
+  const row = stmt.get(id) as { count: number };
+  return row.count > 0;
+}
+
+/**
+ * Get outcomes using a repository
+ */
+export function getOutcomesUsingRepository(id: string): { id: string; name: string }[] {
+  const db = getDb();
+  const stmt = db.prepare('SELECT id, name FROM outcomes WHERE repository_id = ?');
+  return stmt.all(id) as { id: string; name: string }[];
+}
+
+// ============================================================================
+// Inheritance Resolution
+// ============================================================================
+
+/**
+ * Get the effective repository for an outcome, walking up the hierarchy
+ */
+export function getEffectiveRepository(outcomeId: string): Repository | null {
+  const db = getDb();
+
+  // Get the outcome
+  const outcomeStmt = db.prepare('SELECT id, repository_id, parent_id FROM outcomes WHERE id = ?');
+  const outcome = outcomeStmt.get(outcomeId) as { id: string; repository_id: string | null; parent_id: string | null } | undefined;
+
+  if (!outcome) return null;
+
+  // If this outcome has a repository, use it
+  if (outcome.repository_id) {
+    return getRepositoryById(outcome.repository_id);
+  }
+
+  // Otherwise, walk up to parent
+  if (outcome.parent_id) {
+    return getEffectiveRepository(outcome.parent_id);
+  }
+
+  // No repository found in hierarchy
+  return null;
+}
+
+/**
+ * Get the effective save target for a content type, resolving inheritance
+ */
+export function getEffectiveTarget(
+  outcomeId: string,
+  targetType: 'output_target' | 'skill_target' | 'tool_target' | 'file_target'
+): 'local' | 'repo' {
+  const db = getDb();
+
+  const outcomeStmt = db.prepare(`SELECT id, ${targetType}, parent_id FROM outcomes WHERE id = ?`);
+  const outcome = outcomeStmt.get(outcomeId) as { id: string; [key: string]: unknown } | undefined;
+
+  if (!outcome) return 'local';
+
+  const target = outcome[targetType] as SaveTarget;
+
+  // If target is explicit (not inherit), return it
+  if (target === 'local' || target === 'repo') {
+    return target;
+  }
+
+  // If inherit, walk up to parent
+  if (target === 'inherit' && outcome.parent_id) {
+    return getEffectiveTarget(outcome.parent_id as string, targetType);
+  }
+
+  // Default to local
+  return 'local';
+}
+
+/**
+ * Get the effective auto_save setting, resolving inheritance
+ */
+export function getEffectiveAutoSave(outcomeId: string): boolean {
+  const db = getDb();
+
+  const outcomeStmt = db.prepare('SELECT id, auto_save, parent_id FROM outcomes WHERE id = ?');
+  const outcome = outcomeStmt.get(outcomeId) as { id: string; auto_save: string; parent_id: string | null } | undefined;
+
+  if (!outcome) return false;
+
+  // If explicit value (not 'inherit'), return it
+  if (outcome.auto_save === '1' || outcome.auto_save === 'true') return true;
+  if (outcome.auto_save === '0' || outcome.auto_save === 'false') return false;
+
+  // If inherit, walk up to parent
+  if (outcome.auto_save === 'inherit' && outcome.parent_id) {
+    return getEffectiveAutoSave(outcome.parent_id);
+  }
+
+  // Default to false
+  return false;
+}
+
+/**
+ * Get all effective settings for an outcome (resolved through inheritance)
+ */
+export function getEffectiveRepoSettings(outcomeId: string): {
+  repository: Repository | null;
+  output_target: 'local' | 'repo';
+  skill_target: 'local' | 'repo';
+  tool_target: 'local' | 'repo';
+  file_target: 'local' | 'repo';
+  auto_save: boolean;
+} {
+  return {
+    repository: getEffectiveRepository(outcomeId),
+    output_target: getEffectiveTarget(outcomeId, 'output_target'),
+    skill_target: getEffectiveTarget(outcomeId, 'skill_target'),
+    tool_target: getEffectiveTarget(outcomeId, 'tool_target'),
+    file_target: getEffectiveTarget(outcomeId, 'file_target'),
+    auto_save: getEffectiveAutoSave(outcomeId),
+  };
+}
+
 // ============================================================================
 // Outcome Item CRUD
 // ============================================================================
@@ -200,8 +270,7 @@ export interface CreateOutcomeItemInput {
 
 export interface UpdateOutcomeItemInput {
   target_override?: SaveTarget | null;
-  synced_to_private?: boolean;
-  synced_to_team?: boolean;
+  synced_to?: string | null;
   last_synced_at?: number;
 }
 
@@ -224,9 +293,9 @@ export function upsertOutcomeItem(input: CreateOutcomeItemInput): OutcomeItem {
   const stmt = db.prepare(`
     INSERT INTO outcome_items (
       id, outcome_id, item_type, filename, file_path, target_override,
-      synced_to_private, synced_to_team, created_at, updated_at
+      synced_to, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
   `);
 
   stmt.run(
@@ -304,17 +373,13 @@ export function getOutcomeItemsByType(
 }
 
 /**
- * Get items that need syncing
+ * Get items that need syncing (not yet synced to the outcome's repo)
  */
-export function getUnsyncedItems(
-  outcomeId: string,
-  target: 'private' | 'team'
-): OutcomeItem[] {
+export function getUnsyncedItems(outcomeId: string): OutcomeItem[] {
   const db = getDb();
-  const column = target === 'private' ? 'synced_to_private' : 'synced_to_team';
   const stmt = db.prepare(`
     SELECT * FROM outcome_items
-    WHERE outcome_id = ? AND ${column} = 0
+    WHERE outcome_id = ? AND synced_to IS NULL
     ORDER BY item_type, filename
   `);
   const rows = stmt.all(outcomeId) as Record<string, unknown>[];
@@ -336,13 +401,9 @@ export function updateOutcomeItem(id: string, input: UpdateOutcomeItemInput): Ou
     updates.push('target_override = ?');
     values.push(input.target_override);
   }
-  if (input.synced_to_private !== undefined) {
-    updates.push('synced_to_private = ?');
-    values.push(input.synced_to_private ? 1 : 0);
-  }
-  if (input.synced_to_team !== undefined) {
-    updates.push('synced_to_team = ?');
-    values.push(input.synced_to_team ? 1 : 0);
+  if (input.synced_to !== undefined) {
+    updates.push('synced_to = ?');
+    values.push(input.synced_to);
   }
   if (input.last_synced_at !== undefined) {
     updates.push('last_synced_at = ?');
@@ -372,15 +433,21 @@ export function deleteOutcomeItem(id: string): boolean {
 }
 
 /**
- * Mark an item as synced
+ * Mark an item as synced to a repository
  */
-export function markItemSynced(
-  id: string,
-  target: 'private' | 'team'
-): OutcomeItem | null {
+export function markItemSynced(id: string, repositoryId: string): OutcomeItem | null {
   return updateOutcomeItem(id, {
-    [target === 'private' ? 'synced_to_private' : 'synced_to_team']: true,
+    synced_to: repositoryId,
     last_synced_at: now(),
+  });
+}
+
+/**
+ * Mark an item as unsynced (local only)
+ */
+export function markItemUnsynced(id: string): OutcomeItem | null {
+  return updateOutcomeItem(id, {
+    synced_to: null,
   });
 }
 
@@ -392,14 +459,9 @@ function mapRowToRepository(row: Record<string, unknown>): Repository {
   return {
     id: row.id as string,
     name: row.name as string,
-    type: row.type as RepositoryType,
-    content_type: row.content_type as ContentType,
-    repo_url: row.repo_url as string | null,
     local_path: row.local_path as string,
-    branch: row.branch as string,
+    remote_url: row.remote_url as string | null,
     auto_push: row.auto_push === 1,
-    require_pr: row.require_pr === 1,
-    last_synced_at: row.last_synced_at as number | null,
     created_at: row.created_at as number,
     updated_at: row.updated_at as number,
   };
@@ -413,8 +475,7 @@ function mapRowToOutcomeItem(row: Record<string, unknown>): OutcomeItem {
     filename: row.filename as string,
     file_path: row.file_path as string,
     target_override: row.target_override as SaveTarget | null,
-    synced_to_private: row.synced_to_private === 1,
-    synced_to_team: row.synced_to_team === 1,
+    synced_to: row.synced_to as string | null,
     last_synced_at: row.last_synced_at as number | null,
     created_at: row.created_at as number,
     updated_at: row.updated_at as number,
@@ -427,31 +488,23 @@ function mapRowToOutcomeItem(row: Record<string, unknown>): OutcomeItem {
 
 /**
  * Get the effective save target for an item
- * Returns the item's override if set, otherwise the outcome's default
+ * Returns the item's override if set, otherwise resolves through outcome inheritance
  */
 export function getEffectiveSaveTarget(
   item: OutcomeItem,
-  outcomeDefaults: {
-    output_target: SaveTarget;
-    skill_target: SaveTarget;
-    tool_target: SaveTarget;
-    file_target: SaveTarget;
-  }
-): SaveTarget {
-  if (item.target_override) {
-    return item.target_override;
-  }
+  outcomeId: string
+): 'local' | 'repo' {
+  // If item has explicit override
+  if (item.target_override === 'local') return 'local';
+  if (item.target_override === 'repo') return 'repo';
 
-  switch (item.item_type) {
-    case 'output':
-      return outcomeDefaults.output_target;
-    case 'skill':
-      return outcomeDefaults.skill_target;
-    case 'tool':
-      return outcomeDefaults.tool_target;
-    case 'file':
-      return outcomeDefaults.file_target;
-    default:
-      return 'local';
-  }
+  // Otherwise, get from outcome (with inheritance)
+  const targetType = {
+    output: 'output_target',
+    skill: 'skill_target',
+    tool: 'tool_target',
+    file: 'file_target',
+  }[item.item_type] as 'output_target' | 'skill_target' | 'tool_target' | 'file_target';
+
+  return getEffectiveTarget(outcomeId, targetType);
 }

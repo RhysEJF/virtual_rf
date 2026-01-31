@@ -1,9 +1,9 @@
 /**
- * Individual Repository API Route
+ * Repository Detail API
  *
  * GET /api/repositories/[id] - Get repository details
- * PUT /api/repositories/[id] - Update repository configuration
- * DELETE /api/repositories/[id] - Delete repository configuration
+ * PUT /api/repositories/[id] - Update repository
+ * DELETE /api/repositories/[id] - Delete repository
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,22 +11,32 @@ import {
   getRepositoryById,
   updateRepository,
   deleteRepository,
-  type UpdateRepositoryInput,
+  isRepositoryInUse,
+  getOutcomesUsingRepository,
 } from '@/lib/db/repositories';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
 
 /**
- * Check if a directory is a git repository
+ * Expand ~ to home directory
  */
-function isGitRepo(localPath: string): boolean {
-  try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
+function expandPath(p: string): string {
+  if (p.startsWith('~')) {
+    return path.join(process.env.HOME || '', p.slice(1));
+  }
+  return p;
+}
 
-    const gitDir = path.join(expandedPath, '.git');
+/**
+ * Check if a path is a git repository
+ */
+function isGitRepo(repoPath: string): boolean {
+  try {
+    const gitDir = path.join(expandPath(repoPath), '.git');
     return fs.existsSync(gitDir);
   } catch {
     return false;
@@ -34,54 +44,35 @@ function isGitRepo(localPath: string): boolean {
 }
 
 /**
- * Get the remote URL of a git repository
+ * Get remote URL from a git repository
  */
-function getGitRemoteUrl(localPath: string): string | null {
+function getRemoteUrl(repoPath: string): string | null {
   try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    const result = execSync('git config --get remote.origin.url', {
-      cwd: expandedPath,
+    const { execSync } = require('child_process');
+    const cwd = expandPath(repoPath);
+    const result = execSync('git remote get-url origin 2>/dev/null', {
+      cwd,
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim() || null;
+    }).trim();
+    return result || null;
   } catch {
     return null;
   }
 }
 
 /**
- * Get the current branch of a git repository
+ * GET /api/repositories/[id]
+ * Get repository details with git status
  */
-function getGitBranch(localPath: string): string {
-  try {
-    const expandedPath = localPath.startsWith('~')
-      ? path.join(process.env.HOME || '', localPath.slice(1))
-      : localPath;
-
-    const result = execSync('git branch --show-current', {
-      cwd: expandedPath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim() || 'main';
-  } catch {
-    return 'main';
-  }
-}
-
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
-    const repository = getRepositoryById(id);
+    const { id } = await context.params;
+    const repo = getRepositoryById(id);
 
-    if (!repository) {
+    if (!repo) {
       return NextResponse.json(
         { error: 'Repository not found' },
         { status: 404 }
@@ -89,45 +80,55 @@ export async function GET(
     }
 
     // Enrich with git status
-    const expandedPath = repository.local_path.startsWith('~')
-      ? path.join(process.env.HOME || '', repository.local_path.slice(1))
-      : repository.local_path;
+    const expandedPath = expandPath(repo.local_path);
+    const exists = fs.existsSync(expandedPath);
+    const isGit = exists && isGitRepo(repo.local_path);
+    const detectedRemote = isGit ? getRemoteUrl(repo.local_path) : null;
 
-    const pathExists = fs.existsSync(expandedPath);
-    const isGit = pathExists && isGitRepo(repository.local_path);
-    const detectedRemote = isGit ? getGitRemoteUrl(repository.local_path) : null;
-    const currentBranch = isGit ? getGitBranch(repository.local_path) : repository.branch;
+    // Get outcomes using this repo
+    const usedBy = getOutcomesUsingRepository(repo.id);
 
     return NextResponse.json({
       repository: {
-        ...repository,
+        ...repo,
         status: {
-          pathExists,
+          exists,
           isGitRepo: isGit,
-          detectedRemote,
-          currentBranch,
-          hasRemote: !!repository.repo_url || !!detectedRemote,
+          detectedRemoteUrl: detectedRemote,
+          matchesConfiguredRemote: detectedRemote === repo.remote_url,
         },
+        usedBy,
+        inUse: usedBy.length > 0,
       },
     });
   } catch (error) {
-    console.error('Error fetching repository:', error);
+    console.error('[Repositories API] Error getting:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch repository' },
+      { error: 'Failed to get repository' },
       { status: 500 }
     );
   }
 }
 
+/**
+ * PUT /api/repositories/[id]
+ * Update repository
+ *
+ * Body: {
+ *   name?: string,
+ *   local_path?: string,
+ *   remote_url?: string,
+ *   auto_push?: boolean
+ * }
+ */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
-    const body = await request.json();
-
+    const { id } = await context.params;
     const existing = getRepositoryById(id);
+
     if (!existing) {
       return NextResponse.json(
         { error: 'Repository not found' },
@@ -135,38 +136,36 @@ export async function PUT(
       );
     }
 
-    const { name, repo_url, local_path, branch, auto_push, require_pr } = body;
+    const body = await request.json();
+    const { name, local_path, remote_url, auto_push } = body;
 
-    // Validate local path if provided
-    if (local_path) {
-      const expandedPath = local_path.startsWith('~')
-        ? path.join(process.env.HOME || '', local_path.slice(1))
-        : local_path;
-
+    // If changing local_path, validate it
+    if (local_path && local_path !== existing.local_path) {
+      const expandedPath = expandPath(local_path);
       if (!fs.existsSync(expandedPath)) {
         return NextResponse.json(
-          { error: 'Path does not exist' },
+          { error: `Path does not exist: ${local_path}` },
+          { status: 400 }
+        );
+      }
+      if (!isGitRepo(local_path)) {
+        return NextResponse.json(
+          { error: `Path is not a git repository: ${local_path}` },
           { status: 400 }
         );
       }
     }
 
-    const input: UpdateRepositoryInput = {};
-    if (name !== undefined) input.name = name;
-    if (repo_url !== undefined) input.repo_url = repo_url;
-    if (local_path !== undefined) input.local_path = local_path;
-    if (branch !== undefined) input.branch = branch;
-    if (auto_push !== undefined) input.auto_push = auto_push;
-    if (require_pr !== undefined) input.require_pr = require_pr;
-
-    const repository = updateRepository(id, input);
-
-    return NextResponse.json({
-      success: true,
-      repository,
+    const updated = updateRepository(id, {
+      name,
+      local_path,
+      remote_url,
+      auto_push,
     });
+
+    return NextResponse.json({ repository: updated });
   } catch (error) {
-    console.error('Error updating repository:', error);
+    console.error('[Repositories API] Error updating:', error);
     return NextResponse.json(
       { error: 'Failed to update repository' },
       { status: 500 }
@@ -174,14 +173,18 @@ export async function PUT(
   }
 }
 
+/**
+ * DELETE /api/repositories/[id]
+ * Delete repository
+ */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ): Promise<NextResponse> {
   try {
-    const { id } = await params;
-
+    const { id } = await context.params;
     const existing = getRepositoryById(id);
+
     if (!existing) {
       return NextResponse.json(
         { error: 'Repository not found' },
@@ -189,21 +192,23 @@ export async function DELETE(
       );
     }
 
-    const deleted = deleteRepository(id);
-
-    if (!deleted) {
+    // Check if in use
+    if (isRepositoryInUse(id)) {
+      const usedBy = getOutcomesUsingRepository(id);
       return NextResponse.json(
-        { error: 'Failed to delete repository' },
-        { status: 500 }
+        {
+          error: 'Repository is in use by outcomes',
+          usedBy,
+        },
+        { status: 409 }
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Repository deleted',
-    });
+    deleteRepository(id);
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting repository:', error);
+    console.error('[Repositories API] Error deleting:', error);
     return NextResponse.json(
       { error: 'Failed to delete repository' },
       { status: 500 }

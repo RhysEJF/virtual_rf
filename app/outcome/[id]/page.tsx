@@ -1129,24 +1129,33 @@ export default function OutcomeDetailPage(): JSX.Element {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {outcome.workers.map((worker) => {
-                    const workerStatus = workerStatusConfig[worker.status];
-                    return (
-                      <div
-                        key={worker.id}
-                        className="p-3 rounded bg-bg-secondary cursor-pointer hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border"
-                        onClick={() => router.push(`/worker/${worker.id}`)}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-text-primary text-sm">{worker.name}</span>
-                          <Badge variant={workerStatus.variant}>{workerStatus.label}</Badge>
+                  {/* Sort by most recent first, show max 3 */}
+                  {[...outcome.workers]
+                    .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
+                    .slice(0, 3)
+                    .map((worker) => {
+                      const workerStatus = workerStatusConfig[worker.status];
+                      return (
+                        <div
+                          key={worker.id}
+                          className="p-3 rounded bg-bg-secondary cursor-pointer hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border"
+                          onClick={() => router.push(`/worker/${worker.id}`)}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-text-primary text-sm">{worker.name}</span>
+                            <Badge variant={workerStatus.variant}>{workerStatus.label}</Badge>
+                          </div>
+                          <div className="text-xs text-text-tertiary">
+                            Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
+                          </div>
                         </div>
-                        <div className="text-xs text-text-tertiary">
-                          Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  {outcome.workers.length > 3 && (
+                    <p className="text-xs text-text-tertiary text-center pt-1">
+                      + {outcome.workers.length - 3} more worker{outcome.workers.length - 3 > 1 ? 's' : ''}
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>

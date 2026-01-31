@@ -71,6 +71,8 @@ export function ExpandableTaskCard({
   const [deleting, setDeleting] = useState(false);
   const [taskIntent, setTaskIntent] = useState(task.task_intent || '');
   const [taskApproach, setTaskApproach] = useState(task.task_approach || '');
+  const [description, setDescription] = useState(task.description || '');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [optimizingIntent, setOptimizingIntent] = useState(false);
   const [optimizingApproach, setOptimizingApproach] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -167,14 +169,26 @@ export function ExpandableTaskCard({
   };
 
   // Track changes
+  const checkForChanges = (newIntent: string, newApproach: string, newDescription: string) => {
+    const intentChanged = newIntent !== (task.task_intent || '');
+    const approachChanged = newApproach !== (task.task_approach || '');
+    const descriptionChanged = newDescription !== (task.description || '');
+    setHasChanges(intentChanged || approachChanged || descriptionChanged);
+  };
+
   const handleIntentChange = (value: string) => {
     setTaskIntent(value);
-    setHasChanges(value !== (task.task_intent || '') || taskApproach !== (task.task_approach || ''));
+    checkForChanges(value, taskApproach, description);
   };
 
   const handleApproachChange = (value: string) => {
     setTaskApproach(value);
-    setHasChanges(taskIntent !== (task.task_intent || '') || value !== (task.task_approach || ''));
+    checkForChanges(taskIntent, value, description);
+  };
+
+  const handleDescriptionChange = (value: string) => {
+    setDescription(value);
+    checkForChanges(taskIntent, taskApproach, value);
   };
 
   // Save changes
@@ -185,6 +199,7 @@ export function ExpandableTaskCard({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          description: description || null,
           task_intent: taskIntent || null,
           task_approach: taskApproach || null,
         }),
@@ -194,6 +209,7 @@ export function ExpandableTaskCard({
       if (response.ok && data.task && onUpdate) {
         onUpdate(data.task);
         setHasChanges(false);
+        setIsEditingDescription(false);
       }
     } catch (err) {
       console.error('Failed to save:', err);
@@ -368,12 +384,37 @@ export function ExpandableTaskCard({
       {/* Expanded Content */}
       {expanded && (
         <div className="border-t border-border p-4 space-y-4">
-          {/* Description */}
-          {task.description && (
-            <div>
-              <p className="text-text-secondary text-sm">{task.description}</p>
+          {/* Description - Editable */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-text-tertiary uppercase tracking-wide">
+                Description
+              </label>
+              {!isEditingDescription && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditingDescription(true)}
+                  className="text-xs h-6 px-2"
+                >
+                  Edit
+                </Button>
+              )}
             </div>
-          )}
+            {isEditingDescription ? (
+              <textarea
+                value={description}
+                onChange={(e) => handleDescriptionChange(e.target.value)}
+                placeholder="Brief description of the task..."
+                className="w-full h-20 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                autoFocus
+              />
+            ) : (
+              <p className="text-text-secondary text-sm">
+                {description || <span className="text-text-tertiary italic">No description</span>}
+              </p>
+            )}
+          </div>
 
           {/* Dependencies Section - Show if task has dependencies or dependents */}
           {(hasDependencies || hasDependents) && (
@@ -626,6 +667,8 @@ export function ExpandableTaskCard({
                     onClick={() => {
                       setTaskIntent(task.task_intent || '');
                       setTaskApproach(task.task_approach || '');
+                      setDescription(task.description || '');
+                      setIsEditingDescription(false);
                       setHasChanges(false);
                     }}
                     disabled={saving}

@@ -23,7 +23,7 @@ interface RouteContext {
 
 interface SuggestedAction {
   id: string;
-  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'start_worker' | 'pause_workers' | 'run_review';
+  type: 'update_intent' | 'update_approach' | 'create_tasks' | 'build_capabilities' | 'start_worker' | 'pause_workers' | 'run_review';
   description: string;
   details: string;
   data?: Record<string, unknown>;
@@ -178,7 +178,7 @@ Analyze this request and suggest appropriate actions. Consider:
 1. Does the user want to change the intent/scope?
 2. Does the user want to change the approach/implementation?
 3. Should new tasks be created?
-4. Would skills help? Should we build infrastructure first?
+4. Would skills help? Should we build capabilities first?
 5. Should workers be started, paused, or is a review needed?
 
 IMPORTANT: Be conservative. If the request is ambiguous, ask for clarification in the summary rather than making assumptions.
@@ -204,8 +204,8 @@ Action types:
 - update_intent: Modify the PRD/intent. Include "new_summary" and/or "new_items" and/or "new_success_criteria" in data
 - update_approach: Modify the design doc. Include "new_approach" in data
 - create_tasks: Add new tasks. Include "tasks" array in data with {title, description, priority}
-- build_infrastructure: Build skills/tools first. Include "skill_names" array with suggested skills to build
-- start_worker: Start a worker to execute tasks (will build infrastructure first if needed)
+- build_capabilities: Build skills/tools first. Include "skill_names" array with suggested skills to build
+- start_worker: Start a worker to execute tasks (will build capabilities first if needed)
 - pause_workers: Pause all running workers
 - run_review: Trigger a review cycle
 

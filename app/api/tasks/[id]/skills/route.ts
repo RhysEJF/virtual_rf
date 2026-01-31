@@ -74,7 +74,7 @@ export async function GET(
           };
         }
       } else {
-        // Skill doesn't exist yet - will be built during infrastructure phase
+        // Skill doesn't exist yet - will be built during capability phase
         return {
           name: skillName,
           status: 'will_be_built' as const,

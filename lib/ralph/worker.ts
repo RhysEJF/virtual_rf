@@ -334,19 +334,19 @@ export async function startRalphWorker(
     appendLog(`Supervisor started and monitoring workspace`);
   }
 
-  // Check skill dependencies and create infrastructure tasks if needed
+  // Check skill dependencies and create capability tasks if needed
   const skillDepsCheck = areSkillDependenciesMet(outcomeId);
   if (!skillDepsCheck.allMet) {
     appendLog(`Warning: Missing skills detected: ${skillDepsCheck.missingSkills.join(', ')}`);
 
-    // Resolve by creating infrastructure tasks
+    // Resolve by creating capability tasks
     const resolution = resolveSkillDependencies(outcomeId);
     if (resolution.tasksCreated > 0) {
-      appendLog(`Created ${resolution.tasksCreated} infrastructure tasks for missing skills`);
+      appendLog(`Created ${resolution.tasksCreated} capability tasks for missing skills`);
     }
 
     // Note: Worker continues - claimNextTask will skip tasks with unsatisfied dependencies
-    // This allows infrastructure tasks to be processed first
+    // This allows capability tasks to be processed first
   }
 
   // Start the work loop

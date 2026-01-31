@@ -60,7 +60,7 @@ export interface OrchestrationResult {
 
 /**
  * Run orchestrated execution for an outcome.
- * Handles infrastructure phase first if needed, then execution.
+ * Handles capability phase first if needed, then execution.
  */
 export async function runOrchestrated(
   outcomeId: string,

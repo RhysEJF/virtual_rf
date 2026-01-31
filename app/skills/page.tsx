@@ -498,7 +498,7 @@ export default function SkillsLibraryPage(): JSX.Element {
                 <CardContent>
                   <p className="text-text-secondary mb-2">No outcome skills found</p>
                   <p className="text-text-tertiary text-sm">
-                    Outcome skills are created during infrastructure phase when building outcomes.
+                    Outcome skills are created during capability phase when building outcomes.
                   </p>
                 </CardContent>
               </Card>

@@ -12,10 +12,6 @@ import {
   getPendingCapabilityTasks,
   isPhaseComplete,
   getPhaseStats,
-  claimNextTask,
-  startTask,
-  completeTask,
-  failTask,
 } from '../db/tasks';
 import { createWorker, updateWorker, getActiveWorkersByOutcome } from '../db/workers';
 import {
@@ -26,7 +22,7 @@ import {
 import { validateSkill, loadOutcomeSkills, getSkillContent } from '../agents/skill-builder';
 import { validateToolSyntax, loadOutcomeTools } from '../agents/tool-builder';
 import { getWorkspacePath, ensureWorkspaceExists } from '../workspace/detector';
-import { runWorkerLoop, isWorkerPaused } from './worker';
+import { runWorkerLoop } from './worker';
 import { loadEnvKeysIntoProcess, hasAnyApiKeys, listConfiguredKeys } from '../utils/env-keys';
 import type { Outcome, Task, TaskPhase } from '../db/schema';
 
@@ -239,43 +235,18 @@ async function runCapabilityWorker(
   console.log(`[Orchestrator] Capability worker ${workerIndex} started: ${worker.id}`);
 
   try {
-    // Process tasks until none remain
-    while (true) {
-      // Check if worker has been paused
-      if (isWorkerPaused(worker.id)) {
-        console.log(`[Orchestrator] Worker ${workerIndex}: Paused - stopping`);
-        break;
-      }
+    // Let runWorkerLoop handle task claiming and execution
+    // It will process all capability tasks until none remain
+    updateWorker(worker.id, { status: 'running' });
 
-      // Claim next capability task
-      const claimResult = claimNextTask(outcomeId, worker.id, 'capability');
+    await runWorkerLoop(outcomeId, worker.id, {
+      singleTask: false,  // Process all available capability tasks
+      phase: 'capability',
+    });
 
-      if (!claimResult.success || !claimResult.task) {
-        console.log(`[Orchestrator] Worker ${workerIndex}: No more capability tasks`);
-        break;
-      }
-
-      const task = claimResult.task;
-      console.log(`[Orchestrator] Worker ${workerIndex} processing: ${task.title}`);
-
-      // Start task
-      startTask(task.id);
-      updateWorker(worker.id, { status: 'running' });
-
-      // Run the worker loop for this single task
-      try {
-        await runWorkerLoop(outcomeId, worker.id, {
-          singleTask: true,
-          phase: 'capability',
-        });
-
-        // Task should be marked complete by worker loop
-        console.log(`[Orchestrator] Worker ${workerIndex} completed: ${task.title}`);
-      } catch (error) {
-        console.error(`[Orchestrator] Worker ${workerIndex} error:`, error);
-        failTask(task.id);
-      }
-    }
+    console.log(`[Orchestrator] Capability worker ${workerIndex} finished processing`);
+  } catch (error) {
+    console.error(`[Orchestrator] Worker ${workerIndex} error:`, error);
   } finally {
     updateWorker(worker.id, { status: 'completed' });
     console.log(`[Orchestrator] Capability worker ${workerIndex} stopped`);

@@ -8,6 +8,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { ActivityFeed } from './components/ActivityFeed';
 import { SupervisorAlerts } from './components/SupervisorAlerts';
 import { ImprovementSuggestions } from './components/ImprovementSuggestions';
+import { EscalationInsights } from './components/EscalationInsights';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
 import { OutcomeTreeView, type OutcomeTreeNode } from './components/OutcomeTreeView';
 import { Card, CardContent } from './components/ui/Card';
@@ -534,6 +535,9 @@ export default function Dashboard(): JSX.Element {
 
           {/* Improvement Suggestions */}
           <ImprovementSuggestions />
+
+          {/* Escalation Insights */}
+          <EscalationInsights />
 
           {/* Activity Feed */}
           <div className="space-y-4">

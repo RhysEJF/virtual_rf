@@ -12,9 +12,11 @@ interface SupervisorAlertsProps {
   onOutcomeClick?: (outcomeId: string) => void;
 }
 
-const severityConfig: Record<SupervisorAlertSeverity, { label: string; variant: 'error' | 'warning' }> = {
+const severityConfig: Record<SupervisorAlertSeverity, { label: string; variant: 'error' | 'warning' | 'info' | 'default' }> = {
   critical: { label: 'Critical', variant: 'error' },
-  warning: { label: 'Warning', variant: 'warning' },
+  high: { label: 'High', variant: 'error' },
+  medium: { label: 'Medium', variant: 'warning' },
+  low: { label: 'Low', variant: 'info' },
 };
 
 const typeLabels: Record<string, string> = {
@@ -22,6 +24,12 @@ const typeLabels: Record<string, string> = {
   no_progress: 'No Progress',
   repeated_errors: 'Repeated Errors',
   high_cost: 'High Cost',
+  suspicious_behavior: 'Suspicious Behavior',
+  worker_paused: 'Worker Paused',
+  scope_violation: 'Scope Violation',
+  env_access: 'Env File Access',
+  mass_deletion: 'Mass Deletion',
+  system_file_access: 'System File Access',
 };
 
 export function SupervisorAlerts({ onWorkerClick, onOutcomeClick }: SupervisorAlertsProps): JSX.Element | null {
@@ -177,9 +185,11 @@ export function SupervisorAlerts({ onWorkerClick, onOutcomeClick }: SupervisorAl
                 <div
                   key={alert.id}
                   className={`p-3 rounded-lg border ${
-                    alert.severity === 'critical'
+                    alert.severity === 'critical' || alert.severity === 'high'
                       ? 'bg-status-error/10 border-status-error/30'
-                      : 'bg-status-warning/10 border-status-warning/30'
+                      : alert.severity === 'medium'
+                        ? 'bg-status-warning/10 border-status-warning/30'
+                        : 'bg-bg-tertiary border-border'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-2">

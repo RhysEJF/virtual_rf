@@ -17,6 +17,7 @@ import type {
   Worker,
   ReviewCycle,
   GitMode,
+  SaveTarget,
 } from './schema';
 
 // ============================================================================
@@ -272,6 +273,12 @@ export interface UpdateOutcomeInput {
   work_branch?: string | null;
   auto_commit?: boolean;
   create_pr_on_complete?: boolean;
+  // Save targets
+  output_target?: SaveTarget;
+  skill_target?: SaveTarget;
+  tool_target?: SaveTarget;
+  file_target?: SaveTarget;
+  auto_save?: boolean;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {
@@ -348,6 +355,27 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.create_pr_on_complete !== undefined) {
     updates.push('create_pr_on_complete = ?');
     values.push(input.create_pr_on_complete ? 1 : 0);
+  }
+  // Save target fields
+  if (input.output_target !== undefined) {
+    updates.push('output_target = ?');
+    values.push(input.output_target);
+  }
+  if (input.skill_target !== undefined) {
+    updates.push('skill_target = ?');
+    values.push(input.skill_target);
+  }
+  if (input.tool_target !== undefined) {
+    updates.push('tool_target = ?');
+    values.push(input.tool_target);
+  }
+  if (input.file_target !== undefined) {
+    updates.push('file_target = ?');
+    values.push(input.file_target);
+  }
+  if (input.auto_save !== undefined) {
+    updates.push('auto_save = ?');
+    values.push(input.auto_save ? 1 : 0);
   }
 
   values.push(id);

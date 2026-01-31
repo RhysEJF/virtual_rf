@@ -221,6 +221,32 @@ function runMigrations(database: Database.Database): void {
   } else if (homrTables.length > 0) {
     console.log(`[DB Migration] HOMЯ Protocol tables: ${homrTables.map(t => t.name).join(', ')}`);
   }
+
+  // Add repository save target columns to outcomes
+  const repoTargetColumns = [
+    { name: 'output_target', sql: `ALTER TABLE outcomes ADD COLUMN output_target TEXT NOT NULL DEFAULT 'local'` },
+    { name: 'skill_target', sql: `ALTER TABLE outcomes ADD COLUMN skill_target TEXT NOT NULL DEFAULT 'local'` },
+    { name: 'tool_target', sql: `ALTER TABLE outcomes ADD COLUMN tool_target TEXT NOT NULL DEFAULT 'local'` },
+    { name: 'file_target', sql: `ALTER TABLE outcomes ADD COLUMN file_target TEXT NOT NULL DEFAULT 'local'` },
+    { name: 'auto_save', sql: 'ALTER TABLE outcomes ADD COLUMN auto_save INTEGER NOT NULL DEFAULT 0' },
+  ];
+  const outcomesColsRepo = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  for (const col of repoTargetColumns) {
+    const exists = outcomesColsRepo.some(c => c.name === col.name);
+    if (!exists) {
+      database.exec(col.sql);
+      console.log(`[DB Migration] Added ${col.name} column to outcomes`);
+    }
+  }
+
+  // Create repositories table if it doesn't exist (it's in SCHEMA_SQL but ensure indexes)
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_repositories_type ON repositories(type)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_repositories_content_type ON repositories(content_type)`);
+
+  // Create outcome_items indexes if they don't exist
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to_private, synced_to_team)`);
 }
 
 /**

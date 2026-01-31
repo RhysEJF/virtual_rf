@@ -11,6 +11,7 @@ import { InterventionForm } from '@/app/components/InterventionForm';
 import { OutputsSection } from '@/app/components/OutputsSection';
 import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { SkillsSection } from '@/app/components/SkillsSection';
+import { ToolsSection } from '@/app/components/ToolsSection';
 import { IterateSection } from '@/app/components/IterateSection';
 import { OutcomeCommandBar } from '@/app/components/OutcomeCommandBar';
 import { DocumentsSection } from '@/app/components/DocumentsSection';
@@ -22,7 +23,8 @@ import { HomrStatusCard } from '@/app/components/homr/HomrStatusCard';
 import { EscalationAlert } from '@/app/components/homr/EscalationAlert';
 import { ActivityLogDrawer } from '@/app/components/homr/ActivityLogDrawer';
 import { useToast } from '@/app/hooks/useToast';
-import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode } from '@/lib/db/schema';
+import { SaveTargetsSection } from '@/app/components/SaveTargetsSection';
+import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
 
 // Types
 interface OutcomeDetail {
@@ -50,6 +52,12 @@ interface OutcomeDetail {
   work_branch: string | null;
   auto_commit: boolean;
   create_pr_on_complete: boolean;
+  // Save targets
+  output_target: SaveTarget;
+  skill_target: SaveTarget;
+  tool_target: SaveTarget;
+  file_target: SaveTarget;
+  auto_save: boolean;
 }
 
 interface ChildOutcomeInfo {
@@ -1159,6 +1167,9 @@ export default function OutcomeDetailPage(): JSX.Element {
           {/* Skills */}
           <SkillsSection outcomeId={outcomeId} />
 
+          {/* Tools */}
+          <ToolsSection outcomeId={outcomeId} />
+
           {/* HOMЯ Protocol Status */}
           <HomrStatusCard
             outcomeId={outcomeId}
@@ -1206,6 +1217,19 @@ export default function OutcomeDetailPage(): JSX.Element {
               onUpdate={fetchOutcome}
             />
           </div>
+
+          {/* Save Targets Configuration */}
+          <SaveTargetsSection
+            outcomeId={outcomeId}
+            config={{
+              output_target: outcome.output_target,
+              skill_target: outcome.skill_target,
+              tool_target: outcome.tool_target,
+              file_target: outcome.file_target,
+              auto_save: outcome.auto_save,
+            }}
+            onUpdate={fetchOutcome}
+          />
 
           {/* Intervention Form - while workers running */}
           {hasRunningWorker && (

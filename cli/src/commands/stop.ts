@@ -1,22 +1,28 @@
 /**
  * Stop Command
  *
- * Pauses a running worker via PATCH /api/workers/[id]
+ * Stops a running worker via DELETE /api/outcomes/[id]/workers?workerId=xxx
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Worker } from '../api.js';
 
+// Response type for stopping a worker
+interface StopWorkerResponse {
+  success: boolean;
+  message: string;
+}
+
 export const stopCommand = new Command('stop')
-  .description('Stop (pause) a running worker')
+  .description('Stop a running worker')
   .argument('<worker-id>', 'The worker ID to stop')
   .action(async (workerId: string) => {
     try {
       console.log();
       console.log(chalk.gray(`Stopping worker ${workerId}...`));
 
-      // First fetch the worker to verify it exists and check its current status
+      // First fetch the worker to verify it exists and get its outcome_id
       const { worker } = await api.workers.get(workerId);
 
       // Check if the worker is in a state that can be stopped
@@ -53,23 +59,25 @@ export const stopCommand = new Command('stop')
         return;
       }
 
-      // Stop the worker by setting status to paused
-      const { worker: updatedWorker } = await api.workers.update(workerId, { status: 'paused' });
+      // Stop the worker using DELETE endpoint
+      await api.delete<StopWorkerResponse>(
+        `/outcomes/${worker.outcome_id}/workers?workerId=${workerId}`
+      );
 
       console.log();
       console.log(chalk.green('✓'), chalk.bold('Worker stopped successfully'));
       console.log();
-      console.log(`  ${chalk.gray('Worker ID:')} ${chalk.cyan(updatedWorker.id)}`);
-      console.log(`  ${chalk.gray('Name:')}      ${updatedWorker.name}`);
-      console.log(`  ${chalk.gray('Status:')}    ${formatStatus(updatedWorker.status)}`);
-      console.log(`  ${chalk.gray('Iteration:')} ${updatedWorker.iteration}`);
+      console.log(`  ${chalk.gray('Worker ID:')} ${chalk.cyan(worker.id)}`);
+      console.log(`  ${chalk.gray('Name:')}      ${worker.name}`);
+      console.log(`  ${chalk.gray('Status:')}    ${formatStatus('paused')}`);
+      console.log(`  ${chalk.gray('Iteration:')} ${worker.iteration}`);
 
-      if (updatedWorker.current_task_id) {
-        console.log(`  ${chalk.gray('Task:')}      ${chalk.cyan(updatedWorker.current_task_id)}`);
+      if (worker.current_task_id) {
+        console.log(`  ${chalk.gray('Task:')}      ${chalk.cyan(worker.current_task_id)}`);
       }
 
       console.log();
-      console.log(chalk.gray(`Use 'rf start ${updatedWorker.outcome_id}' to start a new worker`));
+      console.log(chalk.gray(`Use 'rf start ${worker.outcome_id}' to start a new worker`));
       console.log();
     } catch (error) {
       if (error instanceof NetworkError) {

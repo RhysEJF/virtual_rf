@@ -16,6 +16,30 @@ interface ApiKey {
   usedBy?: string[];
 }
 
+interface RepositoryStatus {
+  pathExists: boolean;
+  isGitRepo: boolean;
+  detectedRemote: string | null;
+  currentBranch: string;
+  hasRemote: boolean;
+}
+
+interface Repository {
+  id: string;
+  name: string;
+  type: 'private' | 'team';
+  content_type: 'outputs' | 'skills' | 'tools' | 'files' | 'all';
+  repo_url: string | null;
+  local_path: string;
+  branch: string;
+  auto_push: boolean;
+  require_pr: boolean;
+  last_synced_at: number | null;
+  created_at: number;
+  updated_at: number;
+  status?: RepositoryStatus;
+}
+
 // Wrapper component to handle useSearchParams
 function SettingsContent(): JSX.Element {
   const router = useRouter();
@@ -73,8 +97,36 @@ function SettingsContent(): JSX.Element {
     }
   }, []);
 
+  const fetchRepositories = useCallback(async () => {
+    try {
+      const response = await fetch('/api/repositories');
+      const data = await response.json();
+      setRepositories(data.repositories || []);
+    } catch (error) {
+      console.error('Failed to fetch repositories:', error);
+    } finally {
+      setLoadingRepos(false);
+    }
+  }, []);
+
   // GitHub auth code state
   const [authCode, setAuthCode] = useState<string | null>(null);
+
+  // Repositories state
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(true);
+  const [showAddRepoForm, setShowAddRepoForm] = useState(false);
+  const [repoFormData, setRepoFormData] = useState({
+    name: '',
+    type: 'private' as 'private' | 'team',
+    content_type: 'all' as 'outputs' | 'skills' | 'tools' | 'files' | 'all',
+    local_path: '',
+    repo_url: '',
+    branch: 'main',
+    auto_push: true,
+    require_pr: false,
+  });
+  const [savingRepo, setSavingRepo] = useState(false);
 
   const connectGithub = async () => {
     setConnectingGithub(true);
@@ -134,7 +186,8 @@ function SettingsContent(): JSX.Element {
   useEffect(() => {
     fetchApiKeys();
     fetchGithubAuth();
-  }, [fetchApiKeys, fetchGithubAuth]);
+    fetchRepositories();
+  }, [fetchApiKeys, fetchGithubAuth, fetchRepositories]);
 
   const saveApiKey = async (name: string, value: string) => {
     setSavingKey(true);
@@ -182,6 +235,64 @@ function SettingsContent(): JSX.Element {
       toast({ type: 'error', message: 'Failed to remove API key' });
     }
   };
+
+  const saveRepository = async () => {
+    setSavingRepo(true);
+    try {
+      const response = await fetch('/api/repositories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(repoFormData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'success', message: 'Repository added successfully' });
+        setShowAddRepoForm(false);
+        setRepoFormData({
+          name: '',
+          type: 'private',
+          content_type: 'all',
+          local_path: '',
+          repo_url: '',
+          branch: 'main',
+          auto_push: true,
+          require_pr: false,
+        });
+        fetchRepositories();
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to add repository' });
+      }
+    } catch (error) {
+      console.error('Failed to save repository:', error);
+      toast({ type: 'error', message: 'Failed to save repository' });
+    } finally {
+      setSavingRepo(false);
+    }
+  };
+
+  const deleteRepository = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove "${name}"?`)) return;
+
+    try {
+      const response = await fetch(`/api/repositories/${id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'success', message: 'Repository removed' });
+        fetchRepositories();
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to remove repository' });
+      }
+    } catch (error) {
+      console.error('Failed to remove repository:', error);
+      toast({ type: 'error', message: 'Failed to remove repository' });
+    }
+  };
+
+  // Group repositories by type
+  const privateRepos = repositories.filter(r => r.type === 'private');
+  const teamRepos = repositories.filter(r => r.type === 'team');
 
   // Count configured vs total keys
   const configuredCount = apiKeys.filter(k => k.isSet).length;
@@ -445,7 +556,7 @@ function SettingsContent(): JSX.Element {
       </Card>
 
       {/* GitHub Integration */}
-      <Card padding="md">
+      <Card padding="md" className="mb-6">
         <CardHeader>
           <div>
             <CardTitle>GitHub Integration</CardTitle>
@@ -536,6 +647,300 @@ function SettingsContent(): JSX.Element {
                   <p className="text-text-tertiary text-xs mt-3">
                     This page will update automatically when complete.
                   </p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Repositories Configuration */}
+      <Card padding="md">
+        <CardHeader>
+          <div>
+            <CardTitle>Repositories</CardTitle>
+            <p className="text-text-tertiary text-sm mt-1">
+              Configure where outputs, skills, tools, and files are saved
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowAddRepoForm(!showAddRepoForm)}
+          >
+            {showAddRepoForm ? 'Cancel' : '+ Add Repository'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {/* Info Notice */}
+          <div className="mb-4 p-3 bg-bg-secondary rounded-lg border border-border">
+            <div className="flex items-start gap-2">
+              <span className="text-accent">💡</span>
+              <div className="text-sm">
+                <p className="text-text-secondary">
+                  Configure repositories to automatically save skills, tools, and files as workers build them.
+                </p>
+                <p className="text-text-tertiary text-xs mt-1">
+                  Use &quot;Private&quot; for your personal library, &quot;Team&quot; for shared resources.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Add Repository Form */}
+          {showAddRepoForm && (
+            <div className="mb-4 p-4 bg-bg-tertiary rounded-lg border border-border">
+              <h4 className="text-sm font-medium text-text-primary mb-3">Add Repository</h4>
+
+              <div className="space-y-4">
+                {/* Name and Type */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-text-tertiary mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={repoFormData.name}
+                      onChange={(e) => setRepoFormData(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g., My Skills Library"
+                      className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-tertiary mb-1">Type</label>
+                    <select
+                      value={repoFormData.type}
+                      onChange={(e) => setRepoFormData(prev => ({
+                        ...prev,
+                        type: e.target.value as 'private' | 'team',
+                        require_pr: e.target.value === 'team' ? prev.require_pr : false,
+                      }))}
+                      className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
+                    >
+                      <option value="private">Private (just you)</option>
+                      <option value="team">Team (shared)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Content Type */}
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">Content Type</label>
+                  <select
+                    value={repoFormData.content_type}
+                    onChange={(e) => setRepoFormData(prev => ({
+                      ...prev,
+                      content_type: e.target.value as 'outputs' | 'skills' | 'tools' | 'files' | 'all',
+                    }))}
+                    className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm focus:outline-none focus:border-accent"
+                  >
+                    <option value="all">All (outputs, skills, tools, files)</option>
+                    <option value="outputs">Outputs only</option>
+                    <option value="skills">Skills only</option>
+                    <option value="tools">Tools only</option>
+                    <option value="files">Files only</option>
+                  </select>
+                </div>
+
+                {/* Local Path */}
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">Local Path</label>
+                  <input
+                    type="text"
+                    value={repoFormData.local_path}
+                    onChange={(e) => setRepoFormData(prev => ({ ...prev, local_path: e.target.value }))}
+                    placeholder="e.g., ~/my-skills-library"
+                    className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent font-mono"
+                  />
+                  <p className="text-text-tertiary text-xs mt-1">
+                    Path to local git repository (must exist)
+                  </p>
+                </div>
+
+                {/* Remote URL (optional) */}
+                <div>
+                  <label className="block text-xs text-text-tertiary mb-1">Remote URL (optional)</label>
+                  <input
+                    type="text"
+                    value={repoFormData.repo_url}
+                    onChange={(e) => setRepoFormData(prev => ({ ...prev, repo_url: e.target.value }))}
+                    placeholder="e.g., git@github.com:username/repo.git"
+                    className="w-full px-3 py-2 bg-bg-primary border border-border rounded text-text-primary text-sm placeholder:text-text-tertiary focus:outline-none focus:border-accent font-mono"
+                  />
+                  <p className="text-text-tertiary text-xs mt-1">
+                    Will be auto-detected from git config if not specified
+                  </p>
+                </div>
+
+                {/* Options */}
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={repoFormData.auto_push}
+                      onChange={(e) => setRepoFormData(prev => ({ ...prev, auto_push: e.target.checked }))}
+                      className="rounded border-border text-accent focus:ring-accent"
+                    />
+                    <span className="text-sm text-text-secondary">Auto-push after save</span>
+                  </label>
+                  {repoFormData.type === 'team' && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={repoFormData.require_pr}
+                        onChange={(e) => setRepoFormData(prev => ({ ...prev, require_pr: e.target.checked }))}
+                        className="rounded border-border text-accent focus:ring-accent"
+                      />
+                      <span className="text-sm text-text-secondary">Require PR (vs direct push)</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <Button
+                  size="sm"
+                  onClick={saveRepository}
+                  disabled={savingRepo || !repoFormData.name || !repoFormData.local_path}
+                >
+                  {savingRepo ? 'Saving...' : 'Add Repository'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowAddRepoForm(false);
+                    setRepoFormData({
+                      name: '',
+                      type: 'private',
+                      content_type: 'all',
+                      local_path: '',
+                      repo_url: '',
+                      branch: 'main',
+                      auto_push: true,
+                      require_pr: false,
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Repository List */}
+          {loadingRepos ? (
+            <p className="text-text-tertiary text-sm">Loading repositories...</p>
+          ) : repositories.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-text-tertiary text-sm mb-2">No repositories configured</p>
+              <p className="text-text-tertiary text-xs">
+                Add a repository to start saving skills, tools, and files automatically.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Private Repositories */}
+              {privateRepos.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2">
+                    Private Repositories
+                  </h4>
+                  <div className="space-y-2">
+                    {privateRepos.map((repo) => (
+                      <div
+                        key={repo.id}
+                        className="flex items-start justify-between p-3 bg-bg-secondary rounded-lg hover:bg-bg-tertiary transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-text-primary text-sm font-medium">{repo.name}</span>
+                            <Badge variant="info" className="text-[10px]">
+                              {repo.content_type === 'all' ? 'All' : repo.content_type}
+                            </Badge>
+                            {repo.status?.isGitRepo ? (
+                              <Badge variant="success" className="text-[10px]">Git</Badge>
+                            ) : (
+                              <Badge variant="warning" className="text-[10px]">No Git</Badge>
+                            )}
+                          </div>
+                          <div className="text-text-tertiary text-xs font-mono mt-1 truncate">
+                            {repo.local_path}
+                          </div>
+                          {repo.status?.detectedRemote && (
+                            <div className="text-text-tertiary text-xs mt-1 truncate">
+                              Remote: {repo.status.detectedRemote}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3 mt-1 text-xs text-text-tertiary">
+                            {repo.auto_push && <span>Auto-push</span>}
+                            <span>Branch: {repo.status?.currentBranch || repo.branch}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteRepository(repo.id, repo.name)}
+                          className="text-status-error hover:text-status-error hover:bg-status-error/10"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Team Repositories */}
+              {teamRepos.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2">
+                    Team Repositories
+                  </h4>
+                  <div className="space-y-2">
+                    {teamRepos.map((repo) => (
+                      <div
+                        key={repo.id}
+                        className="flex items-start justify-between p-3 bg-bg-secondary rounded-lg hover:bg-bg-tertiary transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-text-primary text-sm font-medium">{repo.name}</span>
+                            <Badge variant="info" className="text-[10px]">
+                              {repo.content_type === 'all' ? 'All' : repo.content_type}
+                            </Badge>
+                            {repo.status?.isGitRepo ? (
+                              <Badge variant="success" className="text-[10px]">Git</Badge>
+                            ) : (
+                              <Badge variant="warning" className="text-[10px]">No Git</Badge>
+                            )}
+                            {repo.require_pr && (
+                              <Badge variant="warning" className="text-[10px]">PR Mode</Badge>
+                            )}
+                          </div>
+                          <div className="text-text-tertiary text-xs font-mono mt-1 truncate">
+                            {repo.local_path}
+                          </div>
+                          {repo.status?.detectedRemote && (
+                            <div className="text-text-tertiary text-xs mt-1 truncate">
+                              Remote: {repo.status.detectedRemote}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3 mt-1 text-xs text-text-tertiary">
+                            {repo.auto_push && <span>Auto-push</span>}
+                            <span>Branch: {repo.status?.currentBranch || repo.branch}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteRepository(repo.id, repo.name)}
+                          className="text-status-error hover:text-status-error hover:bg-status-error/10"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

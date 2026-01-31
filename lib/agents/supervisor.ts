@@ -102,7 +102,7 @@ function checkStuck(context: WorkerContext): boolean {
       worker_id: worker.id,
       outcome_id: worker.outcome_id,
       type: 'stuck',
-      severity: 'warning',
+      severity: 'medium',
       message: `Worker has been on task "${currentTask.title}" for ${Math.floor(elapsed / 60000)} minutes`,
     });
     return true;
@@ -136,7 +136,7 @@ function checkNoProgress(context: WorkerContext): boolean {
       worker_id: worker.id,
       outcome_id: worker.outcome_id,
       type: 'no_progress',
-      severity: 'warning',
+      severity: 'medium',
       message: `No progress logged for ${Math.floor(elapsed / 60000)} minutes`,
     });
     return true;

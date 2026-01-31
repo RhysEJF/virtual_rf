@@ -61,6 +61,11 @@ export type HomrAmbiguityType = 'unclear_requirement' | 'multiple_approaches' | 
 // Git workflow modes for outcomes
 export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 
+// Repository configuration for skills/tools/files/outputs
+export type RepositoryType = 'private' | 'team';
+export type ContentType = 'outputs' | 'skills' | 'tools' | 'files' | 'all';
+export type SaveTarget = 'local' | 'private' | 'team';
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -95,6 +100,12 @@ export interface Outcome {
   supervisor_enabled: boolean;      // Should supervisor monitor this outcome
   pause_sensitivity: PauseSensitivity;  // How aggressive auto-pause should be
   cot_review_frequency: CoTReviewFrequency; // How often to run AI review
+  // Repository save targets (where content goes by default)
+  output_target: SaveTarget;        // 'local' | 'private' | 'team'
+  skill_target: SaveTarget;
+  tool_target: SaveTarget;
+  file_target: SaveTarget;
+  auto_save: boolean;               // Auto-save as workers build
 }
 
 export interface DesignDoc {
@@ -210,6 +221,41 @@ export interface Skill {
   requires: string | null;          // JSON array of required API key names
   usage_count: number;
   avg_cost: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+// ============================================================================
+// Repository Configuration Entities
+// ============================================================================
+
+export interface Repository {
+  id: string;
+  name: string;
+  type: RepositoryType;             // 'private' | 'team'
+  content_type: ContentType;        // 'outputs' | 'skills' | 'tools' | 'files' | 'all'
+  repo_url: string | null;          // git remote URL
+  local_path: string;               // local clone path
+  branch: string;                   // default 'main'
+  auto_push: boolean;               // push immediately after adding
+  require_pr: boolean;              // require PR for team repos
+  last_synced_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type OutcomeItemType = 'output' | 'skill' | 'tool' | 'file';
+
+export interface OutcomeItem {
+  id: string;
+  outcome_id: string;
+  item_type: OutcomeItemType;       // 'output' | 'skill' | 'tool' | 'file'
+  filename: string;
+  file_path: string;
+  target_override: SaveTarget | null;  // null = use outcome default
+  synced_to_private: boolean;
+  synced_to_team: boolean;
+  last_synced_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -714,6 +760,48 @@ CREATE TABLE IF NOT EXISTS skills (
   updated_at INTEGER NOT NULL
 );
 
+-- ============================================================================
+-- Repository Configuration Tables
+-- ============================================================================
+
+-- Repositories: Configured git repos for storing content
+CREATE TABLE IF NOT EXISTS repositories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,              -- 'private' | 'team'
+  content_type TEXT NOT NULL,      -- 'outputs' | 'skills' | 'tools' | 'files' | 'all'
+  repo_url TEXT,                   -- git remote URL (null for local-only)
+  local_path TEXT NOT NULL,        -- local clone path
+  branch TEXT NOT NULL DEFAULT 'main',
+  auto_push INTEGER NOT NULL DEFAULT 1,
+  require_pr INTEGER NOT NULL DEFAULT 0,
+  last_synced_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Outcome Items: Track individual items and their sync status
+CREATE TABLE IF NOT EXISTS outcome_items (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL REFERENCES outcomes(id) ON DELETE CASCADE,
+  item_type TEXT NOT NULL,         -- 'output' | 'skill' | 'tool' | 'file'
+  filename TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  target_override TEXT,            -- null = use outcome default, or 'local' | 'private' | 'team'
+  synced_to_private INTEGER NOT NULL DEFAULT 0,
+  synced_to_team INTEGER NOT NULL DEFAULT 0,
+  last_synced_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(outcome_id, item_type, filename)
+);
+
+CREATE INDEX IF NOT EXISTS idx_repositories_type ON repositories(type);
+CREATE INDEX IF NOT EXISTS idx_repositories_content_type ON repositories(content_type);
+CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type);
+CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to_private, synced_to_team);
+
 -- Cost tracking
 CREATE TABLE IF NOT EXISTS cost_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1126,4 +1214,13 @@ ALTER TABLE outcomes ADD COLUMN base_branch TEXT;
 ALTER TABLE outcomes ADD COLUMN work_branch TEXT;
 ALTER TABLE outcomes ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE outcomes ADD COLUMN create_pr_on_complete INTEGER NOT NULL DEFAULT 0;
+`;
+
+export const REPO_CONFIG_MIGRATION_SQL = `
+-- Add repository save target columns to outcomes table
+ALTER TABLE outcomes ADD COLUMN output_target TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE outcomes ADD COLUMN skill_target TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE outcomes ADD COLUMN tool_target TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE outcomes ADD COLUMN file_target TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE outcomes ADD COLUMN auto_save INTEGER NOT NULL DEFAULT 0;
 `;

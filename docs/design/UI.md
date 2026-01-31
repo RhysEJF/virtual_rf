@@ -78,6 +78,13 @@ app/
 | ProgressView | `ProgressView.tsx` | Real-time progress |
 | ActivityFeed | `ActivityFeed.tsx` | Event timeline |
 
+### Layout Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| CollapsibleSection | `CollapsibleSection.tsx` | Collapsible container with localStorage persistence |
+| OutcomeChat | `OutcomeChat.tsx` | Unified conversation interface (merged command + iterate) |
+
 ### Specialized Sections
 
 | Component | File | Purpose |
@@ -88,8 +95,7 @@ app/
 | ToolsSection | `ToolsSection.tsx` | Tools with sync status |
 | SkillDetailModal | `SkillDetailModal.tsx` | Skill viewer |
 | GitConfigSection | `GitConfigSection.tsx` | Git workflow config |
-| SaveTargetsSection | `SaveTargetsSection.tsx` | Repository sync config with inheritance |
-| IterateSection | `IterateSection.tsx` | Post-completion feedback |
+| CommitSettingsSection | `CommitSettingsSection.tsx` | Repository sync config with inheritance |
 | InterventionForm | `InterventionForm.tsx` | Send worker instructions |
 | SupervisorAlerts | `SupervisorAlerts.tsx` | Safety alerts |
 | ImprovementSuggestions | `ImprovementSuggestions.tsx` | Auto-generated ideas |
@@ -176,27 +182,36 @@ toast({
 └─────────────────────────────────────────────────┘
 ```
 
-### Outcome Detail Layout
+### Outcome Detail Layout (Split Panel)
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Breadcrumbs: Home > Outcome Name                │
-├─────────────────────────────────────────────────┤
-│  Intent Section (collapsible)                    │
-├─────────────────────────────────────────────────┤
-│  Approach Section (collapsible)                  │
-├─────────────────────────────────────────────────┤
-│  Tasks Section                                   │
-│  ┌─────────────────────────────────────────────┐│
-│  │ [Expandable Task Card]                       ││
-│  │ [Expandable Task Card]                       ││
-│  └─────────────────────────────────────────────┘│
-├─────────────────────────────────────────────────┤
-│  Workers | Skills | Outputs | Documents          │
-├─────────────────────────────────────────────────┤
-│  Iterate Section (post-completion)               │
-└─────────────────────────────────────────────────┘
+┌────────────────────────────────┬────────────────────────────────────┐
+│  CONTEXT (40%)                 │  CONTROL TOWER (60%)               │
+│                                │                                    │
+│  ▼ Intent (What)               │  ⚠️ HOMЯ Alerts (always visible)   │
+│    Summary + items...          │  [Decision needed - Click to act]  │
+│                                │                                    │
+│  ▶ Approach (How)              │  ┌────────────────────────────────┐│
+│                                │  │ Workers Section                ││
+│  ▶ Tasks (3/6)                 │  │ Progress bar + stats           ││
+│                                │  └────────────────────────────────┘│
+│  ▶ Git & Commit Settings       │                                    │
+│                                │  ┌────────────────────────────────┐│
+│  ▶ Skills                      │  │ OutcomeChat                    ││
+│                                │  │ [Send]                         ││
+│  ▶ Tools                       │  └────────────────────────────────┘│
+│                                │                                    │
+│  ▶ Documents                   │  Outputs Section                   │
+│                                │  Worker Progress (Episodic)        │
+│                                │  HOMЯ Status Card                  │
+│                                │  Actions                           │
+└────────────────────────────────┴────────────────────────────────────┘
 ```
+
+**Key features:**
+- Left panel: Collapsible sections with localStorage persistence
+- Right panel: HOMЯ alerts always at top, never buried by scrolling
+- OutcomeChat: Unified interface merging command bar + iterate functionality
 
 ---
 

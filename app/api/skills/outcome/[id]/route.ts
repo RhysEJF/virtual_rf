@@ -2,6 +2,7 @@
  * Outcome Skill Detail API Route
  *
  * GET /api/skills/outcome/[id] - Get skill content with optional key status
+ * PUT /api/skills/outcome/[id] - Update skill content
  * id format: outcomeId:skill-name
  */
 
@@ -9,6 +10,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSkillContent } from '@/lib/agents/skill-builder';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { checkRequiredKeys } from '@/lib/utils/env-keys';
+import { getWorkspacePath } from '@/lib/workspace/detector';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Parse YAML frontmatter from skill content to extract requires field
@@ -112,6 +116,68 @@ export async function GET(
     console.error('Error fetching outcome skill:', error);
     return NextResponse.json(
       { error: 'Failed to fetch skill' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    const { content } = await request.json();
+
+    if (typeof content !== 'string') {
+      return NextResponse.json(
+        { error: 'Content must be a string' },
+        { status: 400 }
+      );
+    }
+
+    // Parse id format: outcomeId:skill-name
+    const [outcomeId, skillName] = id.split(':');
+
+    if (!outcomeId || !skillName) {
+      return NextResponse.json(
+        { error: 'Invalid skill ID format. Expected: outcomeId:skill-name' },
+        { status: 400 }
+      );
+    }
+
+    const outcome = getOutcomeById(outcomeId);
+    if (!outcome) {
+      return NextResponse.json(
+        { error: 'Outcome not found' },
+        { status: 404 }
+      );
+    }
+
+    // Build path to skill file
+    const workspacePath = getWorkspacePath(outcomeId);
+    const skillFileName = skillName.toLowerCase().replace(/\s+/g, '-') + '.md';
+    const skillPath = path.join(workspacePath, 'skills', skillFileName);
+
+    // Check if skill exists
+    if (!fs.existsSync(skillPath)) {
+      return NextResponse.json(
+        { error: 'Skill file not found' },
+        { status: 404 }
+      );
+    }
+
+    // Write the updated content
+    fs.writeFileSync(skillPath, content, 'utf-8');
+
+    return NextResponse.json({
+      success: true,
+      message: 'Skill updated successfully',
+    });
+  } catch (error) {
+    console.error('Error updating outcome skill:', error);
+    return NextResponse.json(
+      { error: 'Failed to update skill' },
       { status: 500 }
     );
   }

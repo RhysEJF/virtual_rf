@@ -44,6 +44,7 @@ interface SkillDetailModalProps {
   content: string | null;
   loading?: boolean;
   onClose: () => void;
+  onSave?: (newContent: string) => void;
 }
 
 export function SkillDetailModal({
@@ -51,21 +52,71 @@ export function SkillDetailModal({
   content,
   loading = false,
   onClose,
+  onSave,
 }: SkillDetailModalProps): JSX.Element {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(content || '');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const hasRequirements = skill.keyStatus && skill.keyStatus.requiredKeys.length > 0;
   const hasMissingKeys = skill.keyStatus && !skill.keyStatus.allMet;
   const global = isGlobalSkill(skill);
 
   const handleCopy = async () => {
-    if (!content) return;
+    const textToCopy = isEditing ? editedContent : content;
+    if (!textToCopy) return;
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleEdit = () => {
+    setEditedContent(content || '');
+    setIsEditing(true);
+    setSaveError(null);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditedContent(content || '');
+    setSaveError(null);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const endpoint = global
+        ? `/api/skills/${skill.id}`
+        : `/api/skills/outcome/${skill.id}`;
+
+      const response = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editedContent }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save skill');
+      }
+
+      setIsEditing(false);
+      if (onSave) {
+        onSave(editedContent);
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -91,6 +142,9 @@ export function SkillDetailModal({
                 )}
                 {hasMissingKeys && (
                   <Badge variant="warning">Keys Missing</Badge>
+                )}
+                {isEditing && (
+                  <Badge variant="info">Editing</Badge>
                 )}
               </div>
               {skill.description && (
@@ -191,21 +245,47 @@ export function SkillDetailModal({
               <h3 className="text-sm font-medium text-text-secondary uppercase tracking-wide">
                 Skill Instructions
               </h3>
-              {content && !loading && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleCopy}
-                  className="text-xs"
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-              )}
+              <div className="flex gap-2">
+                {!isEditing && content && !loading && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCopy}
+                      className="text-xs"
+                    >
+                      {copied ? 'Copied!' : 'Copy'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleEdit}
+                      className="text-xs"
+                    >
+                      Edit
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
+
+            {saveError && (
+              <div className="bg-status-error/10 border border-status-error/30 rounded-lg p-3 mb-3">
+                <p className="text-status-error text-sm">{saveError}</p>
+              </div>
+            )}
+
             {loading ? (
               <div className="bg-bg-secondary rounded-lg p-4 text-text-tertiary">
                 Loading skill content...
               </div>
+            ) : isEditing ? (
+              <textarea
+                value={editedContent}
+                onChange={(e) => setEditedContent(e.target.value)}
+                className="w-full h-96 bg-bg-secondary text-text-primary text-sm p-4 rounded-lg font-mono border border-border focus:border-accent focus:outline-none resize-none"
+                placeholder="Enter skill content..."
+              />
             ) : content ? (
               <pre className="text-text-primary text-sm bg-bg-secondary p-4 rounded-lg overflow-auto max-h-96 whitespace-pre-wrap font-mono">
                 {content}
@@ -231,7 +311,7 @@ export function SkillDetailModal({
         {/* Footer */}
         <div className="p-4 border-t border-border bg-bg-secondary flex items-center justify-between">
           <div className="flex gap-2">
-            {hasMissingKeys && (
+            {hasMissingKeys && !isEditing && (
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -243,9 +323,22 @@ export function SkillDetailModal({
               </Button>
             )}
           </div>
-          <Button variant="secondary" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <Button variant="secondary" onClick={handleCancel} disabled={saving}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

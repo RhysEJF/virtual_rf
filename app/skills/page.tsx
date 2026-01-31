@@ -652,6 +652,10 @@ export default function SkillsLibraryPage(): JSX.Element {
             setSelectedOutcomeSkill(null);
             setSkillContent(null);
           }}
+          onSave={(newContent) => {
+            setSkillContent(newContent);
+            toast({ type: 'success', message: 'Skill saved successfully' });
+          }}
         />
       )}
 

@@ -15,78 +15,33 @@ Digital Twin doesn't exist in isolation. It integrates with:
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Claude CLI wrapper | Complete |
+| Claude availability detection | Complete |
+| Git commit/branch support | Complete |
+| Git worktree support | Complete |
+| GitHub PR creation (via gh) | Complete |
+| API key management | Complete |
 
-Integrations include:
-- Claude CLI wrapper with safe execution
-- Git commit/branch/worktree support
-- GitHub PR creation via `gh` CLI
-- API key management via `.env.local`
+**Overall:** Complete and production-ready
 
 ---
 
-## Claude CLI
+## Key Concepts
 
-### Overview
+### Claude CLI
 
 All AI capabilities come from Claude Code CLI. We don't use the API directly - we use the user's existing Claude subscription.
 
-### Wrapper
+**Key behaviors:**
+- Safe execution (stdin disabled to prevent hangs)
+- Timeout handling (default 2 minutes)
+- Worker mode with `--dangerously-skip-permissions`
 
-```typescript
-// lib/claude/client.ts
-export async function complete(request: CompleteRequest): Promise<CompleteResult> {
-  const proc = spawn('claude', ['-p', request.prompt], {
-    stdio: ['ignore', 'pipe', 'pipe'],  // CRITICAL: stdin must be 'ignore'
-    timeout: request.timeout || 120000
-  });
-
-  // Collect output, handle errors...
-}
-```
-
-**Key details:**
-- `stdin: 'ignore'` prevents hanging on input prompts
-- Default timeout: 2 minutes
-- Returns `{ success, text, error }`
-
-### Availability Check
-
-```typescript
-export function isClaudeAvailable(): boolean {
-  try {
-    execSync('which claude', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-```
-
-Displayed in UI via `SystemStatus.tsx`.
-
-### Worker Spawning
-
-Workers use a different pattern - spawning Claude with `--dangerously-skip-permissions`:
-
-```typescript
-spawn('claude', [
-  '-p', ralphPrompt,
-  '--dangerously-skip-permissions',
-  '--max-turns', '20'
-], {
-  cwd: taskWorkspace,
-  stdio: ['ignore', 'pipe', 'pipe']
-});
-```
-
----
-
-## Git Integration
-
-### Philosophy
+### Git Integration Philosophy
 
 We don't use OAuth or GitHub API tokens for basic git. Git is already on the user's machine, already authenticated.
 
@@ -106,115 +61,34 @@ We don't use OAuth or GitHub API tokens for basic git. Git is already on the use
 | `branch` | Work on feature branch |
 | `worktree` | Isolated directory per worker |
 
-### Auto-Commit
-
-When enabled, workers commit after each task:
-
-```typescript
-// app/api/outcomes/[id]/git/commit/route.ts
-execSync(`git add -A && git commit -m "${message}"`, {
-  cwd: workingDirectory
-});
-```
-
 ### Worktree Support
 
-For parallel workers on same repo:
+For parallel workers on the same repo, each worker gets its own worktree. This prevents file conflicts when multiple workers modify code simultaneously.
 
-```typescript
-// lib/worktree/manager.ts
-export function createWorktree(repoPath: string, branchName: string): string {
-  const worktreePath = `.worktrees/${branchName}`;
-  execSync(`git worktree add ${worktreePath} -b ${branchName}`);
-  return worktreePath;
-}
-```
+### API Key Management
+
+Skills can declare required API keys. The system:
+- Stores keys in `.env.local` (gitignored)
+- Checks which keys are configured
+- Shows which skills are ready vs. missing keys
 
 ---
 
-## GitHub Integration
+## Behaviors
 
-### PR Creation
-
-Uses `gh` CLI (requires user to have authenticated):
-
-```typescript
-// app/api/outcomes/[id]/git/pr/route.ts
-execSync(`gh pr create --title "${title}" --body "${body}"`, {
-  cwd: workingDirectory
-});
-```
-
-### OAuth Flow
-
-Basic OAuth scaffolding exists but is not fully implemented:
-- `app/api/github/auth/route.ts` - OAuth callback handler
+1. **No API costs** - Uses Claude CLI with existing subscription
+2. **Native git** - Works with user's existing git authentication
+3. **Isolated work** - Worktrees prevent parallel worker conflicts
+4. **Secure storage** - API keys never committed to git
 
 ---
 
-## Environment Management
+## Success Criteria
 
-### API Keys
-
-Stored in `.env.local` (gitignored, never committed):
-
-```
-SERPER_API_KEY=xxx
-FIRECRAWL_API_KEY=xxx
-ANTHROPIC_API_KEY=xxx  # Not used - we use CLI
-```
-
-### Key Management
-
-```typescript
-// lib/utils/env-keys.ts
-export function checkRequiredKeys(keys: string[]): {
-  allPresent: boolean;
-  missing: string[];
-} {
-  const missing = keys.filter(k => !process.env[k]);
-  return { allPresent: missing.length === 0, missing };
-}
-```
-
-### API Endpoint
-
-```typescript
-// app/api/env-keys/route.ts
-GET  /api/env-keys        // List configured keys (names only, not values)
-POST /api/env-keys        // Add/update a key
-```
-
----
-
-## Components
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `lib/claude/client.ts` | Claude CLI wrapper |
-| `lib/git/` | Git utilities (minimal) |
-| `lib/worktree/manager.ts` | Worktree management |
-| `lib/utils/env-keys.ts` | API key checking |
-| `app/api/env-keys/route.ts` | Key management API |
-| `app/api/outcomes/[id]/git/` | Git operation APIs |
-| `app/api/github/auth/route.ts` | OAuth handler |
-
----
-
-## Dependencies
-
-**Uses:**
-- `child_process` - For spawning processes
-- System `git` - Version control
-- System `gh` - GitHub CLI
-- System `claude` - Claude Code CLI
-
-**Used by:**
-- All agents (via Claude wrapper)
-- Worker system (spawns Claude)
-- Git-enabled outcomes
+- Claude CLI works reliably without hanging
+- Workers can commit code without manual intervention
+- Parallel workers don't conflict on files
+- API keys are stored securely
 
 ---
 
@@ -229,3 +103,10 @@ POST /api/env-keys        // Add/update a key
 4. **GitHub rate limits** - Heavy PR creation could hit rate limits. No handling for this currently.
 
 5. **Credential management** - API keys in `.env.local` works but isn't most secure. Could use system keychain.
+
+---
+
+## Related
+
+- **Design:** [INTEGRATION.md](../design/INTEGRATION.md) - Implementation details, code patterns, and API specs
+- **Vision:** [WORKER.md](./WORKER.md) - How workers spawn Claude processes

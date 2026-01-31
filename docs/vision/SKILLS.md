@@ -17,16 +17,18 @@ Think of skills as "employee training manuals" that workers read before starting
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Global skills library | Complete |
+| Outcome-specific skills | Complete |
+| Trigger-based matching | Complete |
+| YAML frontmatter parsing | Complete |
+| Skill dependency resolution | Complete |
+| API key requirements | Complete |
 
-The skill system handles:
-- Global skills (shared across all outcomes)
-- Outcome-specific skills (built during capability phase)
-- Trigger-based matching (find relevant skills for a task)
-- YAML frontmatter parsing
-- Skill dependency resolution
+**Overall:** Complete and production-ready
 
 ---
 
@@ -44,7 +46,9 @@ Outcome skills are built during capability phase for that outcome's specific nee
 
 ### Skill Structure
 
-```markdown
+Skills are markdown files with YAML frontmatter:
+
+```yaml
 ---
 name: Web Research
 description: Research topics using web search
@@ -59,143 +63,37 @@ requires:
 # Web Research
 
 ## Purpose
-Explain why this skill exists...
-
-## When to Use
-- Situation 1
-- Situation 2
+...
 
 ## Methodology
-### Step 1: Define search queries
 ...
-
-### Step 2: Execute searches
-...
-
-## Tools Available
-### search-web
-**Path:** `../tools/search-web.ts`
-**Run:** `npx ts-node ../tools/search-web.ts --query "..."`
-
-## Output Template
-```
-## Research Findings
-- Finding 1
-- Finding 2
-```
-
-## Quality Checklist
-- [ ] Multiple sources consulted
-- [ ] Findings synthesized
 ```
 
 ### Trigger Matching
 
-When a worker claims a task, the system searches for relevant skills:
+When a worker claims a task, the system searches for relevant skills by matching trigger keywords against the task title and description.
 
-```typescript
-const searchQuery = `${task.title} ${task.description}`;
-const matchedSkills = searchSkillsByTriggers(searchQuery);
-```
+### API Key Requirements
 
-Matching checks if any trigger keywords appear in the task.
+Skills can declare what API keys they need via the `requires` field. The UI shows which skills are ready vs. missing keys.
 
 ---
 
-## Components
+## Behaviors
 
-### Primary Files
-
-| File | Purpose |
-|------|---------|
-| `lib/agents/skill-manager.ts` | Load, parse, search skills |
-| `lib/agents/skill-builder.ts` | Generate CLAUDE.md for building skills |
-| `lib/agents/skill-dependency-resolver.ts` | Ensure required skills exist |
-| `lib/db/skills.ts` | Skill database operations |
-
-### Skill Loading Flow
-
-```
-Task Claimed
-     │
-     ▼
-┌─────────────────────────┐
-│ Check task.required_skills │
-└────────────┬────────────┘
-             │
-     ┌───────┴───────┐
-     ▼               ▼
- Explicit         None specified
- skills              │
-     │               ▼
-     │        ┌─────────────────┐
-     │        │ Search by       │
-     │        │ triggers        │
-     │        └────────┬────────┘
-     │                 │
-     └────────┬────────┘
-              │
-              ▼
-┌─────────────────────────┐
-│ Load skill documents    │
-│ (global + outcome)      │
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│ Inject into CLAUDE.md   │
-│ context                 │
-└─────────────────────────┘
-```
+1. **Automatic loading** - Skills are injected into worker context based on task requirements
+2. **Trigger matching** - Relevant skills found by keyword matching
+3. **Capability building** - Missing skills are created during capability phase
+4. **Key validation** - Skills with missing API keys are flagged in UI
 
 ---
 
-## Skill Building
+## Success Criteria
 
-During capability phase, new skills are built:
-
-1. **Planner detects need** - "This outcome needs a skill for X"
-2. **Capability task created** - `phase: 'capability', capability_type: 'skill'`
-3. **Worker claims task** - Gets special CLAUDE.md for skill building
-4. **Skill document created** - Saved to `/workspaces/out_{id}/skills/`
-5. **Validation** - Check YAML frontmatter and required sections
-
-### Skill Builder Instructions
-
-The skill builder generates specialized CLAUDE.md that tells the worker:
-- Skill document template
-- Required sections (Purpose, Methodology, Tools)
-- YAML frontmatter format
-- Quality criteria
-
----
-
-## Dependencies
-
-**Uses:**
-- `lib/db/skills.ts` - Skill persistence
-- `lib/workspace/detector.ts` - Find outcome skill paths
-
-**Used by:**
-- `lib/ralph/worker.ts` - Loads skills into context
-- `lib/ralph/orchestrator.ts` - Triggers skill building
-- `lib/agents/capability-planner.ts` - Detects skill needs
-
----
-
-## API
-
-### GET /api/skills
-
-List global skills.
-
-### GET /api/skills/outcome?outcomeId={id}
-
-List outcome-specific skills.
-
-### POST /api/skills/create
-
-Create a new global skill.
+- Workers have relevant skills loaded for their tasks
+- Skills are written in a way that Claude can follow
+- Missing skills are detected and built before execution
+- API key requirements are visible to users
 
 ---
 
@@ -209,4 +107,10 @@ Create a new global skill.
 
 4. **Skill dependencies** - Skills can reference tools. Should skills also be able to reference other skills?
 
-5. **API key requirements** - Skills can declare `requires: [API_KEY]`. But enforcement is incomplete - see IDEAS.md for planned improvements.
+---
+
+## Related
+
+- **Design:** [SKILLS.md](../design/SKILLS.md) - Implementation details and file structure
+- **Vision:** [ORCHESTRATION.md](./ORCHESTRATION.md) - When skills are built
+- **Vision:** [WORKER.md](./WORKER.md) - How skills are loaded into workers

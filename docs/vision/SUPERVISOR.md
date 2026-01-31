@@ -20,17 +20,18 @@ The Supervisor watches for these conditions and:
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Stuck detection (same task too long) | Complete |
+| No progress detection (no updates) | Complete |
+| Repeated failure detection (auto-pause) | Complete |
+| Stale worker cleanup (dead processes) | Complete |
+| Alert severity levels | Complete |
+| Per-outcome supervisor config | Complete |
 
-The Supervisor handles:
-- Stuck detection (same task too long)
-- No progress detection (no updates)
-- Repeated failure detection (auto-pause)
-- Stale worker cleanup (dead processes)
-- Alert severity levels
-- Optional per-outcome supervisor
+**Overall:** Complete and production-ready
 
 ---
 
@@ -64,82 +65,7 @@ When a worker fails 3 consecutive tasks:
 
 This prevents runaway failures from wasting resources.
 
----
-
-## Components
-
-### Primary Files
-
-| File | Purpose |
-|------|---------|
-| `lib/supervisor/index.ts` | Main monitoring daemon |
-| `lib/db/supervisor-alerts.ts` | Alert persistence |
-| `app/api/supervisor/route.ts` | Start/stop supervisor |
-| `app/api/supervisor/alerts/route.ts` | List alerts |
-| `app/components/SupervisorAlerts.tsx` | Alert display UI |
-
-### Monitoring Loop
-
-```
-startSupervisor()
-       │
-       ▼
-┌─────────────────────────────────┐◀──────────┐
-│     Sleep 30 seconds            │           │
-└─────────────┬───────────────────┘           │
-              │                               │
-              ▼                               │
-┌─────────────────────────────────┐           │
-│     Get all running workers     │           │
-└─────────────┬───────────────────┘           │
-              │                               │
-              ▼                               │
-┌─────────────────────────────────┐           │
-│     For each worker:            │           │
-│     - Check stuck condition     │           │
-│     - Check no progress         │           │
-│     - Check consecutive fails   │           │
-│     - Check stale heartbeat     │           │
-└─────────────┬───────────────────┘           │
-              │                               │
-              ▼                               │
-┌─────────────────────────────────┐           │
-│     Create alerts as needed     │           │
-│     (skip if active alert exists)│          │
-└─────────────┬───────────────────┘           │
-              │                               │
-              ▼                               │
-┌─────────────────────────────────┐           │
-│     Handle repeated failures    │           │
-│     (auto-pause if threshold)   │           │
-└─────────────┬───────────────────┘           │
-              │                               │
-              └───────────────────────────────┘
-```
-
----
-
-## Configuration
-
-```typescript
-const STUCK_THRESHOLD_MS = 10 * 60 * 1000;        // 10 minutes
-const NO_PROGRESS_THRESHOLD_MS = 5 * 60 * 1000;   // 5 minutes
-const CONSECUTIVE_FAILURES_THRESHOLD = 3;          // 3 fails
-const CHECK_INTERVAL_MS = 30 * 1000;              // Check every 30s
-```
-
-Per-outcome configuration (optional):
-```typescript
-interface OutcomeSupervsorConfig {
-  supervisor_enabled: boolean;     // Enable/disable
-  pause_sensitivity: 'low' | 'medium' | 'high';
-  cot_review_frequency: number;    // Not yet used
-}
-```
-
----
-
-## Alert Lifecycle
+### Alert Lifecycle
 
 ```
 Alert Created (pending)
@@ -158,63 +84,21 @@ Alerts can be:
 
 ---
 
-## Dependencies
+## Behaviors
 
-**Uses:**
-- `lib/db/workers.ts` - Get running workers
-- `lib/db/tasks.ts` - Check task status
-- `lib/db/progress.ts` - Check progress entries
-- `lib/db/interventions.ts` - Create pause interventions
-- `lib/db/supervisor-alerts.ts` - Create/manage alerts
-
-**Used by:**
-- Dashboard displays active alerts
-- Worker pages show alert status
+1. **Proactive detection** - Catches problems before they waste resources
+2. **Graduated response** - Severity levels drive appropriate action
+3. **Self-healing** - Auto-resolves alerts when issues clear
+4. **Configurable** - Per-outcome settings for different sensitivity levels
 
 ---
 
-## API
+## Success Criteria
 
-### GET /api/supervisor
-
-Get supervisor status.
-
-```json
-{
-  "running": true,
-  "lastCheck": "2025-01-31T10:30:00Z",
-  "activeAlerts": 2
-}
-```
-
-### POST /api/supervisor
-
-Start or stop supervisor.
-
-```json
-{
-  "action": "start" | "stop"
-}
-```
-
-### GET /api/supervisor/alerts
-
-List alerts with optional filters.
-
-```json
-{
-  "alerts": [
-    {
-      "id": "alert_123",
-      "type": "stuck",
-      "severity": "high",
-      "message": "Worker stuck on task for 12 minutes",
-      "status": "pending",
-      "auto_paused": false
-    }
-  ]
-}
-```
+- Stuck workers are detected within 10 minutes
+- Repeated failures trigger auto-pause before excessive resource waste
+- Dead processes are cleaned up without manual intervention
+- Alerts are actionable and not noisy (no false positives)
 
 ---
 
@@ -227,3 +111,11 @@ List alerts with optional filters.
 3. **Resolution actions** - Beyond pause, what actions should Supervisor take? Restart worker? Skip task? Escalate to human?
 
 4. **Cross-worker patterns** - If multiple workers fail on the same outcome, should we pause the whole outcome?
+
+---
+
+## Related
+
+- **Design:** [SUPERVISOR.md](../design/SUPERVISOR.md) - Implementation details, monitoring loop, and configuration
+- **Vision:** [WORKER.md](./WORKER.md) - What the Supervisor monitors
+- **Vision:** [ANALYTICS.md](./ANALYTICS.md) - How alerts feed into self-improvement

@@ -15,15 +15,16 @@ When a user speaks or types into the command bar, their input is often unstructu
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Request classification (quick/research/deep) | Complete |
+| Confidence scoring | Complete |
+| Smart outcome matching | Complete |
+| Clarifying question generation | Complete |
 
-The Dispatcher handles:
-- Classification with confidence scoring
-- Smart outcome matching (finds related existing outcomes)
-- Clarifying question generation when needed
-- Direct routing to Quick/Research/Deep handlers
+**Overall:** Complete and production-ready
 
 ---
 
@@ -31,11 +32,11 @@ The Dispatcher handles:
 
 ### Request Types
 
-| Type | Description | Handler |
-|------|-------------|---------|
-| `quick` | Simple one-shot questions | Quick Executor |
-| `research` | Information gathering | Research Handler |
-| `deep` | Building/creating work | Briefer → Orchestrator |
+| Type | Description | What Happens |
+|------|-------------|--------------|
+| `quick` | Simple one-shot questions | Immediate response, no outcome created |
+| `research` | Information gathering | Research handler runs, may create outcome |
+| `deep` | Building/creating work | Creates outcome, spawns workers |
 | `clarification` | Ambiguous, needs more info | Returns questions to user |
 
 ### Smart Outcome Matching
@@ -53,101 +54,21 @@ Every classification includes a confidence score (0-1). Low confidence triggers 
 
 ---
 
-## Components
+## Behaviors
 
-### Primary Files
-
-| File | Purpose |
-|------|---------|
-| `lib/agents/dispatcher.ts` | Main classification logic |
-| `lib/agents/quick-executor.ts` | Handles `quick` type requests |
-| `lib/agents/research-handler.ts` | Handles `research` type requests |
-| `lib/agents/briefer.ts` | Handles `deep` type (creates briefs) |
-| `app/api/dispatch/route.ts` | API endpoint |
-
-### Dispatcher Flow
-
-```
-User Input
-    │
-    ▼
-┌─────────────────────────────────┐
-│         DISPATCHER              │
-│                                 │
-│  1. Parse input                 │
-│  2. Check existing outcomes     │
-│  3. Classify request type       │
-│  4. Generate confidence score   │
-│  5. Create clarifying Qs if low │
-│                                 │
-└────────────┬────────────────────┘
-             │
-     ┌───────┼───────┬───────┐
-     ▼       ▼       ▼       ▼
-  quick  research  deep  clarify
-     │       │       │       │
-     ▼       ▼       ▼       ▼
-  Quick   Research  Briefer  Return
-  Exec    Handler     │      to User
-     │       │        │
-     ▼       ▼        ▼
-  Response  Outcome  Outcome
-            Created  Created
-```
+1. **Natural language understanding** - Accepts messy, incomplete human thoughts and extracts intent
+2. **Context awareness** - Considers currently active outcome when classifying
+3. **Conservative routing** - When uncertain, asks for clarification rather than guessing
+4. **Outcome deduplication** - Prevents creating duplicate outcomes for related requests
 
 ---
 
-## Dependencies
+## Success Criteria
 
-**Uses:**
-- `lib/claude/client.ts` - For LLM classification
-- `lib/db/outcomes.ts` - To check existing outcomes
-- `lib/db/skills.ts` - To check available capabilities
-
-**Used by:**
-- `app/api/dispatch/route.ts` - Main entry point
-- `app/components/CommandBar.tsx` - UI integration
-
----
-
-## API
-
-### POST /api/dispatch
-
-**Request:**
-```json
-{
-  "input": "I need a landing page for my product",
-  "context": {
-    "currentOutcomeId": "out_abc123"
-  }
-}
-```
-
-**Response (classification):**
-```json
-{
-  "type": "deep",
-  "confidence": 0.92,
-  "reasoning": "User wants to build something (landing page)",
-  "suggestedOutcome": "Product Landing Page",
-  "matchedOutcome": null
-}
-```
-
-**Response (match found):**
-```json
-{
-  "type": "deep",
-  "confidence": 0.88,
-  "matchType": "related",
-  "matchedOutcome": {
-    "id": "out_xyz789",
-    "name": "Product Launch MVP"
-  },
-  "matchReason": "This appears related to your existing Product Launch MVP outcome"
-}
-```
+- User input is correctly classified 90%+ of the time
+- Related requests are matched to existing outcomes
+- Clarifying questions are relevant and helpful
+- No false positives (creating outcomes when not needed)
 
 ---
 
@@ -158,3 +79,9 @@ User Input
 2. **Multi-intent handling** - What if a user's input contains multiple distinct requests? Currently treats as single request.
 
 3. **Context memory** - Should the Dispatcher remember recent interactions to improve classification? Currently stateless per request.
+
+---
+
+## Related
+
+- **Design:** [DISPATCHER.md](../design/DISPATCHER.md) - Implementation details and API specs

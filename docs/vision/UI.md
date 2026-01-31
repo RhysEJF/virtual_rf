@@ -16,20 +16,26 @@ The UI is the user's window into Digital Twin. It provides:
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| Dashboard with outcome list | Complete |
+| Outcome detail page | Complete |
+| Worker drill-down page | Complete |
+| Skills library page | Complete |
+| Command bar (voice/text) | Complete |
+| Dark/light theme | Complete |
+| Real-time updates (polling) | Complete |
+| Responsive design | Complete |
 
-The UI includes:
-- 25+ React components
-- 4 main pages (Dashboard, Outcome, Worker, Skills)
-- Dark/light theme support
-- Real-time updates (polling-based)
-- Responsive design
+**Overall:** Complete and production-ready (25+ components, 4 pages)
 
 ---
 
-## Design Principles
+## Key Concepts
+
+### Design Principles
 
 From DESIGN.md:
 
@@ -39,197 +45,47 @@ From DESIGN.md:
 - **Voice-first input** - Natural language entry
 - **Progressive disclosure** - Summary first, details on demand
 
-### Color Palette
+### Pages
 
-```
-Background:    #1a1a1a (deep charcoal)
-Surface:       #252525 (warm dark gray)
-Border:        #333333 (soft separator)
-Text Primary:  #e5e5e5 (warm white)
-Text Secondary:#888888 (muted gray)
-Accent:        #7c9a6c (sage green)
-Warning:       #c9a959 (muted gold)
-Error:         #a65d5d (dusty rose)
-Success:       #5d8a6b (forest green)
-```
+| Page | Purpose |
+|------|---------|
+| **Dashboard** | All outcomes, activity feed, alerts |
+| **Outcome Detail** | Full management UI for one outcome |
+| **Worker Detail** | Drill-down into running worker |
+| **Skills Library** | Browse global and outcome skills |
 
----
+### Command Bar
 
-## Pages
+The primary input mechanism. Accepts natural language, dispatches to appropriate handlers, shows staged confirmations before executing.
 
-### Dashboard (`app/page.tsx`)
+### Intervention System
 
-The home page showing all outcomes.
-
-**Features:**
-- Outcome list (flat or tree view)
-- Filter by status (active/dormant/achieved)
-- Command bar for new requests
-- Activity feed
-- Supervisor alerts
-- Improvement suggestions
-
-**Layout:**
-```
-┌─────────────────────────────────────────────────┐
-│  Command Bar                                     │
-├────────────────────────┬────────────────────────┤
-│  OUTCOMES              │  ACTIVITY              │
-│  ─────────             │  ────────              │
-│  [Outcome Card]        │  [Activity Item]       │
-│  [Outcome Card]        │  [Activity Item]       │
-│  [Outcome Card]        │  [Activity Item]       │
-├────────────────────────┴────────────────────────┤
-│  Supervisor Alerts | Improvement Suggestions     │
-└─────────────────────────────────────────────────┘
-```
-
-### Outcome Detail (`app/outcome/[id]/page.tsx`)
-
-Full management UI for a single outcome.
-
-**Sections:**
-- Intent (PRD) with ramble box
-- Approach (Design Doc) with ramble box
-- Active Tasks with expandable cards
-- Workers with status and controls
-- Skills available for this outcome
-- Outputs (auto-detected deliverables)
-- Documents (uploaded reference materials)
-- Iterate (post-completion feedback)
-
-### Worker Detail (`app/worker/[id]/page.tsx`)
-
-Drill-down into a running worker.
-
-**Features:**
-- Current task details
-- Live progress log
-- Iteration count
-- Intervention form
-- Pause/Resume controls
-
-### Skills Library (`app/skills/page.tsx`)
-
-Browse available skills.
-
-**Features:**
-- Global skills tab
-- Outcome-specific skills tab
-- Skill content viewer (modal)
-- Search/filter
-
----
-
-## Components
-
-### Navigation & Layout
-
-| Component | Purpose |
-|-----------|---------|
-| `CommandBar.tsx` | Main command input |
-| `OutcomeCommandBar.tsx` | Per-outcome contextual commands |
-| `OutcomeBreadcrumbs.tsx` | Hierarchical navigation |
-| `SystemStatus.tsx` | Claude CLI and DB status |
-| `ThemeToggle.tsx` | Light/dark mode |
-
-### Outcome Display
-
-| Component | Purpose |
-|-----------|---------|
-| `OutcomeCard.tsx` | Summary card with stats |
-| `OutcomeTreeView.tsx` | Hierarchical tree view |
-| `CreateChildModal.tsx` | Create nested outcomes |
-| `ChildOutcomesList.tsx` | Display children |
-
-### Work Display
-
-| Component | Purpose |
-|-----------|---------|
-| `ExpandableTaskCard.tsx` | Task details (17.9KB) |
-| `ProgressView.tsx` | Real-time progress |
-| `ActivityFeed.tsx` | Event timeline |
-
-### Specialized Sections
-
-| Component | Purpose |
-|-----------|---------|
-| `OutputsSection.tsx` | Auto-detected deliverables |
-| `DocumentsSection.tsx` | Uploaded documents |
-| `SkillsSection.tsx` | Available skills |
-| `SkillDetailModal.tsx` | Skill viewer |
-| `GitConfigSection.tsx` | Git workflow config |
-| `IterateSection.tsx` | Post-completion feedback |
-| `InterventionForm.tsx` | Send worker instructions |
-| `SupervisorAlerts.tsx` | Safety alerts |
-| `ImprovementSuggestions.tsx` | Auto-generated ideas |
-
-### Base UI (`app/components/ui/`)
-
-| Component | Purpose |
-|-----------|---------|
-| `Card.tsx` | Container |
-| `Badge.tsx` | Status indicators |
-| `Button.tsx` | Actions |
-| `Input.tsx` | Text entry |
-| `Progress.tsx` | Progress bar |
-| `Toast.tsx` | Notifications |
-
----
-
-## Patterns
-
-### Command Bar States
-
-The command bar has multiple modes:
-
-```typescript
-type CommandState =
-  | 'idle'         // Ready for input
-  | 'interpreting' // Processing input
-  | 'suggesting'   // Showing suggestions
-  | 'editing'      // Editing suggestions
-  | 'confirming'   // Staged for approval
-  | 'executing'    // Running actions
-  | 'error';       // Something failed
-```
+Users can send instructions to running workers:
+- Pause/resume controls
+- Text instructions
+- Redirect focus
 
 ### Real-Time Updates
 
-Currently uses polling (every 5 seconds) to fetch updates:
-
-```typescript
-useEffect(() => {
-  const interval = setInterval(fetchProgress, 5000);
-  return () => clearInterval(interval);
-}, []);
-```
-
-**Note:** SSE (Server-Sent Events) is planned but not implemented.
-
-### Toast Notifications
-
-```typescript
-const { toast } = useToast();
-
-toast({
-  title: "Worker started",
-  description: "Ralph is now working on your tasks",
-  variant: "default" // or "destructive"
-});
-```
+Currently uses polling (every 5 seconds) for updates. SSE (Server-Sent Events) is planned but not implemented.
 
 ---
 
-## Dependencies
+## Behaviors
 
-**Uses:**
-- Next.js 14 App Router
-- Tailwind CSS
-- React hooks
+1. **Voice-first** - Natural language is the primary input
+2. **Progressive disclosure** - Summary cards expand to details
+3. **Non-blocking** - UI remains responsive while workers run
+4. **Observable** - Every worker action is visible in progress logs
 
-**Used by:**
-- End users (browser)
+---
+
+## Success Criteria
+
+- Users can create and manage outcomes without touching code
+- Worker progress is visible in real-time
+- Interventions reach workers promptly
+- Theme is comfortable for long work sessions
 
 ---
 
@@ -244,3 +100,10 @@ toast({
 4. **Offline support** - Currently requires active connection. Could cache state locally.
 
 5. **Performance** - Large outcome lists may need virtualization.
+
+---
+
+## Related
+
+- **Design:** [UI.md](../design/UI.md) - Component inventory, color palette, and implementation patterns
+- **Vision:** [DISPATCHER.md](./DISPATCHER.md) - How command bar routes requests

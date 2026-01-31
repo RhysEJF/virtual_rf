@@ -17,16 +17,18 @@ The goal is autonomous quality assurance with human-level thoroughness.
 
 ---
 
-## Current State
+## Status
 
-**Status:** Complete and production-ready
+| Capability | Status |
+|------------|--------|
+| PRD-based success criteria checking | Complete |
+| Issue detection with severity levels | Complete |
+| Automatic fix task generation | Complete |
+| Convergence tracking | Complete |
+| Verification checklist validation | Complete |
+| Iterate feedback system | Complete |
 
-The review system handles:
-- PRD-based success criteria checking
-- Issue detection with severity levels
-- Automatic fix task generation
-- Convergence tracking (consecutive clean reviews)
-- Verification checklist validation
+**Overall:** Complete and production-ready
 
 ---
 
@@ -62,104 +64,14 @@ The system tracks `consecutive_clean_reviews`. When this reaches 2, the outcome 
 ### Verification Checklist
 
 Before marking complete, the reviewer checks:
-- [ ] BUILD - Code compiles without errors
-- [ ] TEST - All tests pass
-- [ ] LINT - No linting errors
-- [ ] FUNCTION - Core functionality works
-- [ ] PRD - All PRD items addressed
-- [ ] TASKS - All tasks complete
+- BUILD - Code compiles without errors
+- TEST - All tests pass
+- LINT - No linting errors
+- FUNCTION - Core functionality works
+- PRD - All PRD items addressed
+- TASKS - All tasks complete
 
----
-
-## Components
-
-### Primary Files
-
-| File | Purpose |
-|------|---------|
-| `lib/agents/reviewer.ts` | Main review logic (12.5KB) |
-| `lib/db/review-cycles.ts` | Review cycle persistence |
-| `lib/db/tasks.ts` | Fix task creation |
-| `app/api/outcomes/[id]/review/route.ts` | API endpoint |
-
-### Review Flow
-
-```
-POST /api/outcomes/{id}/review
-              │
-              ▼
-┌─────────────────────────────────┐
-│     Load outcome context        │
-│     - Intent (PRD)              │
-│     - Design doc                │
-│     - Completed tasks           │
-│     - Failed tasks              │
-│     - Workspace outputs         │
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│     Analyze via Claude          │
-│     - Check success criteria    │
-│     - Identify issues           │
-│     - Assign severity           │
-│     - Suggest fixes             │
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│     Create fix tasks            │
-│     (priority based on severity)│
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│     Record review cycle         │
-│     - issues_found count        │
-│     - tasks_added count         │
-│     - verification results      │
-└─────────────┬───────────────────┘
-              │
-              ▼
-┌─────────────────────────────────┐
-│     Update convergence          │
-│     (consecutive clean count)   │
-└─────────────────────────────────┘
-```
-
----
-
-## Review Output
-
-```typescript
-interface ReviewResult {
-  issues: ReviewIssue[];
-  tasksCreated: number;
-  convergenceStatus: 'improving' | 'stable' | 'regressing';
-  consecutiveCleanReviews: number;
-  verification: {
-    build: boolean;
-    test: boolean;
-    lint: boolean;
-    function: boolean;
-    prd: boolean;
-    tasks: boolean;
-  };
-}
-
-interface ReviewIssue {
-  id: string;
-  title: string;
-  description: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  suggestedFix: string;
-  relatedTask?: string;
-}
-```
-
----
-
-## Iteration System
+### Iteration System
 
 Post-completion, users can provide feedback via the Iterate section:
 
@@ -170,56 +82,23 @@ Post-completion, users can provide feedback via the Iterate section:
 
 This enables continuous improvement even after "completion."
 
-### Files
+---
 
-| File | Purpose |
-|------|---------|
-| `app/api/outcomes/[id]/iterate/route.ts` | Process user feedback |
-| `app/components/IterateSection.tsx` | Feedback UI |
+## Behaviors
+
+1. **PRD-driven** - Reviews against the original intent, not arbitrary standards
+2. **Severity-aware** - Critical issues get high-priority tasks
+3. **Convergent** - Tracks improvement over time, knows when to stop
+4. **User-adjustable** - Iterate lets users provide feedback post-completion
 
 ---
 
-## Dependencies
+## Success Criteria
 
-**Uses:**
-- `lib/claude/client.ts` - For AI-powered review
-- `lib/db/tasks.ts` - Create fix tasks
-- `lib/db/review-cycles.ts` - Record reviews
-- `lib/db/outcomes.ts` - Get outcome context
-
-**Used by:**
-- `app/api/outcomes/[id]/review/route.ts` - Manual trigger
-- Review can be auto-triggered (not yet implemented)
-
----
-
-## API
-
-### POST /api/outcomes/{id}/review
-
-Trigger a review cycle.
-
-**Response:**
-```json
-{
-  "success": true,
-  "issues": 3,
-  "tasksCreated": 3,
-  "convergence": "improving",
-  "consecutiveClean": 0
-}
-```
-
-### POST /api/outcomes/{id}/iterate
-
-Submit user feedback.
-
-**Request:**
-```json
-{
-  "feedback": "The login button doesn't work on mobile"
-}
-```
+- Reviews catch real issues that would affect user satisfaction
+- Fix tasks are actionable and specific
+- Convergence tracking prevents infinite review loops
+- User feedback is converted to appropriate tasks
 
 ---
 
@@ -232,3 +111,11 @@ Submit user feedback.
 3. **False positives** - Reviewer sometimes creates unnecessary tasks. Need better calibration.
 
 4. **Workspace inspection** - Reviewer should check actual outputs (screenshots, logs). Currently limited to code analysis.
+
+---
+
+## Related
+
+- **Design:** [REVIEW.md](../design/REVIEW.md) - Implementation details, API specs, and data structures
+- **Vision:** [WORKER.md](./WORKER.md) - How workers execute fix tasks
+- **Vision:** [ORCHESTRATION.md](./ORCHESTRATION.md) - When reviews happen in the workflow

@@ -23,12 +23,15 @@ Digital Twin is API-first. Every interface - web UI, CLI, Telegram, future AR he
 | Outcomes CRUD API | Complete |
 | Workers API | Complete |
 | Skills API | Complete |
+| Tools API | Complete |
+| Repositories API | Complete |
+| Items API (sync management) | Complete |
+| CLI thin client | In Progress |
 | Converse API (conversational) | Not Started |
 | Session/thread management | Not Started |
 | Telegram integration | Not Started |
-| CLI thin client | Not Started |
 
-**Overall:** Foundation complete, conversational layer not yet built
+**Overall:** Foundation complete, CLI in progress, conversational layer not yet built
 
 ---
 

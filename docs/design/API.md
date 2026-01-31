@@ -30,10 +30,15 @@
 | `/api/outcomes/[id]` | GET, PATCH, DELETE | Outcome CRUD |
 | `/api/outcomes/[id]/start` | POST | Start workers |
 | `/api/outcomes/[id]/tasks` | GET, POST | Task management |
+| `/api/outcomes/[id]/items` | GET, POST, PATCH | Item sync management |
 | `/api/workers` | GET | List workers |
 | `/api/workers/[id]` | GET, PATCH | Worker management |
 | `/api/workers/[id]/intervene` | POST | Send intervention |
 | `/api/skills` | GET, POST | Skills management |
+| `/api/skills/outcome` | GET | Outcome-specific skills |
+| `/api/tools/outcome` | GET | Outcome-specific tools |
+| `/api/repositories` | GET, POST | Repository configuration |
+| `/api/repositories/[id]` | GET, PUT, DELETE | Repository CRUD |
 
 ### Planned: `/api/converse`
 
@@ -224,18 +229,38 @@ const result = await fetch('/api/converse', {
 });
 ```
 
-### CLI (Planned)
+### CLI (In Progress)
+
+The CLI (`cli/` directory) provides command-line access to the API.
 
 ```bash
-# Interactive mode
-$ rf
-> I need a landing page
-RF: Let me clarify...
+# List outcomes
+$ rf list
 
-# One-shot mode
-$ rf "check status of ProductX"
-Product Landing Page: 5/8 tasks complete, 1 worker active
+# Show outcome details
+$ rf show out_123
+
+# Create new outcome
+$ rf new "Build a landing page"
+
+# Start workers
+$ rf start out_123
+
+# Check status
+$ rf status
+
+# Stop workers
+$ rf stop out_123
 ```
+
+**Files:**
+- `cli/src/commands/list.ts` - List outcomes
+- `cli/src/commands/show.ts` - Show outcome details
+- `cli/src/commands/new.ts` - Create outcome
+- `cli/src/commands/start.ts` - Start workers
+- `cli/src/commands/status.ts` - System status
+- `cli/src/commands/stop.ts` - Stop workers
+- `cli/src/api.ts` - API client wrapper
 
 ### Telegram Bot (Planned)
 

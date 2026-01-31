@@ -205,14 +205,17 @@ Users can request changes after completion via the Iterate section:
 
 ## Database Tables
 
-- `outcomes` - Outcomes with intent, design_doc, git config, capability status
+- `outcomes` - Outcomes with intent, design_doc, git config, save targets
 - `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed)
 - `workers` - Ralph worker instances with PID tracking
 - `progress_entries` - Episodic memory of worker iterations (full_output capture)
 - `review_cycles` - Review history with issues found and convergence tracking
 - `skills` - Registered global skills from skills/ directory
 - `interventions` - Human instructions sent to workers
-- `alerts` - System alerts for stuck workers, failures, etc.
+- `supervisor_alerts` - System alerts for stuck workers, failures, etc.
+- `repositories` - External git repos for syncing (private/team)
+- `outcome_items` - Tracked files with sync status (skills, tools, outputs)
+- `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
 
 ## Requirements
 
@@ -244,7 +247,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-01-30)
+## Current Progress (Updated 2026-01-31)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -304,6 +307,23 @@ kill -9 <PID>
 - [x] UI components: HomrStatusCard, EscalationAlert, ActivityLogDrawer (`app/components/homr/`)
 - [x] Integration with Ralph worker (observation after task completion)
 
+### Repository Sync (Complete)
+- [x] Save targets per content type (local/private/team)
+- [x] Repository configuration in Settings (`app/settings/page.tsx`)
+- [x] SaveTargetsSection for outcome defaults (`app/components/SaveTargetsSection.tsx`)
+- [x] Sync status badges on skills/tools
+- [x] Manual promotion UI (change save target per item)
+- [x] Core sync logic with git operations (`lib/sync/repository-sync.ts`)
+- [x] Repositories API (`app/api/repositories/`)
+- [x] Items API (`app/api/outcomes/[id]/items/`)
+- [x] ToolsSection component (`app/components/ToolsSection.tsx`)
+
+### CLI (In Progress)
+- [x] Basic command structure (`cli/`)
+- [x] list, show, new, start, status, stop commands
+- [ ] Interactive mode
+- [ ] Full API coverage
+
 ### Working Flow
 1. User submits request via CommandBar
 2. Dispatcher classifies it → creates Outcome with intent
@@ -330,6 +350,8 @@ kill -9 <PID>
 - `lib/homr/index.ts` - HOMЯ Protocol main exports (observe, steer, escalate)
 - `lib/homr/observer.ts` - Task output analysis with Claude
 - `lib/homr/escalator.ts` - Ambiguity detection and human escalation
+- `lib/db/repositories.ts` - Repository and item sync database operations
+- `lib/sync/repository-sync.ts` - Core sync logic (copy, git add/commit/push)
 - `app/outcome/[id]/page.tsx` - Main outcome management UI
 - `app/api/outcomes/[id]/iterate/route.ts` - Post-completion feedback
 

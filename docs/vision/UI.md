@@ -28,8 +28,11 @@ The UI is the user's window into Digital Twin. It provides:
 | Dark/light theme | Complete |
 | Real-time updates (polling) | Complete |
 | Responsive design | Complete |
+| Settings page (repositories) | Complete |
+| Save targets configuration | Complete |
+| Tools section with sync status | Complete |
 
-**Overall:** Complete and production-ready (25+ components, 4 pages)
+**Overall:** Complete and production-ready (30+ components, 5 pages)
 
 ---
 
@@ -53,6 +56,7 @@ From DESIGN.md:
 | **Outcome Detail** | Full management UI for one outcome |
 | **Worker Detail** | Drill-down into running worker |
 | **Skills Library** | Browse global and outcome skills |
+| **Settings** | Repository configuration, system preferences |
 
 ### Command Bar
 

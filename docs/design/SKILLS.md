@@ -243,3 +243,78 @@ CREATE TABLE skills (
   updated_at TEXT
 );
 ```
+
+---
+
+## Repository Sync
+
+Skills can be synced to external repositories for sharing and reuse.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `lib/db/repositories.ts` | Repository CRUD, item tracking |
+| `lib/sync/repository-sync.ts` | Core sync logic (copy, git operations) |
+| `app/api/repositories/route.ts` | Repository management API |
+| `app/api/outcomes/[id]/items/route.ts` | Item sync/promotion API |
+
+### Save Targets
+
+| Target | Description |
+|--------|-------------|
+| `local` | Stays in workspace only (default) |
+| `private` | Synced to personal repository |
+| `team` | Synced to shared team repository |
+
+### API: Item Promotion
+
+```
+PATCH /api/outcomes/{id}/items
+{
+  "item_type": "skill",
+  "filename": "my-skill.md",
+  "action": "promote",
+  "target": "team"
+}
+```
+
+### Sync Flow
+
+```
+Skill Built
+     │
+     ▼
+┌────────────────────────┐
+│ Check outcome.auto_save │
+└──────────┬─────────────┘
+           │ if enabled
+           ▼
+┌────────────────────────┐
+│ Get effective target   │
+│ (skill_target default) │
+└──────────┬─────────────┘
+           │
+           ▼
+┌────────────────────────┐
+│ Get repository config  │
+│ for target type        │
+└──────────┬─────────────┘
+           │
+           ▼
+┌────────────────────────┐
+│ Copy file to repo      │
+│ Git add, commit, push  │
+└──────────┬─────────────┘
+           │
+           ▼
+┌────────────────────────┐
+│ Mark item as synced    │
+└────────────────────────┘
+```
+
+### UI Components
+
+- `SkillsSection.tsx` - Shows sync status badge, promotion buttons
+- `ToolsSection.tsx` - Same pattern for tools
+- `SaveTargetsSection.tsx` - Configure outcome defaults

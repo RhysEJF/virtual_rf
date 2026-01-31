@@ -27,7 +27,7 @@ All state in Digital Twin is persisted to SQLite. The database:
 | Auto-migrations | Complete |
 | Orphan cleanup | Complete |
 
-**Overall:** Complete and production-ready (18 tables)
+**Overall:** Complete and production-ready (20 tables)
 
 ---
 
@@ -51,6 +51,8 @@ All state in Digital Twin is persisted to SQLite. The database:
 | **Skills** | Registered global skills |
 | **Interventions** | Human instructions to workers |
 | **Supervisor Alerts** | Safety alerts from monitoring |
+| **Repositories** | External git repos for syncing skills/tools |
+| **Outcome Items** | Tracked files (skills, tools, outputs) with sync status |
 
 ### Analytics Entities
 

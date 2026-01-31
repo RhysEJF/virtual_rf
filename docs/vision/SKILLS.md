@@ -27,6 +27,9 @@ Think of skills as "employee training manuals" that workers read before starting
 | YAML frontmatter parsing | Complete |
 | Skill dependency resolution | Complete |
 | API key requirements | Complete |
+| Repository sync (save targets) | Complete |
+| Sync status UI | Complete |
+| Manual promotion | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -43,6 +46,18 @@ Think of skills as "employee training manuals" that workers read before starting
 
 Global skills are general-purpose (e.g., "web-research", "competitive-analysis").
 Outcome skills are built during capability phase for that outcome's specific needs.
+
+### Repository Sync
+
+Skills (and tools) can be synced to external repositories for reuse:
+
+| Save Target | Description |
+|-------------|-------------|
+| **Local** | Stays in workspace only |
+| **Private** | Synced to your personal repository |
+| **Team** | Synced to shared team repository |
+
+Each outcome has default save targets for skills, tools, files, and outputs. Individual items can be promoted to different targets via the UI.
 
 ### Skill Structure
 
@@ -85,6 +100,8 @@ Skills can declare what API keys they need via the `requires` field. The UI show
 2. **Trigger matching** - Relevant skills found by keyword matching
 3. **Capability building** - Missing skills are created during capability phase
 4. **Key validation** - Skills with missing API keys are flagged in UI
+5. **Repository sync** - Skills can be synced to private/team repos for sharing
+6. **Auto-save** - If enabled, skills sync automatically when built
 
 ---
 

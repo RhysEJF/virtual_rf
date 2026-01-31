@@ -84,9 +84,11 @@ app/
 |-----------|------|---------|
 | OutputsSection | `OutputsSection.tsx` | Auto-detected deliverables |
 | DocumentsSection | `DocumentsSection.tsx` | Uploaded documents |
-| SkillsSection | `SkillsSection.tsx` | Available skills |
+| SkillsSection | `SkillsSection.tsx` | Skills with sync status |
+| ToolsSection | `ToolsSection.tsx` | Tools with sync status |
 | SkillDetailModal | `SkillDetailModal.tsx` | Skill viewer |
 | GitConfigSection | `GitConfigSection.tsx` | Git workflow config |
+| SaveTargetsSection | `SaveTargetsSection.tsx` | Repository sync config |
 | IterateSection | `IterateSection.tsx` | Post-completion feedback |
 | InterventionForm | `InterventionForm.tsx` | Send worker instructions |
 | SupervisorAlerts | `SupervisorAlerts.tsx` | Safety alerts |

@@ -51,6 +51,7 @@ data/twin.db-shm  # Shared memory
 | `lib/db/supervisor-alerts.ts` | supervisor_alerts | Safety alerts |
 | `lib/db/activity.ts` | activity_log | Event feed |
 | `lib/db/homr.ts` | homr_* tables | HOMЯ Protocol |
+| `lib/db/repositories.ts` | repositories, outcome_items | Repository sync |
 
 ---
 
@@ -233,6 +234,41 @@ CREATE TABLE supervisor_alerts (
   created_at TEXT,
   acknowledged_at TEXT,
   resolved_at TEXT
+);
+```
+
+### repositories
+
+```sql
+CREATE TABLE repositories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,            -- private/team
+  local_path TEXT NOT NULL,
+  remote_url TEXT,
+  content_type TEXT NOT NULL,    -- outputs/skills/tools/files/all
+  auto_push INTEGER DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+```
+
+### outcome_items
+
+```sql
+CREATE TABLE outcome_items (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL,
+  item_type TEXT NOT NULL,       -- skill/tool/file/output
+  filename TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  target_override TEXT,          -- local/private/team (NULL = use default)
+  synced_to TEXT,                -- local/private/team (current sync state)
+  last_synced_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
+  UNIQUE(outcome_id, item_type, filename)
 );
 ```
 

@@ -229,10 +229,10 @@ async function runCapabilityWorker(
   // Create worker record
   const worker = createWorker({
     outcome_id: outcomeId,
-    name: `Capability Worker ${workerIndex + 1}`,
+    name: `Ralph Worker ${Date.now()}`,
   });
 
-  console.log(`[Orchestrator] Capability worker ${workerIndex} started: ${worker.id}`);
+  console.log(`[Orchestrator] Ralph worker (capability) started: ${worker.id}`);
 
   try {
     // Let runWorkerLoop handle task claiming and execution
@@ -244,12 +244,12 @@ async function runCapabilityWorker(
       phase: 'capability',
     });
 
-    console.log(`[Orchestrator] Capability worker ${workerIndex} finished processing`);
+    console.log(`[Orchestrator] Ralph worker (capability) finished processing`);
   } catch (error) {
     console.error(`[Orchestrator] Worker ${workerIndex} error:`, error);
   } finally {
     updateWorker(worker.id, { status: 'completed' });
-    console.log(`[Orchestrator] Capability worker ${workerIndex} stopped`);
+    console.log(`[Orchestrator] Ralph worker (capability) stopped`);
   }
 }
 
@@ -275,10 +275,10 @@ async function runExecutionPhase(
   for (let i = 0; i < workerCount; i++) {
     const worker = createWorker({
       outcome_id: outcomeId,
-      name: `Execution Worker ${i + 1}`,
+      name: `Ralph Worker ${Date.now()}`,
     });
 
-    console.log(`[Orchestrator] Execution worker started: ${worker.id}`);
+    console.log(`[Orchestrator] Ralph worker (execution) started: ${worker.id}`);
 
     // Run worker with skill context
     updateWorker(worker.id, { status: 'running' });

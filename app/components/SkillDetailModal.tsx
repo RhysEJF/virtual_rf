@@ -131,6 +131,14 @@ export function SkillDetailModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* API Key Requirements Section */}
+          {skill.keyStatus && !hasRequirements && (
+            <div className="flex items-center gap-2 text-sm text-text-tertiary">
+              <svg className="w-4 h-4 text-status-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>No API keys required</span>
+            </div>
+          )}
           {hasRequirements && (
             <div>
               <h3 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">

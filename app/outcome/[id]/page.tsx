@@ -257,8 +257,14 @@ export default function OutcomeDetailPage(): JSX.Element {
       body: JSON.stringify({ selectedOption, additionalContext }),
     });
     if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || 'Failed to answer escalation');
+      let errorMessage = 'Failed to answer escalation';
+      try {
+        const data = await response.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        // Response body wasn't valid JSON, use default message
+      }
+      throw new Error(errorMessage);
     }
     toast({ type: 'success', message: 'Decision submitted - tasks resumed' });
     fetchOutcome();

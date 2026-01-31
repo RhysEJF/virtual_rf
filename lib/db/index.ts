@@ -38,6 +38,10 @@ export function getDb(): Database.Database {
   // Enable WAL mode for better concurrent access
   db.pragma('journal_mode = WAL');
 
+  // Set busy timeout to wait for locks (5 seconds)
+  // This helps prevent "database is locked" errors during concurrent access
+  db.pragma('busy_timeout = 5000');
+
   // Enable foreign keys
   db.pragma('foreign_keys = ON');
 

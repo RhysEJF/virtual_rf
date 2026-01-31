@@ -152,7 +152,7 @@ export async function POST(
 
           case 'create_tasks': {
             const data = action.data || {};
-            const tasksToCreate = (data.tasks || []) as { title: string; description?: string; priority?: number }[];
+            const tasksToCreate = (data.tasks || []) as { title: string; description?: string; priority?: number; depends_on?: string[] }[];
 
             let created = 0;
             for (const taskData of tasksToCreate) {
@@ -162,6 +162,7 @@ export async function POST(
                 description: taskData.description || '',
                 priority: taskData.priority || 2,
                 from_review: false,
+                depends_on: taskData.depends_on,
               });
               if (newTask) created++;
             }

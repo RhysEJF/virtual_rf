@@ -30,6 +30,8 @@ export interface CreateTaskInput {
   // Enriched task context
   task_intent?: string;
   task_approach?: string;
+  // Task dependencies
+  depends_on?: string[];
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -39,15 +41,18 @@ export function createTask(input: CreateTaskInput): Task {
   const requiredSkillsJson = input.required_skills && input.required_skills.length > 0
     ? JSON.stringify(input.required_skills)
     : null;
+  const dependsOnJson = input.depends_on && input.depends_on.length > 0
+    ? JSON.stringify(input.depends_on)
+    : '[]';
 
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
-      task_intent, task_approach, created_at, updated_at
+      task_intent, task_approach, depends_on, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -65,6 +70,7 @@ export function createTask(input: CreateTaskInput): Task {
     requiredSkillsJson,
     input.task_intent || null,
     input.task_approach || null,
+    dependsOnJson,
     timestamp,
     timestamp
   );
@@ -95,6 +101,111 @@ export function getTaskById(id: string): Task | null {
     ...row,
     from_review: Boolean(row.from_review),
   };
+}
+
+// ============================================================================
+// Task with Dependencies
+// ============================================================================
+
+export interface TaskWithDependencies extends Task {
+  /** Task IDs this task depends on (parsed from depends_on JSON) */
+  dependency_ids: string[];
+  /** Task IDs that are blocking this task (dependencies not yet completed) */
+  blocked_by: string[];
+  /** Whether this task is blocked by incomplete dependencies */
+  is_blocked: boolean;
+}
+
+/**
+ * Get a task with computed dependency information.
+ * Returns the task with parsed dependency_ids and computed blocked_by field.
+ */
+export function getTaskWithDependencies(id: string): TaskWithDependencies | null {
+  const task = getTaskById(id);
+  if (!task) return null;
+
+  const dependencyIds = parseDependsOn(task.depends_on);
+  const blockedBy = getBlockingTaskIds(dependencyIds);
+
+  return {
+    ...task,
+    dependency_ids: dependencyIds,
+    blocked_by: blockedBy,
+    is_blocked: blockedBy.length > 0,
+  };
+}
+
+/**
+ * Get all tasks for an outcome with computed dependency information.
+ */
+export function getTasksWithDependencies(outcomeId: string): TaskWithDependencies[] {
+  const tasks = getTasksByOutcome(outcomeId);
+  const taskStatusMap = new Map(tasks.map(t => [t.id, t.status]));
+
+  return tasks.map(task => {
+    const dependencyIds = parseDependsOn(task.depends_on);
+    const blockedBy = dependencyIds.filter(depId => {
+      const status = taskStatusMap.get(depId);
+      return status !== 'completed';
+    });
+
+    return {
+      ...task,
+      dependency_ids: dependencyIds,
+      blocked_by: blockedBy,
+      is_blocked: blockedBy.length > 0,
+    };
+  });
+}
+
+/**
+ * Parse depends_on JSON field into array of task IDs.
+ */
+function parseDependsOn(dependsOn: string | null): string[] {
+  if (!dependsOn) return [];
+  try {
+    const parsed = JSON.parse(dependsOn);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get task IDs that are blocking (not completed) from a list of dependency IDs.
+ */
+function getBlockingTaskIds(dependencyIds: string[]): string[] {
+  if (dependencyIds.length === 0) return [];
+
+  const db = getDb();
+  const blockedBy: string[] = [];
+
+  for (const depId of dependencyIds) {
+    const row = db.prepare(
+      'SELECT id, status FROM tasks WHERE id = ?'
+    ).get(depId) as { id: string; status: TaskStatus } | undefined;
+
+    // If dependency doesn't exist or isn't completed, it's blocking
+    if (!row || row.status !== 'completed') {
+      blockedBy.push(depId);
+    }
+  }
+
+  return blockedBy;
+}
+
+/**
+ * Check if a task has all its dependencies satisfied (completed).
+ */
+export function areTaskDependenciesSatisfied(taskId: string): boolean {
+  const task = getTaskById(taskId);
+  if (!task) return false;
+
+  const dependencyIds = parseDependsOn(task.depends_on);
+  if (dependencyIds.length === 0) return true;
+
+  const blockingIds = getBlockingTaskIds(dependencyIds);
+  return blockingIds.length === 0;
 }
 
 export function getTasksByOutcome(outcomeId: string): Task[] {
@@ -251,6 +362,19 @@ export function getActiveTaskForWorker(workerId: string): Task | null {
 // Atomic Task Claiming (Critical Section)
 // ============================================================================
 
+/**
+ * Internal helper to parse depends_on JSON (used within transactions)
+ */
+function parseDependsOnInternal(dependsOn: string | null): string[] {
+  if (!dependsOn) return [];
+  try {
+    const parsed = JSON.parse(dependsOn);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface ClaimResult {
   success: boolean;
   task: Task | null;
@@ -354,22 +478,39 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
       };
     }
 
-    // Find first task with satisfied skill dependencies
+    // Build a map of task statuses for dependency checking
+    const allOutcomeTasks = db.prepare(
+      'SELECT id, status FROM tasks WHERE outcome_id = ?'
+    ).all(outcomeId) as { id: string; status: TaskStatus }[];
+    const taskStatusMap = new Map(allOutcomeTasks.map(t => [t.id, t.status]));
+
+    // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
-      if (!candidate.required_skills) {
-        // No skill requirements, can claim
-        task = candidate;
-        break;
+      // Check task dependencies first
+      const dependencyIds = parseDependsOnInternal(candidate.depends_on);
+      const hasBlockingDependencies = dependencyIds.some(depId => {
+        const status = taskStatusMap.get(depId);
+        return status !== 'completed';
+      });
+
+      if (hasBlockingDependencies) {
+        // Skip tasks with incomplete dependencies
+        continue;
       }
 
-      // Check skill dependencies
-      const deps = checkTaskSkillDependencies(candidate.id);
-      if (deps.satisfied) {
-        task = candidate;
-        break;
+      // Check skill dependencies if present
+      if (candidate.required_skills) {
+        const skillDeps = checkTaskSkillDependencies(candidate.id);
+        if (!skillDeps.satisfied) {
+          // Skip tasks with unsatisfied skill dependencies
+          continue;
+        }
       }
-      // Otherwise, skip this task and try the next one
+
+      // All dependencies satisfied
+      task = candidate;
+      break;
     }
 
     if (!task) {
@@ -377,7 +518,7 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
       return {
         success: false,
         task: null,
-        reason: 'No tasks with satisfied skill dependencies available',
+        reason: 'No tasks with satisfied dependencies available',
       };
     }
 
@@ -561,6 +702,8 @@ export interface UpdateTaskInput {
   task_approach?: string | null;
   // Skill dependencies
   required_skills?: string | null;
+  // Task dependencies (JSON array of task IDs or array)
+  depends_on?: string[] | string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -609,6 +752,17 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.required_skills !== undefined) {
     updates.push('required_skills = ?');
     values.push(input.required_skills);
+  }
+  if (input.depends_on !== undefined) {
+    updates.push('depends_on = ?');
+    // Handle both array and string (JSON) input
+    if (input.depends_on === null) {
+      values.push('[]');
+    } else if (Array.isArray(input.depends_on)) {
+      values.push(JSON.stringify(input.depends_on));
+    } else {
+      values.push(input.depends_on);
+    }
   }
 
   values.push(id);

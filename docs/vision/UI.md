@@ -22,6 +22,9 @@ The UI is the user's window into Digital Twin. It provides:
 |------------|--------|
 | Dashboard with outcome list | Complete |
 | Outcome detail page | Complete |
+| Split panel layout (context/control) | Complete |
+| Collapsible sections with persistence | Complete |
+| Unified outcome chat | Complete |
 | Worker drill-down page | Complete |
 | Skills library page | Complete |
 | Command bar (voice/text) | Complete |
@@ -29,11 +32,13 @@ The UI is the user's window into Digital Twin. It provides:
 | Real-time updates (polling) | Complete |
 | Responsive design | Complete |
 | Settings page (repositories) | Complete |
-| Save targets configuration | Complete |
+| Commit settings (renamed from save targets) | Complete |
 | Repository inheritance UI | Complete |
 | Tools section with sync status | Complete |
+| HOMЯ escalation alerts (always visible) | Complete |
+| Escalation dismiss functionality | Complete |
 
-**Overall:** Complete and production-ready (30+ components, 5 pages)
+**Overall:** Complete and production-ready (35+ components, 5 pages)
 
 ---
 
@@ -54,10 +59,41 @@ From DESIGN.md:
 | Page | Purpose |
 |------|---------|
 | **Dashboard** | All outcomes, activity feed, alerts |
-| **Outcome Detail** | Full management UI for one outcome |
+| **Outcome Detail** | Full management UI with split panel layout |
 | **Worker Detail** | Drill-down into running worker |
 | **Skills Library** | Browse global and outcome skills |
 | **Settings** | Repository configuration, system preferences |
+
+### Split Panel Layout (Outcome Detail)
+
+The outcome detail page uses a split panel design:
+
+**Left Panel (40%) - Context:**
+- Intent (What) - Collapsible, expanded by default
+- Approach (How) - Collapsible
+- Tasks - Collapsible with progress badge
+- Git & Commit Settings - Collapsible
+- Skills, Tools, Documents - Collapsible
+
+**Right Panel (60%) - Control Tower:**
+- HOMЯ Alerts - Always at top, never buried
+- Workers - With intervention form when running
+- Progress - Task completion status
+- OutcomeChat - Unified conversation interface
+- Outputs - Auto-detected deliverables
+- Worker Progress - Episodic memory view
+- Actions - Quick action buttons
+
+### Collapsible Sections
+
+Sections persist their expanded/collapsed state in localStorage so users' preferences are remembered across sessions.
+
+### Unified Chat (OutcomeChat)
+
+Single chat interface that merges:
+- Command interpretation (understand → suggest → approve → execute)
+- Iteration feedback (describe issues → create tasks)
+- Quick submit for post-work feedback with optional worker start
 
 ### Command Bar
 

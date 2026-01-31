@@ -20,8 +20,26 @@ interface AvailableSkill {
   description: string | null;
 }
 
+/** Blocking task information */
+interface BlockingTaskInfo {
+  id: string;
+  title: string;
+  status: TaskStatus;
+}
+
+/** Task with dependency information */
+export interface TaskWithDependencies extends Task {
+  dependency_ids?: string[];
+  blocked_by?: string[];
+  is_blocked?: boolean;
+}
+
 interface ExpandableTaskCardProps {
-  task: Task;
+  task: TaskWithDependencies;
+  /** Map of all tasks by ID for displaying dependency titles */
+  taskMap?: Map<string, TaskWithDependencies>;
+  /** List of task IDs that depend on this task (computed from parent) */
+  dependentIds?: string[];
   onUpdate?: (task: Task) => void;
   onDelete?: (taskId: string) => void;
   onMoveUp?: (taskId: string) => void;
@@ -40,6 +58,8 @@ const statusConfig: Record<TaskStatus, { label: string; variant: 'default' | 'su
 
 export function ExpandableTaskCard({
   task,
+  taskMap,
+  dependentIds = [],
   onUpdate,
   onDelete,
   onMoveUp,
@@ -64,6 +84,21 @@ export function ExpandableTaskCard({
 
   const status = statusConfig[task.status];
   const hasContext = Boolean(task.task_intent || task.task_approach);
+
+  // Dependency information
+  const isBlocked = task.is_blocked || false;
+  const blockedByIds = task.blocked_by || [];
+  const dependencyIds = task.dependency_ids || [];
+  const hasDependencies = dependencyIds.length > 0;
+  const hasDependents = dependentIds.length > 0;
+
+  // Get blocking task info from task map
+  const getTaskInfo = (taskId: string): BlockingTaskInfo | null => {
+    if (!taskMap) return null;
+    const t = taskMap.get(taskId);
+    if (!t) return null;
+    return { id: t.id, title: t.title, status: t.status };
+  };
 
   // Fetch skills when expanded
   const fetchSkills = useCallback(async () => {
@@ -221,7 +256,11 @@ export function ExpandableTaskCard({
   };
 
   return (
-    <div className="border border-border rounded-lg bg-bg-secondary overflow-hidden">
+    <div className={`border rounded-lg overflow-hidden ${
+      isBlocked
+        ? 'border-border/50 bg-bg-secondary/50 opacity-70'
+        : 'border-border bg-bg-secondary'
+    }`}>
       {/* Collapsed Header - Always visible */}
       <div className="flex items-center">
         {/* Reorder buttons */}
@@ -252,54 +291,77 @@ export function ExpandableTaskCard({
 
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex-1 p-3 flex items-center justify-between text-left hover:bg-bg-tertiary transition-colors"
+          className="flex-1 p-3 text-left hover:bg-bg-tertiary transition-colors"
         >
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-start gap-2">
             {/* Chevron */}
-            <span className={`text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}>
+            <span className={`text-text-tertiary transition-transform mt-0.5 shrink-0 ${expanded ? 'rotate-90' : ''}`}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
                 <path d="M4.5 2L8.5 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
               </svg>
             </span>
 
-          {/* Task info */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-text-primary text-sm font-medium truncate">
-                {task.title}
-              </span>
-              {task.from_review && (
-                <Badge variant="warning" className="text-[10px] shrink-0">Review</Badge>
-              )}
-              {hasContext && (
-                <span className="text-text-tertiary text-xs shrink-0" title="Has context">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                  </svg>
+            {/* Task info */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-text-primary text-sm font-medium">
+                  {task.title}
                 </span>
-              )}
-              {task.required_skills && (
-                <span className="text-accent text-xs shrink-0" title="Has required skills">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                  </svg>
-                </span>
+                {task.from_review && (
+                  <Badge variant="warning" className="text-[10px] shrink-0">Review</Badge>
+                )}
+                {hasContext && (
+                  <span className="text-text-tertiary text-xs shrink-0" title="Has context">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                    </svg>
+                  </span>
+                )}
+                {task.required_skills && (
+                  <span className="text-accent text-xs shrink-0" title="Has required skills">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                    </svg>
+                  </span>
+                )}
+                {/* Dependency indicators */}
+                {hasDependencies && !isBlocked && (
+                  <span className="text-text-tertiary text-xs shrink-0" title={`Depends on ${dependencyIds.length} task(s)`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                  </span>
+                )}
+                {hasDependents && (
+                  <span className="text-status-info text-xs shrink-0" title={`${dependentIds.length} task(s) depend on this`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 5v14M5 12l7 7 7-7" />
+                    </svg>
+                  </span>
+                )}
+              </div>
+              {task.description && !expanded && (
+                <p className="text-text-tertiary text-xs mt-1 line-clamp-2">
+                  {task.description}
+                </p>
               )}
             </div>
-            {task.description && !expanded && (
-              <p className="text-text-tertiary text-xs truncate mt-0.5">
-                {task.description}
-              </p>
-            )}
-          </div>
-        </div>
 
-          <Badge variant={status.variant} className="shrink-0 ml-2">
-            {status.label}
-          </Badge>
+            {/* Status badges - always visible */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              {isBlocked && (
+                <Badge variant="warning" className="text-[10px]" title={`Blocked by ${blockedByIds.length} task(s)`}>
+                  Blocked ({blockedByIds.length})
+                </Badge>
+              )}
+              <Badge variant={status.variant}>
+                {status.label}
+              </Badge>
+            </div>
+          </div>
         </button>
       </div>
 
@@ -310,6 +372,109 @@ export function ExpandableTaskCard({
           {task.description && (
             <div>
               <p className="text-text-secondary text-sm">{task.description}</p>
+            </div>
+          )}
+
+          {/* Dependencies Section - Show if task has dependencies or dependents */}
+          {(hasDependencies || hasDependents) && (
+            <div className="p-3 bg-bg-tertiary rounded-lg space-y-3">
+              {/* Blocked by (incomplete dependencies) */}
+              {isBlocked && blockedByIds.length > 0 && (
+                <div>
+                  <p className="text-xs text-status-warning font-medium mb-1.5 flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    Blocked by ({blockedByIds.length})
+                  </p>
+                  <div className="space-y-1">
+                    {blockedByIds.map((depId) => {
+                      const info = getTaskInfo(depId);
+                      return (
+                        <div key={depId} className="flex items-center gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
+                            info?.status === 'claimed' ? 'bg-status-info/20 text-status-info' :
+                            info?.status === 'failed' ? 'bg-status-error/20 text-status-error' :
+                            'bg-bg-secondary text-text-tertiary'
+                          }`}>
+                            {info?.status || 'pending'}
+                          </span>
+                          <span className="text-text-secondary truncate">
+                            {info?.title || depId}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* All Dependencies (including completed ones) */}
+              {hasDependencies && !isBlocked && (
+                <div>
+                  <p className="text-xs text-text-tertiary font-medium mb-1.5 flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                    Depends on ({dependencyIds.length})
+                  </p>
+                  <div className="space-y-1">
+                    {dependencyIds.map((depId) => {
+                      const info = getTaskInfo(depId);
+                      return (
+                        <div key={depId} className="flex items-center gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                            info?.status === 'completed' ? 'bg-status-success/20 text-status-success' :
+                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
+                            info?.status === 'failed' ? 'bg-status-error/20 text-status-error' :
+                            'bg-bg-secondary text-text-tertiary'
+                          }`}>
+                            {info?.status || 'pending'}
+                          </span>
+                          <span className="text-text-secondary truncate">
+                            {info?.title || depId}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Dependents (tasks that depend on this task) */}
+              {hasDependents && (
+                <div>
+                  <p className="text-xs text-status-info font-medium mb-1.5 flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 5v14M5 12l7 7 7-7" />
+                    </svg>
+                    Blocking ({dependentIds.length})
+                  </p>
+                  <div className="space-y-1">
+                    {dependentIds.map((depId) => {
+                      const info = getTaskInfo(depId);
+                      return (
+                        <div key={depId} className="flex items-center gap-2 text-xs">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                            info?.status === 'completed' ? 'bg-status-success/20 text-status-success' :
+                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
+                            info?.status === 'pending' ? 'bg-bg-secondary text-text-tertiary' :
+                            'bg-bg-secondary text-text-tertiary'
+                          }`}>
+                            {info?.status || 'pending'}
+                          </span>
+                          <span className="text-text-secondary truncate">
+                            {info?.title || depId}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

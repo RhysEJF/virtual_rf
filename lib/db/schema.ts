@@ -159,6 +159,8 @@ export interface Task {
   // Enriched task context (optional per-task PRD/approach)
   task_intent: string | null;       // Mini-PRD: what this task should achieve
   task_approach: string | null;     // How to execute: methodology, tools, constraints
+  // Task dependencies
+  depends_on: string | null;        // JSON array of task IDs this task depends on
 }
 
 export interface Worker {
@@ -662,6 +664,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Enriched task context (optional per-task PRD/approach)
   task_intent TEXT,
   task_approach TEXT,
+  -- Task dependencies
+  depends_on TEXT DEFAULT '[]',
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
 );
@@ -902,6 +906,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority, score DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_claimed_by ON tasks(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_tasks_pending ON tasks(outcome_id, status, priority) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_tasks_depends ON tasks(depends_on);
 
 -- Workers
 CREATE INDEX IF NOT EXISTS idx_workers_outcome ON workers(outcome_id);
@@ -1223,4 +1228,14 @@ UPDATE outcomes SET file_target = 'repo' WHERE file_target IN ('private', 'team'
 
 -- Update outcome_items target_override values
 UPDATE outcome_items SET target_override = 'repo' WHERE target_override IN ('private', 'team');
+`;
+
+export const TASK_DEPENDENCIES_MIGRATION_SQL = `
+-- Migration: Add depends_on column to tasks table for task dependency graph
+-- This column stores a JSON array of task IDs that must complete before this task can be claimed
+
+ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]';
+
+-- Update any existing tasks to have empty dependency array
+UPDATE tasks SET depends_on = '[]' WHERE depends_on IS NULL;
 `;

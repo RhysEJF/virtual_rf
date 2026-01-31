@@ -310,13 +310,21 @@ kill -9 <PID>
 ### Repository Sync (Complete)
 - [x] Save targets per content type (local/private/team)
 - [x] Repository configuration in Settings (`app/settings/page.tsx`)
-- [x] SaveTargetsSection for outcome defaults (`app/components/SaveTargetsSection.tsx`)
+- [x] CommitSettingsSection for outcome defaults (`app/components/CommitSettingsSection.tsx`)
 - [x] Sync status badges on skills/tools
 - [x] Manual promotion UI (change save target per item)
 - [x] Core sync logic with git operations (`lib/sync/repository-sync.ts`)
 - [x] Repositories API (`app/api/repositories/`)
 - [x] Items API (`app/api/outcomes/[id]/items/`)
 - [x] ToolsSection component (`app/components/ToolsSection.tsx`)
+
+### UI Layout Refactor (Complete)
+- [x] Split panel layout for outcome detail page (40% context / 60% control tower)
+- [x] CollapsibleSection component with localStorage persistence
+- [x] OutcomeChat - unified conversation interface (merged command + iterate)
+- [x] HOMЯ alerts always visible at top of right panel
+- [x] Escalation dismiss API endpoint (`app/api/outcomes/[id]/homr/escalations/[escId]/dismiss/`)
+- [x] Renamed "Save Targets" to "Commit Settings"
 
 ### CLI (In Progress)
 - [x] Basic command structure (`cli/`)

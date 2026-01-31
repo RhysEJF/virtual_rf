@@ -51,9 +51,9 @@ export function SystemStatus({
               ${loading ? '...' : todayCost.toFixed(2)}
             </span>
           </span>
-          <Link href="/skills" className="hover:text-accent transition-colors">
-            <span className="text-text-primary font-medium">{skillsLoaded}</span> skill
-            {skillsLoaded !== 1 ? 's' : ''} loaded
+          <Link href="/resources" className="hover:text-accent transition-colors">
+            <span className="text-text-primary font-medium">{skillsLoaded}</span> resource
+            {skillsLoaded !== 1 ? 's' : ''}
           </Link>
         </div>
 

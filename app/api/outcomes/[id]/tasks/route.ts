@@ -1,8 +1,8 @@
 /**
  * Outcome Tasks API Route
  *
- * GET /api/outcomes/[id]/tasks - List tasks for outcome
- * POST /api/outcomes/[id]/tasks - Create new task(s)
+ * GET /api/outcomes/[id]/tasks - List tasks for outcome (includes blocked_by)
+ * POST /api/outcomes/[id]/tasks - Create new task(s) with optional depends_on
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,6 +15,12 @@ import {
   type CreateTaskInput,
 } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
+import {
+  validateDependencies,
+  detectCircularDependencies,
+  getBlockingTasks,
+  parseDependsOn,
+} from '@/lib/db/dependencies';
 
 export async function GET(
   request: NextRequest,
@@ -45,7 +51,19 @@ export async function GET(
       }
     }
 
-    const response: { tasks: typeof tasks; stats?: ReturnType<typeof getTaskStats> } = { tasks };
+    // Enrich tasks with blocked_by information
+    const enrichedTasks = tasks.map(task => {
+      const dependencyIds = parseDependsOn(task.depends_on);
+      const blockedBy = getBlockingTasks(task.id);
+      return {
+        ...task,
+        dependency_ids: dependencyIds,
+        blocked_by: blockedBy.map(bt => bt.id),
+        is_blocked: blockedBy.length > 0,
+      };
+    });
+
+    const response: { tasks: typeof enrichedTasks; stats?: ReturnType<typeof getTaskStats> } = { tasks: enrichedTasks };
 
     if (includeStats) {
       response.stats = getTaskStats(id);
@@ -80,6 +98,19 @@ export async function POST(
 
     // Handle batch creation
     if (Array.isArray(body.tasks)) {
+      // Validate dependencies for each task in batch
+      for (const task of body.tasks) {
+        if (task.depends_on && Array.isArray(task.depends_on) && task.depends_on.length > 0) {
+          const validation = validateDependencies(id, task.depends_on);
+          if (!validation.valid) {
+            return NextResponse.json(
+              { error: `Invalid dependencies: ${validation.errors.join(', ')}` },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
       const inputs: CreateTaskInput[] = body.tasks.map((task: Partial<CreateTaskInput>) => ({
         outcome_id: id,
         title: task.title || 'Untitled Task',
@@ -91,6 +122,7 @@ export async function POST(
         review_cycle: task.review_cycle,
         task_intent: task.task_intent,
         task_approach: task.task_approach,
+        depends_on: task.depends_on,
       }));
 
       const tasks = createTasksBatch(inputs);
@@ -105,6 +137,18 @@ export async function POST(
       );
     }
 
+    // Validate dependencies if provided
+    const dependsOn: string[] = body.depends_on || [];
+    if (dependsOn.length > 0) {
+      const validation = validateDependencies(id, dependsOn);
+      if (!validation.valid) {
+        return NextResponse.json(
+          { error: `Invalid dependencies: ${validation.errors.join(', ')}` },
+          { status: 400 }
+        );
+      }
+    }
+
     const task = createTask({
       outcome_id: id,
       title: body.title,
@@ -116,6 +160,7 @@ export async function POST(
       review_cycle: body.review_cycle,
       task_intent: body.task_intent,
       task_approach: body.task_approach,
+      depends_on: dependsOn,
     });
 
     return NextResponse.json({ task }, { status: 201 });

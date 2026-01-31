@@ -6,8 +6,7 @@ import { CommandBar, type RequestMode } from './components/CommandBar';
 import { SystemStatus } from './components/SystemStatus';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ActivityFeed } from './components/ActivityFeed';
-import { SupervisorAlerts } from './components/SupervisorAlerts';
-import { ImprovementSuggestions } from './components/ImprovementSuggestions';
+import { MultiOutcomeHomrDashboard } from './components/MultiOutcomeHomrDashboard';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
 import { OutcomeTreeView, type OutcomeTreeNode } from './components/OutcomeTreeView';
 import { Card, CardContent } from './components/ui/Card';
@@ -291,11 +290,18 @@ export default function Dashboard(): JSX.Element {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/skills')}
+            onClick={() => router.push('/supervisor')}
             className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
-            title="Skills Library"
+            title="Supervisor Dashboard"
           >
-            Skills
+            Supervisor
+          </button>
+          <button
+            onClick={() => router.push('/resources')}
+            className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
+            title="Resources Library"
+          >
+            Resources
           </button>
           <button
             onClick={() => router.push('/settings')}
@@ -524,16 +530,10 @@ export default function Dashboard(): JSX.Element {
           )}
         </div>
 
-        {/* Right Column: Supervisor & Activity Feed */}
+        {/* Right Column: HOMЯ & Activity Feed */}
         <div className="space-y-6">
-          {/* Supervisor Alerts */}
-          <SupervisorAlerts
-            onWorkerClick={(workerId) => router.push(`/worker/${workerId}`)}
-            onOutcomeClick={(outcomeId) => router.push(`/outcome/${outcomeId}`)}
-          />
-
-          {/* Improvement Suggestions */}
-          <ImprovementSuggestions />
+          {/* Multi-Outcome HOMЯ Dashboard */}
+          <MultiOutcomeHomrDashboard />
 
           {/* Activity Feed */}
           <div className="space-y-4">

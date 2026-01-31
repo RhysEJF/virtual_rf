@@ -1,8 +1,8 @@
 /**
  * Individual Task API Route
  *
- * GET /api/tasks/[id] - Get task details
- * PATCH /api/tasks/[id] - Update task (including enriched context)
+ * GET /api/tasks/[id] - Get task details (includes blocked_by)
+ * PATCH /api/tasks/[id] - Update task (including depends_on)
  * DELETE /api/tasks/[id] - Delete task
  */
 
@@ -12,6 +12,12 @@ import {
   updateTask,
   deleteTask,
 } from '@/lib/db/tasks';
+import {
+  validateDependenciesForTask,
+  detectCircularDependencies,
+  getBlockingTasks,
+  parseDependsOn,
+} from '@/lib/db/dependencies';
 
 export async function GET(
   request: NextRequest,
@@ -28,7 +34,17 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ task });
+    // Enrich task with blocked_by information
+    const dependencyIds = parseDependsOn(task.depends_on);
+    const blockedBy = getBlockingTasks(id);
+    const enrichedTask = {
+      ...task,
+      dependency_ids: dependencyIds,
+      blocked_by: blockedBy.map(bt => bt.id),
+      is_blocked: blockedBy.length > 0,
+    };
+
+    return NextResponse.json({ task: enrichedTask });
   } catch (error) {
     console.error('Error fetching task:', error);
     return NextResponse.json(
@@ -55,6 +71,30 @@ export async function PATCH(
       );
     }
 
+    // Validate depends_on if provided
+    if (body.depends_on !== undefined) {
+      const dependsOn: string[] = body.depends_on || [];
+      if (dependsOn.length > 0) {
+        // Validate that dependencies exist and belong to same outcome
+        const validation = validateDependenciesForTask(id, dependsOn);
+        if (!validation.valid) {
+          return NextResponse.json(
+            { error: `Invalid dependencies: ${validation.errors.join(', ')}` },
+            { status: 400 }
+          );
+        }
+
+        // Check for circular dependencies
+        const circularIds = detectCircularDependencies(id, dependsOn);
+        if (circularIds.length > 0) {
+          return NextResponse.json(
+            { error: `Circular dependencies detected: ${circularIds.join(', ')}` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Update task with any provided fields
     const task = updateTask(id, {
       title: body.title,
@@ -66,6 +106,7 @@ export async function PATCH(
       max_attempts: body.max_attempts,
       task_intent: body.task_intent,
       task_approach: body.task_approach,
+      depends_on: body.depends_on,
     });
 
     if (!task) {
@@ -75,7 +116,17 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ task });
+    // Return enriched task with blocked_by
+    const dependencyIds = parseDependsOn(task.depends_on);
+    const blockedBy = getBlockingTasks(id);
+    const enrichedTask = {
+      ...task,
+      dependency_ids: dependencyIds,
+      blocked_by: blockedBy.map(bt => bt.id),
+      is_blocked: blockedBy.length > 0,
+    };
+
+    return NextResponse.json({ task: enrichedTask });
   } catch (error) {
     console.error('Error updating task:', error);
     return NextResponse.json(

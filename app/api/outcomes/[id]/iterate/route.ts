@@ -19,6 +19,7 @@ interface ParsedTask {
   title: string;
   description: string;
   priority: number;
+  depends_on?: string[];
 }
 
 export async function POST(
@@ -67,19 +68,23 @@ ${feedback}
 
 Convert this feedback into specific, actionable tasks. Each task should be:
 - Specific enough for a developer to implement
-- Self-contained (can be done independently)
+- Self-contained (can be done independently where possible)
 - Focused on one change
+
+If tasks have clear sequential dependencies (e.g., "design API" must happen before "implement feature"), use depends_on to specify the relationship by referencing the task index (e.g., depends_on: ["task_0"] means depends on the first task).
 
 Respond with ONLY a JSON array of tasks, no other text:
 [
   {
     "title": "Short task title",
     "description": "Detailed description of what needs to change and how",
-    "priority": 1
+    "priority": 1,
+    "depends_on": []
   }
 ]
 
 Priority: 1 = critical/blocking, 2 = important, 3 = nice to have
+depends_on: Array of task references (e.g., ["task_0", "task_1"]) for tasks that must complete first. Use empty array for independent tasks.
 
 If the feedback is unclear or too vague, create a single task to investigate and clarify.`;
 
@@ -104,18 +109,35 @@ If the feedback is unclear or too vague, create a single task to investigate and
       }];
     }
 
-    // Create the tasks
+    // Create the tasks, mapping temporary task references to actual IDs
     const createdTasks: string[] = [];
-    for (const task of tasks) {
+    const taskIdMap: Record<string, string> = {}; // Maps "task_0" -> actual task ID
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+
+      // Resolve depends_on references to actual task IDs
+      const resolvedDeps: string[] = [];
+      if (task.depends_on && Array.isArray(task.depends_on)) {
+        for (const dep of task.depends_on) {
+          const actualId = taskIdMap[dep];
+          if (actualId) {
+            resolvedDeps.push(actualId);
+          }
+        }
+      }
+
       const newTask = createTask({
         outcome_id: outcomeId,
         title: task.title,
         description: task.description,
         priority: task.priority || 2,
         from_review: true, // Mark as coming from user feedback
+        depends_on: resolvedDeps.length > 0 ? resolvedDeps : undefined,
       });
       if (newTask) {
         createdTasks.push(newTask.id);
+        taskIdMap[`task_${i}`] = newTask.id;
       }
     }
 

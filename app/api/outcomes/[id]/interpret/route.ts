@@ -203,7 +203,10 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 Action types:
 - update_intent: Modify the PRD/intent. Include "new_summary" and/or "new_items" and/or "new_success_criteria" in data
 - update_approach: Modify the design doc. Include "new_approach" in data
-- create_tasks: Add new tasks. Include "tasks" array in data with {title, description, priority}
+- create_tasks: Add new tasks. Include "tasks" array in data with {title, description, priority, depends_on?}
+  - depends_on is an optional array of task IDs that must complete before this task can start
+  - Use depends_on when tasks have clear sequential relationships (e.g., "implement feature" depends on "design API")
+  - Tasks without dependencies can run in parallel
 - build_capabilities: Build skills/tools first. Include "skill_names" array with suggested skills to build
 - start_worker: Start a worker to execute tasks (will build capabilities first if needed)
 - pause_workers: Pause all running workers

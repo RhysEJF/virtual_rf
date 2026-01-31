@@ -29,7 +29,21 @@ export * from './types';
 // Re-export specific functions
 export { observeTask, quickObserve, detectAmbiguityPatterns, detectFailurePatterns, createFailurePatternAmbiguity } from './observer';
 export type { FailurePatternConfig, FailurePatternResult } from './observer';
-export { buildTaskContext, getTaskContext, steer, compactContext, recordDecision, recordConstraint } from './steerer';
+export {
+  buildTaskContext,
+  getTaskContext,
+  steer,
+  compactContext,
+  recordDecision,
+  recordConstraint,
+  // Dependency graph management
+  insertCorrectiveTask,
+  addDependency,
+  blockTaskChain,
+  removeDependency,
+  getTasksDependingOn,
+} from './steerer';
+export type { DependencyModificationResult } from './steerer';
 export { createEscalation, resolveEscalation, dismissEscalation, hasPendingEscalations, getPendingEscalationCount } from './escalator';
 export { buildTaskContextSection } from './prompts';
 

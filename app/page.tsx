@@ -292,11 +292,18 @@ export default function Dashboard(): JSX.Element {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/skills')}
+            onClick={() => router.push('/insights')}
             className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
-            title="Skills Library"
+            title="Escalation Insights"
           >
-            Skills
+            Insights
+          </button>
+          <button
+            onClick={() => router.push('/resources')}
+            className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
+            title="Resources Library"
+          >
+            Resources
           </button>
           <button
             onClick={() => router.push('/settings')}

@@ -5,11 +5,16 @@
  *
  * Displays a leaderboard of escalation trigger types by frequency
  * with click-to-expand recent examples for each type.
+ * Click on individual escalations to see full details.
+ * Includes trend visualization showing escalation frequency over time.
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import { Badge } from './ui/Badge';
+import { EscalationDetailModal } from './EscalationDetailModal';
+import { EscalationTrends } from './EscalationTrends';
 
 interface RecentEscalation {
   id: string;
@@ -40,9 +45,12 @@ interface InsightsData {
   avg_resolution_time_ms: number | null;
 }
 
+type ViewMode = 'leaderboard' | 'trends';
+
 interface EscalationInsightsProps {
   outcomeId?: string;
   onEscalationClick?: (escalationId: string, outcomeId: string) => void;
+  defaultView?: ViewMode;
 }
 
 const triggerTypeLabels: Record<string, string> = {
@@ -79,11 +87,13 @@ function formatTime(timestamp: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export function EscalationInsights({ outcomeId, onEscalationClick }: EscalationInsightsProps): JSX.Element {
+export function EscalationInsights({ outcomeId, onEscalationClick, defaultView = 'leaderboard' }: EscalationInsightsProps): JSX.Element {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedType, setExpandedType] = useState<string | null>(null);
+  const [selectedEscalationId, setSelectedEscalationId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultView);
 
   const fetchInsights = useCallback(async () => {
     try {
@@ -164,12 +174,78 @@ export function EscalationInsights({ outcomeId, onEscalationClick }: EscalationI
 
   const maxCount = data.by_trigger_type.length > 0 ? data.by_trigger_type[0].count : 1;
 
+  // If viewing trends, render the trends component
+  if (viewMode === 'trends') {
+    return (
+      <div className="space-y-4">
+        {/* View mode toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('leaderboard')}
+            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+              viewMode === 'leaderboard'
+                ? 'bg-accent-primary text-white'
+                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+            }`}
+          >
+            Leaderboard
+          </button>
+          <button
+            onClick={() => setViewMode('trends')}
+            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+              viewMode === 'trends'
+                ? 'bg-accent-primary text-white'
+                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+            }`}
+          >
+            Trends
+          </button>
+        </div>
+
+        <EscalationTrends outcomeId={outcomeId} />
+      </div>
+    );
+  }
+
   return (
+    <div className="space-y-4">
+      {/* View mode toggle */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setViewMode('leaderboard')}
+          className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+            viewMode === 'leaderboard'
+              ? 'bg-accent-primary text-white'
+              : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+          }`}
+        >
+          Leaderboard
+        </button>
+        <button
+          onClick={() => setViewMode('trends')}
+          className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+            viewMode === 'trends'
+              ? 'bg-accent-primary text-white'
+              : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+          }`}
+        >
+          Trends
+        </button>
+      </div>
+
     <Card padding="md">
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle>Escalation Insights</CardTitle>
-          <Badge variant="default">{data.total_escalations} total</Badge>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle>Escalation Insights</CardTitle>
+            <Badge variant="default">{data.total_escalations} total</Badge>
+          </div>
+          <Link
+            href="/insights"
+            className="text-xs text-accent hover:text-accent-hover transition-colors"
+          >
+            View All →
+          </Link>
         </div>
         <div className="flex items-center gap-2 text-xs text-text-tertiary">
           <span className="flex items-center gap-1">
@@ -253,11 +329,10 @@ export function EscalationInsights({ outcomeId, onEscalationClick }: EscalationI
                     {item.recent_escalations.map((esc) => (
                       <div
                         key={esc.id}
-                        className={`p-2 rounded border border-border text-sm ${
-                          onEscalationClick ? 'cursor-pointer hover:border-border-hover' : ''
-                        }`}
+                        className="p-2 rounded border border-border text-sm cursor-pointer hover:border-border-hover"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setSelectedEscalationId(esc.id);
                           onEscalationClick?.(esc.id, esc.outcome_id);
                         }}
                       >
@@ -290,6 +365,15 @@ export function EscalationInsights({ outcomeId, onEscalationClick }: EscalationI
           })}
         </div>
       </CardContent>
+
+      {/* Escalation Detail Modal */}
+      {selectedEscalationId && (
+        <EscalationDetailModal
+          escalationId={selectedEscalationId}
+          onClose={() => setSelectedEscalationId(null)}
+        />
+      )}
     </Card>
+    </div>
   );
 }

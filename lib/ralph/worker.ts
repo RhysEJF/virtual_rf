@@ -11,7 +11,7 @@
  * - Loops until all tasks complete or max iterations reached
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -94,8 +94,72 @@ const activeWorkers = new Map<string, {
 }>();
 
 // ============================================================================
+// Git Branch Management
+// ============================================================================
+
+/**
+ * Get the current git branch
+ */
+function getCurrentBranch(): string | null {
+  try {
+    return execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check out a branch, creating it if it doesn't exist
+ * Returns the previous branch name for restoration later
+ */
+function checkoutWorkBranch(workBranch: string, baseBranch?: string): string | null {
+  const previousBranch = getCurrentBranch();
+
+  try {
+    // Check if branch exists locally
+    const localBranches = execSync('git branch --list', { encoding: 'utf-8' });
+    const branchExists = localBranches.split('\n').some(b => b.trim().replace('* ', '') === workBranch);
+
+    if (branchExists) {
+      // Branch exists, just check it out
+      execSync(`git checkout ${workBranch}`, { encoding: 'utf-8', stdio: 'pipe' });
+      console.log(`[Worker] Checked out existing branch: ${workBranch}`);
+    } else {
+      // Create new branch from base
+      const base = baseBranch || 'main';
+      execSync(`git checkout -b ${workBranch} ${base}`, { encoding: 'utf-8', stdio: 'pipe' });
+      console.log(`[Worker] Created and checked out new branch: ${workBranch} from ${base}`);
+    }
+
+    return previousBranch;
+  } catch (err) {
+    console.error(`[Worker] Failed to checkout branch ${workBranch}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Restore the previous branch (best effort)
+ */
+function restoreBranch(branchName: string): void {
+  try {
+    execSync(`git checkout ${branchName}`, { encoding: 'utf-8', stdio: 'pipe' });
+    console.log(`[Worker] Restored branch: ${branchName}`);
+  } catch (err) {
+    console.error(`[Worker] Failed to restore branch ${branchName}:`, err);
+  }
+}
+
+// ============================================================================
 // Instruction Generation
 // ============================================================================
+
+interface GitConfig {
+  mode: string;
+  workBranch?: string;
+  baseBranch?: string;
+  autoCommit: boolean;
+}
 
 /**
  * Generate CLAUDE.md instructions for the current task
@@ -105,7 +169,8 @@ function generateTaskInstructions(
   intent: Intent | null,
   task: Task,
   additionalSkillContext?: string,
-  outcomeId?: string
+  outcomeId?: string,
+  gitConfig?: GitConfig
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
@@ -124,13 +189,28 @@ function generateTaskInstructions(
     homrContext = homr.buildTaskContext(task.id, outcomeId);
   }
 
+  // Build git instructions if configured
+  let gitInstructions = '';
+  if (gitConfig && gitConfig.mode === 'branch' && gitConfig.workBranch) {
+    gitInstructions = `
+## Git Configuration
+
+**IMPORTANT:** You are working on branch \`${gitConfig.workBranch}\`.
+- Before committing, verify you are on the correct branch: \`git branch --show-current\`
+- If not on \`${gitConfig.workBranch}\`, run: \`git checkout ${gitConfig.workBranch}\`
+- All commits should go to this branch, NOT to main
+${gitConfig.autoCommit ? '- Auto-commit is enabled: commit when making significant progress' : '- Manual commit mode: wait for explicit commit instruction'}
+
+`;
+  }
+
   return `# Current Task
 
 ## Outcome: ${outcomeName}
 ${intentSummary}
 
 ---
-${homrContext ? `\n${homrContext}` : ''}
+${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
 ## Your Current Task
 
 **ID:** ${task.id}
@@ -159,7 +239,7 @@ ERROR: [if you hit a blocker, describe it]
 ## Rules
 - Focus only on this specific task
 - Create clean, well-structured code
-- Commit your work when making significant progress
+${gitConfig?.workBranch ? `- Commit to branch \`${gitConfig.workBranch}\` when making significant progress` : '- Commit your work when making significant progress'}
 - If you hit a blocker you can't resolve, write ERROR: [reason]
 - When complete, write DONE and stop
 
@@ -244,6 +324,17 @@ export async function startRalphWorker(
   });
   const workerId = dbWorker.id;
 
+  // Build git configuration from outcome settings
+  const gitConfig: GitConfig = {
+    mode: outcome.git_mode || 'none',
+    workBranch: outcome.work_branch || undefined,
+    baseBranch: outcome.base_branch || 'main',
+    autoCommit: Boolean(outcome.auto_commit),
+  };
+
+  // Track previous branch for restoration when worker completes
+  let previousBranch: string | null = null;
+
   // Set up workspace - either worktree or shared
   let outcomeWorkspace: string;
   let worktreePath: string | null = null;
@@ -276,6 +367,17 @@ export async function startRalphWorker(
     }
     if (!existsSync(outcomeWorkspace)) {
       mkdirSync(outcomeWorkspace, { recursive: true });
+    }
+
+    // If git_mode is 'branch' and not using worktree, check out the work branch
+    if (gitConfig.mode === 'branch' && gitConfig.workBranch && isGitRepo()) {
+      previousBranch = checkoutWorkBranch(gitConfig.workBranch, gitConfig.baseBranch);
+      branchName = gitConfig.workBranch;
+
+      // Update worker with branch info
+      updateWorkerDb(workerId, {
+        branch_name: branchName,
+      });
     }
   }
 
@@ -464,7 +566,7 @@ export async function startRalphWorker(
 
         // Write CLAUDE.md and progress.txt
         const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
-        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task, undefined, outcomeId));
+        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task, undefined, outcomeId, gitConfig));
 
         const progressPath = join(taskWorkspace, 'progress.txt');
         writeFileSync(progressPath, generateInitialProgress(task));
@@ -907,12 +1009,25 @@ export async function runWorkerLoop(
     }
   }
 
+  // Build git configuration from outcome settings
+  const gitConfig: GitConfig = {
+    mode: outcome.git_mode || 'none',
+    workBranch: outcome.work_branch || undefined,
+    baseBranch: outcome.base_branch || 'main',
+    autoCommit: Boolean(outcome.auto_commit),
+  };
+
   // Set up workspace
   const workspacePath = join(process.cwd(), 'workspaces');
   const outcomeWorkspace = join(workspacePath, outcomeId);
 
   if (!existsSync(outcomeWorkspace)) {
     mkdirSync(outcomeWorkspace, { recursive: true });
+  }
+
+  // If git_mode is 'branch', check out the work branch
+  if (gitConfig.mode === 'branch' && gitConfig.workBranch && isGitRepo()) {
+    checkoutWorkBranch(gitConfig.workBranch, gitConfig.baseBranch);
   }
 
   // Log file
@@ -959,7 +1074,7 @@ export async function runWorkerLoop(
     const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
     writeFileSync(
       claudeMdPath,
-      generateTaskInstructions(outcome.name, intent, task, skillContext, outcomeId)
+      generateTaskInstructions(outcome.name, intent, task, skillContext, outcomeId, gitConfig)
     );
 
     const progressPath = join(taskWorkspace, 'progress.txt');

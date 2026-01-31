@@ -586,13 +586,26 @@ export function parseObservation(obs: HomrObservation): {
     onTrack: obs.on_track === 1,
     alignmentScore: obs.alignment_score,
     quality: obs.quality,
-    drift: JSON.parse(obs.drift),
-    discoveries: JSON.parse(obs.discoveries),
-    issues: JSON.parse(obs.issues),
+    drift: safeJsonParse(obs.drift, []),
+    discoveries: safeJsonParse(obs.discoveries, []),
+    issues: safeJsonParse(obs.issues, []),
     hasAmbiguity: obs.has_ambiguity === 1,
-    ambiguityData: obs.ambiguity_data ? JSON.parse(obs.ambiguity_data) : null,
+    ambiguityData: obs.ambiguity_data ? safeJsonParse(obs.ambiguity_data, null) : null,
     summary: obs.summary,
   };
+}
+
+/**
+ * Safely parse JSON with a fallback value
+ */
+function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+  if (!json || json === '') return fallback;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    console.error('[HOMЯ DB] Failed to parse JSON:', json?.substring(0, 100));
+    return fallback;
+  }
 }
 
 /**
@@ -628,14 +641,14 @@ export function parseEscalation(esc: HomrEscalation): {
     trigger: {
       type: esc.trigger_type,
       taskId: esc.trigger_task_id,
-      evidence: JSON.parse(esc.trigger_evidence),
+      evidence: safeJsonParse(esc.trigger_evidence, []),
     },
     question: {
       text: esc.question_text,
       context: esc.question_context,
-      options: JSON.parse(esc.question_options),
+      options: safeJsonParse(esc.question_options, []),
     },
-    affectedTasks: JSON.parse(esc.affected_tasks),
+    affectedTasks: safeJsonParse(esc.affected_tasks, []),
     answer: esc.answered_at ? {
       option: esc.answer_option!,
       context: esc.answer_context,

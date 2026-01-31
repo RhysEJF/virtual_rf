@@ -23,6 +23,19 @@ import type { Task, Intent, HomrAmbiguitySignal, HomrQuestionOption, HomrDecisio
 import type { EscalationAnswer, EscalationResolution } from './types';
 import { buildEscalationQuestionPrompt, parseEscalationQuestionResponse } from './prompts';
 
+/**
+ * Safely parse JSON with a fallback value
+ */
+function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+  if (!json || json === '') return fallback;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    console.error('[HOMЯ Escalator] Failed to parse JSON:', json?.substring(0, 100));
+    return fallback;
+  }
+}
+
 // ============================================================================
 // Escalation Creation
 // ============================================================================
@@ -257,7 +270,7 @@ export async function resolveEscalation(
   }
 
   // Find the selected option
-  const options: HomrQuestionOption[] = JSON.parse(escalation.question_options);
+  const options: HomrQuestionOption[] = safeJsonParse(escalation.question_options, []);
   const selectedOption = options.find(o => o.id === answer.selectedOption);
 
   if (!selectedOption) {
@@ -268,19 +281,17 @@ export async function resolveEscalation(
   answerEscalationDb(escalationId, answer.selectedOption, answer.additionalContext);
 
   // Record the decision
+  const affectedTasks: string[] = safeJsonParse(escalation.affected_tasks, []);
   const decision: HomrDecision = {
     id: generateId('dec'),
     content: `${selectedOption.label}: ${selectedOption.description}`,
     madeBy: 'human',
     madeAt: Date.now(),
     context: `Escalation: ${escalation.question_text}${answer.additionalContext ? `\nAdditional context: ${answer.additionalContext}` : ''}`,
-    affectedAreas: JSON.parse(escalation.affected_tasks),
+    affectedAreas: affectedTasks,
   };
 
   addDecisionToContext(escalation.outcome_id, decision);
-
-  // Inject the decision into affected tasks
-  const affectedTasks: string[] = JSON.parse(escalation.affected_tasks);
   const injectedContext = `**Decision Made:** ${selectedOption.label}
 ${selectedOption.description}
 ${answer.additionalContext ? `\n**Additional Context:** ${answer.additionalContext}` : ''}`;
@@ -339,7 +350,7 @@ export async function dismissEscalation(
   dismissEscalationDb(escalationId);
 
   // Resume affected tasks
-  const affectedTasks: string[] = JSON.parse(escalation.affected_tasks);
+  const affectedTasks: string[] = safeJsonParse(escalation.affected_tasks, []);
   for (const taskId of affectedTasks) {
     resumeTask(taskId);
   }

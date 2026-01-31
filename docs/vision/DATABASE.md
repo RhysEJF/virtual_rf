@@ -26,8 +26,10 @@ All state in Digital Twin is persisted to SQLite. The database:
 | WAL mode for concurrency | Complete |
 | Auto-migrations | Complete |
 | Orphan cleanup | Complete |
+| Task dependencies (depends_on) | Complete |
+| Dependency validation and cycle detection | Complete |
 
-**Overall:** Complete and production-ready (20 tables)
+**Overall:** Complete and production-ready (20+ tables)
 
 ---
 
@@ -79,6 +81,23 @@ Multiple workers can safely race to claim tasks. Uses SQLite's IMMEDIATE transac
 ### Heartbeat Mechanism
 
 Workers send heartbeats every 30 seconds. Stale workers (no heartbeat > 5 min) are detected and their tasks released.
+
+### Task Dependencies
+
+Tasks can depend on other tasks via the `depends_on` column (JSON array of task IDs):
+
+| Concept | Description |
+|---------|-------------|
+| **depends_on** | Array of task IDs that must complete before this task can be claimed |
+| **blocked_by** | Computed at runtime - incomplete tasks from depends_on list |
+| **is_blocked** | Boolean - true if any blocking tasks exist |
+
+The system prevents:
+- Circular dependencies (A→B→A)
+- Cross-outcome dependencies (tasks must be in same outcome)
+- Invalid task references
+
+Workers automatically skip blocked tasks when claiming work.
 
 ---
 

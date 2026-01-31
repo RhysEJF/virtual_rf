@@ -104,23 +104,26 @@ Implement an inbox/messaging system between workers. Workers can send messages, 
 
 | Field | Value |
 |-------|-------|
-| **Status** | `proposed` |
+| **Status** | `implemented` |
 | **Added** | 2025-01-31 |
+| **Implemented** | 2026-01-31 |
 | **Source** | Research into beads_viewer graph-aware task management |
 
 **Problem:**
 Tasks are a flat list. Workers claim whatever's next, sometimes starting work they can't complete because a dependency isn't done yet.
 
-**Proposed Solution:**
-Add `depends_on` field to tasks. Build a task graph with critical path analysis. `claimNextTask()` respects dependencies.
+**Solution Implemented:**
+- Added `depends_on` column to tasks table (JSON array of task IDs)
+- Built dependency validation and circular dependency detection (`lib/db/dependencies.ts`)
+- UI shows blocked/blocking relationships in ExpandableTaskCard
+- Workers automatically skip blocked tasks when claiming
+- HOMЯ steerer can set dependencies when analyzing task relationships
 
-**Value:**
+**Value Delivered:**
 - Workers never start blocked tasks
-- Critical path shows fastest route to completion
-- Bottlenecks surface automatically
-- Complex projects decompose into parallel workstreams
-
-**Effort:** Medium
+- UI clearly shows dependency relationships
+- Blocked tasks are visually distinguished
+- Task cards show what's blocking them and what they're blocking
 
 **References:**
 - [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) (1.1k stars)
@@ -223,7 +226,7 @@ Route tasks to appropriate models based on complexity:
 
 | Idea | Implemented | Link |
 |------|-------------|------|
-| *(none yet)* | | |
+| Task Dependency Graph | 2026-01-31 | `lib/db/dependencies.ts`, PR #1 |
 
 ---
 

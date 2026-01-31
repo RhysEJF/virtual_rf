@@ -25,6 +25,9 @@ Digital Twin should get smarter over time. The Analytics system:
 | Pattern detection | Complete |
 | Improvement suggestions | Complete |
 | Progress compaction | Complete |
+| Escalation insights (trends, clustering) | Complete |
+| Improvement analyzer agent | Complete |
+| Self-improvement outcome creation | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -70,6 +73,27 @@ When enough data accumulates:
 2. Suggestions are created with priorities
 3. Users can accept (creates tasks) or dismiss
 4. Accepted suggestions become capability-building work
+
+### Escalation Insights
+
+The system analyzes HOMЯ escalations to find patterns:
+
+| Insight Type | Description |
+|--------------|-------------|
+| **Trends over time** | Escalation volume, resolution times, dismissal rates |
+| **Root cause clustering** | Group escalations by underlying issue, not trigger type |
+| **Recurring patterns** | Same questions appearing across outcomes |
+
+### Improvement Analyzer Agent
+
+The `improvement-analyzer.ts` agent analyzes escalation patterns and generates improvement proposals:
+
+1. **Clusters escalations** - Groups by root cause (e.g., "unclear requirements", "missing skills")
+2. **Identifies systemic issues** - Patterns that appear across multiple outcomes
+3. **Generates improvement outcomes** - Proposes fixes with intent, approach, and tasks
+4. **Creates parent-child hierarchy** - Improvements link to a "Self-Improvement" parent outcome
+
+The analyzer can be triggered via `/api/improvements/analyze` to create new improvement outcomes automatically.
 
 ---
 

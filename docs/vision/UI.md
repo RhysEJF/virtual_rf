@@ -27,6 +27,7 @@ The UI is the user's window into Digital Twin. It provides:
 | Unified outcome chat | Complete |
 | Worker drill-down page | Complete |
 | Skills library page | Complete |
+| Resources page (Skills, Tools, Documents, Files) | Complete |
 | Command bar (voice/text) | Complete |
 | Dark/light theme | Complete |
 | Real-time updates (polling) | Complete |
@@ -37,8 +38,13 @@ The UI is the user's window into Digital Twin. It provides:
 | Tools section with sync status | Complete |
 | HOMЯ escalation alerts (always visible) | Complete |
 | Escalation dismiss functionality | Complete |
+| Multi-outcome HOMЯ dashboard | Complete |
+| Escalation insights (trends, detail modal) | Complete |
+| Supervisor page (renamed from insights) | Complete |
+| Editable task descriptions | Complete |
+| Improvement preview modal | Complete |
 
-**Overall:** Complete and production-ready (35+ components, 5 pages)
+**Overall:** Complete and production-ready (40+ components, 6 pages)
 
 ---
 
@@ -58,10 +64,11 @@ From DESIGN.md:
 
 | Page | Purpose |
 |------|---------|
-| **Dashboard** | All outcomes, activity feed, alerts |
+| **Dashboard** | All outcomes, multi-outcome HOMЯ dashboard, activity feed |
 | **Outcome Detail** | Full management UI with split panel layout |
 | **Worker Detail** | Drill-down into running worker |
-| **Skills Library** | Browse global and outcome skills |
+| **Resources** | Consolidated view of Skills, Tools, Documents, Files across all outcomes |
+| **Supervisor** | Escalation insights, trends, and system health monitoring |
 | **Settings** | Repository configuration, system preferences |
 
 ### Split Panel Layout (Outcome Detail)
@@ -98,6 +105,22 @@ Single chat interface that merges:
 ### Command Bar
 
 The primary input mechanism. Accepts natural language, dispatches to appropriate handlers, shows staged confirmations before executing.
+
+### Multi-Outcome HOMЯ Dashboard
+
+The dashboard's right sidebar shows an aggregated view across all outcomes:
+- **Outcome Health** - Workers running, total cost, pending/failed tasks per outcome
+- **Active Escalations** - All unresolved escalations across outcomes
+- **Quick actions** - Click to navigate to specific outcomes or escalations
+
+This replaces the previous Supervisor Alerts and Improvement Suggestions boxes.
+
+### Supervisor Page (Escalation Insights)
+
+Provides deep analytics on escalation patterns:
+- **Trends over time** - Chart of escalation volume, resolution times
+- **Root cause clustering** - Group by underlying issue
+- **Detail modal** - Click any escalation for full context and resolution history
 
 ### Intervention System
 

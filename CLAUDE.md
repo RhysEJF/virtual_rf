@@ -247,7 +247,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-01-31)
+## Current Progress (Updated 2026-02-01)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -325,6 +325,25 @@ kill -9 <PID>
 - [x] HOMЯ alerts always visible at top of right panel
 - [x] Escalation dismiss API endpoint (`app/api/outcomes/[id]/homr/escalations/[escId]/dismiss/`)
 - [x] Renamed "Save Targets" to "Commit Settings"
+- [x] Resources page (`/resources`) - consolidated Skills, Tools, Documents, Files
+- [x] Multi-outcome HOMЯ dashboard on main dashboard
+- [x] Supervisor page (`/supervisor`) - escalation insights and trends
+- [x] Editable task descriptions in ExpandableTaskCard
+
+### Task Dependencies (Complete)
+- [x] `depends_on` column on tasks table (JSON array of task IDs)
+- [x] Dependency validation and circular dependency detection (`lib/db/dependencies.ts`)
+- [x] UI shows blocked/blocking relationships in ExpandableTaskCard
+- [x] Workers automatically skip blocked tasks when claiming
+- [x] HOMЯ steerer can set dependencies when analyzing task relationships
+
+### Self-Improvement Analytics (Complete)
+- [x] Escalation insights API (`app/api/insights/escalations/`)
+- [x] Escalation trends API (`app/api/insights/escalations/trends/`)
+- [x] Improvement analyzer agent (`lib/agents/improvement-analyzer.ts`)
+- [x] Improvement proposals API (`app/api/improvements/analyze/`)
+- [x] EscalationInsights component with trends visualization
+- [x] ImprovementPreviewModal for reviewing proposed outcomes
 
 ### CLI (In Progress)
 - [x] Basic command structure (`cli/`)
@@ -343,10 +362,11 @@ kill -9 <PID>
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
-- [ ] Self-Improvement Engine (logs bottlenecks, suggests improvements)
+- [ ] Agent messaging system (workers that talk to each other)
 - [ ] Telegram bridge
 - [ ] SSE for live progress updates (currently polls every 5s)
 - [ ] Cross-outcome learning (HOMЯ discoveries shared between outcomes)
+- [ ] Always-on deployment (Mac Mini + Cloudflare Tunnel)
 
 ### Key Files to Understand
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
@@ -355,10 +375,12 @@ kill -9 <PID>
 - `lib/agents/capability-planner.ts` - Analyzes outcomes, plans skills/tools
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues
+- `lib/agents/improvement-analyzer.ts` - Analyzes escalation patterns, proposes improvements
 - `lib/homr/index.ts` - HOMЯ Protocol main exports (observe, steer, escalate)
 - `lib/homr/observer.ts` - Task output analysis with Claude
 - `lib/homr/escalator.ts` - Ambiguity detection and human escalation
 - `lib/db/repositories.ts` - Repository and item sync database operations
+- `lib/db/dependencies.ts` - Task dependency validation and cycle detection
 - `lib/sync/repository-sync.ts` - Core sync logic (copy, git add/commit/push)
 - `app/outcome/[id]/page.tsx` - Main outcome management UI
 - `app/api/outcomes/[id]/iterate/route.ts` - Post-completion feedback

@@ -17,14 +17,13 @@ import { OutcomeBreadcrumbs } from '@/app/components/OutcomeBreadcrumbs';
 import { ChildOutcomesList } from '@/app/components/ChildOutcomesList';
 import { CreateChildModal } from '@/app/components/CreateChildModal';
 import { ExpandableTaskCard } from '@/app/components/ExpandableTaskCard';
-import { HomrStatusCard } from '@/app/components/homr/HomrStatusCard';
-import { EscalationAlert } from '@/app/components/homr/EscalationAlert';
 import { ActivityLogDrawer } from '@/app/components/homr/ActivityLogDrawer';
 import { useToast } from '@/app/hooks/useToast';
 import { CollapsibleSection } from '@/app/components/CollapsibleSection';
 import { OutcomeChat } from '@/app/components/OutcomeChat';
 import { CommitSettingsSection } from '@/app/components/CommitSettingsSection';
-import type { OutcomeStatus, TaskStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
+import { HomrDashboard } from '@/app/components/HomrDashboard';
+import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
 
 // Types
 interface OutcomeDetail {
@@ -115,6 +114,30 @@ const workerStatusConfig: Record<WorkerStatus, { label: string; variant: 'defaul
   failed: { label: 'Failed', variant: 'error' },
 };
 
+// Hierarchy/nest icon component
+function HierarchyIcon({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="5" r="3" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="12" x2="6" y2="16" />
+      <line x1="12" y1="12" x2="18" y2="16" />
+      <circle cx="6" cy="19" r="3" />
+      <circle cx="18" cy="19" r="3" />
+    </svg>
+  );
+}
+
 export default function OutcomeDetailPage(): JSX.Element {
   const params = useParams();
   const router = useRouter();
@@ -152,6 +175,12 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [isParent, setIsParent] = useState(false);
   const [showCreateChildModal, setShowCreateChildModal] = useState(false);
   const [briefExpanded, setBriefExpanded] = useState(false);
+
+  // Left panel tab state
+  const [leftPanelTab, setLeftPanelTab] = useState<'context' | 'homr'>('context');
+
+  // Workers tab state
+  const [workersTab, setWorkersTab] = useState<'live' | 'history'>('live');
 
   // Edit mode states
   const [isEditingIntent, setIsEditingIntent] = useState(false);
@@ -255,13 +284,11 @@ export default function OutcomeDetailPage(): JSX.Element {
       throw new Error(errorMessage);
     }
     toast({ type: 'success', message: 'Decision submitted - tasks resumed' });
-    // Remove from local state immediately for responsive UI
     setPendingEscalations(prev => prev.filter(e => e.id !== escalationId));
     fetchOutcome();
   };
 
   const handleHomrDismiss = async (escalationId: string): Promise<void> => {
-    // Call the dismiss endpoint
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}/homr/escalations/${escalationId}/dismiss`, {
         method: 'POST',
@@ -271,7 +298,6 @@ export default function OutcomeDetailPage(): JSX.Element {
         throw new Error('Failed to dismiss escalation');
       }
       toast({ type: 'info', message: 'Escalation dismissed' });
-      // Remove from local state immediately for responsive UI
       setPendingEscalations(prev => prev.filter(e => e.id !== escalationId));
       fetchOutcome();
     } catch (err) {
@@ -591,10 +617,20 @@ export default function OutcomeDetailPage(): JSX.Element {
     ? outcome.design_doc.approach.slice(0, 60) + (outcome.design_doc.approach.length > 60 ? '...' : '')
     : undefined;
 
+  // Worker summary for HOMЯ dashboard
+  const workerSummary = {
+    total: outcome.workers.length,
+    running: outcome.workers.filter(w => w.status === 'running').length,
+    completed: outcome.workers.filter(w => w.status === 'completed').length,
+    failed: outcome.workers.filter(w => w.status === 'failed').length,
+    totalCost: outcome.workers.reduce((sum, w) => sum + w.cost, 0),
+    totalIterations: outcome.workers.reduce((sum, w) => sum + w.iteration, 0),
+  };
+
   return (
     <main className="max-w-7xl mx-auto p-6">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <button
           onClick={() => parent ? router.push(`/outcome/${parent.id}`) : router.push('/')}
           className="text-text-tertiary hover:text-text-secondary text-sm mb-2 flex items-center gap-1"
@@ -609,7 +645,7 @@ export default function OutcomeDetailPage(): JSX.Element {
         )}
 
         <div className="flex items-start justify-between">
-          <div>
+          <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-semibold text-text-primary">{outcome.name}</h1>
               {outcome.is_ongoing && <Badge variant="info">Ongoing</Badge>}
@@ -643,6 +679,35 @@ export default function OutcomeDetailPage(): JSX.Element {
               </div>
             )}
           </div>
+
+          {/* Header Actions */}
+          <div className="flex items-center gap-2">
+            {/* Hierarchy Icon Button */}
+            <button
+              onClick={() => setShowCreateChildModal(true)}
+              className="p-2 rounded-lg hover:bg-bg-secondary text-text-tertiary hover:text-text-primary transition-colors"
+              title="Manage Hierarchy"
+            >
+              <HierarchyIcon />
+            </button>
+
+            {/* Status actions inline */}
+            {outcome.status === 'active' && hasEverHadWorker && (
+              <Button variant="ghost" size="sm" onClick={() => handleStatusChange('dormant')} disabled={actionLoading}>
+                Pause
+              </Button>
+            )}
+            {outcome.status === 'dormant' && (
+              <Button variant="ghost" size="sm" onClick={() => handleStatusChange('active')} disabled={actionLoading}>
+                Resume
+              </Button>
+            )}
+            {!isParent && hasEverHadWorker && (
+              <Button variant="secondary" size="sm" onClick={handleRunReview} disabled={actionLoading}>
+                Review
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -658,6 +723,27 @@ export default function OutcomeDetailPage(): JSX.Element {
         />
       )}
 
+      {/* Main Chat - Top of Page */}
+      <div className="mb-6">
+        <OutcomeChat
+          outcomeId={outcomeId}
+          outcomeName={outcome.name}
+          hasRunningWorker={hasRunningWorker}
+          hasEverHadWorker={hasEverHadWorker}
+          onSuccess={fetchOutcome}
+          initialInput={refinementInput}
+          onInitialInputConsumed={handleRefinementConsumed}
+        />
+
+        {/* Capability phase status indicator */}
+        {capabilityInProgress && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-status-info p-3 bg-status-info/10 rounded-lg">
+            <div className="animate-spin h-3 w-3 border-2 border-status-info border-t-transparent rounded-full" />
+            <span>Building capabilities (skills/tools)...</span>
+          </div>
+        )}
+      </div>
+
       {/* Show Children List for parent outcomes */}
       {isParent && (
         <div className="mb-6">
@@ -672,363 +758,330 @@ export default function OutcomeDetailPage(): JSX.Element {
 
       {/* Split Panel Layout */}
       <div className="flex gap-6">
-        {/* Left Panel - Context (40%) */}
-        <div className="w-2/5 space-y-0 border border-border rounded-lg bg-bg-primary overflow-hidden">
-          {/* Intent (What) */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-intent`}
-            title="Intent (What)"
-            badge={intent?.items ? `${intent.items.filter(i => i.status === 'done').length}/${intent.items.length}` : undefined}
-            summary={intentSummary}
-            defaultExpanded={true}
-          >
-            {isEditingIntent ? (
-              <div className="space-y-3">
-                <textarea
-                  value={editedIntentSummary}
-                  onChange={(e) => setEditedIntentSummary(e.target.value)}
-                  className="w-full h-32 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary"
-                  placeholder="What should this outcome achieve?"
-                />
-                <div className="flex items-center gap-2">
-                  <Button variant="primary" size="sm" onClick={handleSaveIntent} disabled={savingIntent}>
-                    {savingIntent ? 'Saving...' : 'Save'}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setIsEditingIntent(false)} disabled={savingIntent}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {intent?.summary && (
-                  <div className="flex justify-between items-start mb-3">
-                    <p className="text-text-secondary text-sm flex-1">{intent.summary}</p>
-                    <Button variant="ghost" size="sm" onClick={handleStartEditIntent} className="ml-2 flex-shrink-0">
-                      Edit
-                    </Button>
-                  </div>
-                )}
-                {intent?.items && intent.items.length > 0 && (
-                  <div className="space-y-2 mb-4">
-                    {intent.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 text-sm">
-                        <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs
-                          ${item.status === 'done' ? 'bg-status-success/20 border-status-success text-status-success' : 'border-border'}`}>
-                          {item.status === 'done' ? '✓' : ''}
-                        </span>
-                        <span className={item.status === 'done' ? 'text-text-tertiary line-through' : 'text-text-primary'}>
-                          {item.title}
-                        </span>
+        {/* Left Panel (40%) - Tabs: Context | HOMЯ */}
+        <div className="w-2/5 border border-border rounded-lg bg-bg-primary overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 320px)', minHeight: '500px' }}>
+          {/* Tab Headers */}
+          <div className="flex border-b border-border">
+            <button
+              onClick={() => setLeftPanelTab('context')}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                leftPanelTab === 'context'
+                  ? 'text-text-primary border-b-2 border-accent bg-bg-primary'
+                  : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-secondary'
+              }`}
+            >
+              Context
+            </button>
+            <button
+              onClick={() => setLeftPanelTab('homr')}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors relative ${
+                leftPanelTab === 'homr'
+                  ? 'text-text-primary border-b-2 border-accent bg-bg-primary'
+                  : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-secondary'
+              }`}
+            >
+              HOMЯ
+              {pendingEscalations.length > 0 && (
+                <span className="absolute top-2 right-2 w-5 h-5 bg-status-warning text-white text-xs rounded-full flex items-center justify-center">
+                  {pendingEscalations.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto">
+            {leftPanelTab === 'context' ? (
+              /* Context Tab */
+              <div>
+                {/* Intent (What) */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-intent`}
+                  title="Intent (What)"
+                  badge={intent?.items ? `${intent.items.filter(i => i.status === 'done').length}/${intent.items.length}` : undefined}
+                  summary={intentSummary}
+                  defaultExpanded={true}
+                >
+                  {isEditingIntent ? (
+                    <div className="space-y-3">
+                      <textarea
+                        value={editedIntentSummary}
+                        onChange={(e) => setEditedIntentSummary(e.target.value)}
+                        className="w-full h-32 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary"
+                        placeholder="What should this outcome achieve?"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button variant="primary" size="sm" onClick={handleSaveIntent} disabled={savingIntent}>
+                          {savingIntent ? 'Saving...' : 'Save'}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setIsEditingIntent(false)} disabled={savingIntent}>
+                          Cancel
+                        </Button>
                       </div>
-                    ))}
-                  </div>
-                )}
-                {intent?.success_criteria && intent.success_criteria.length > 0 && (
-                  <div className="p-3 bg-bg-secondary rounded-lg">
-                    <p className="text-xs text-text-tertiary uppercase tracking-wide mb-2">Success Criteria</p>
-                    <ul className="text-sm text-text-secondary space-y-1">
-                      {intent.success_criteria.map((criterion, i) => (
-                        <li key={i}>• {criterion}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {!intent?.summary && (
-                  <p className="text-text-tertiary text-sm">No intent defined yet. Use the chat to describe what you want.</p>
-                )}
-              </>
-            )}
-          </CollapsibleSection>
+                    </div>
+                  ) : (
+                    <>
+                      {intent?.summary && (
+                        <div className="flex justify-between items-start mb-3">
+                          <p className="text-text-secondary text-sm flex-1">{intent.summary}</p>
+                          <Button variant="ghost" size="sm" onClick={handleStartEditIntent} className="ml-2 flex-shrink-0">
+                            Edit
+                          </Button>
+                        </div>
+                      )}
+                      {intent?.items && intent.items.length > 0 && (
+                        <div className="space-y-2 mb-4">
+                          {intent.items.map((item) => (
+                            <div key={item.id} className="flex items-center gap-2 text-sm">
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs
+                                ${item.status === 'done' ? 'bg-status-success/20 border-status-success text-status-success' : 'border-border'}`}>
+                                {item.status === 'done' ? '✓' : ''}
+                              </span>
+                              <span className={item.status === 'done' ? 'text-text-tertiary line-through' : 'text-text-primary'}>
+                                {item.title}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {intent?.success_criteria && intent.success_criteria.length > 0 && (
+                        <div className="p-3 bg-bg-secondary rounded-lg">
+                          <p className="text-xs text-text-tertiary uppercase tracking-wide mb-2">Success Criteria</p>
+                          <ul className="text-sm text-text-secondary space-y-1">
+                            {intent.success_criteria.map((criterion, i) => (
+                              <li key={i}>• {criterion}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {!intent?.summary && (
+                        <p className="text-text-tertiary text-sm">No intent defined yet. Use the chat to describe what you want.</p>
+                      )}
+                    </>
+                  )}
+                </CollapsibleSection>
 
-          {/* Approach (How) */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-approach`}
-            title="Approach (How)"
-            badge={outcome.design_doc ? `v${outcome.design_doc.version}` : undefined}
-            summary={approachSummary}
-            defaultExpanded={false}
-          >
-            {isEditingApproach ? (
-              <div className="space-y-3">
-                <textarea
-                  value={editedApproach}
-                  onChange={(e) => setEditedApproach(e.target.value)}
-                  className="w-full h-48 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary font-mono"
-                  placeholder="How will this outcome be achieved?"
-                />
-                <div className="flex items-center gap-2">
-                  <Button variant="primary" size="sm" onClick={handleSaveApproach} disabled={savingApproach}>
-                    {savingApproach ? 'Saving...' : 'Save'}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setIsEditingApproach(false)} disabled={savingApproach}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {outcome.design_doc ? (
-                  <div className="flex justify-between items-start">
-                    <p className="text-text-secondary text-sm whitespace-pre-wrap flex-1">
-                      {outcome.design_doc.approach}
-                    </p>
-                    <Button variant="ghost" size="sm" onClick={handleStartEditApproach} className="ml-2 flex-shrink-0">
-                      Edit
+                {/* Approach (How) */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-approach`}
+                  title="Approach (How)"
+                  badge={outcome.design_doc ? `v${outcome.design_doc.version}` : undefined}
+                  summary={approachSummary}
+                  defaultExpanded={false}
+                >
+                  {isEditingApproach ? (
+                    <div className="space-y-3">
+                      <textarea
+                        value={editedApproach}
+                        onChange={(e) => setEditedApproach(e.target.value)}
+                        className="w-full h-48 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary font-mono"
+                        placeholder="How will this outcome be achieved?"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button variant="primary" size="sm" onClick={handleSaveApproach} disabled={savingApproach}>
+                          {savingApproach ? 'Saving...' : 'Save'}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setIsEditingApproach(false)} disabled={savingApproach}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {outcome.design_doc ? (
+                        <div className="flex justify-between items-start">
+                          <p className="text-text-secondary text-sm whitespace-pre-wrap flex-1">
+                            {outcome.design_doc.approach}
+                          </p>
+                          <Button variant="ghost" size="sm" onClick={handleStartEditApproach} className="ml-2 flex-shrink-0">
+                            Edit
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-text-tertiary text-sm">
+                          No design doc yet. Use the chat to describe your approach.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </CollapsibleSection>
+
+                {/* Tasks */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-tasks`}
+                  title="Tasks"
+                  badge={taskStats ? `${taskStats.completed}/${taskStats.total}` : undefined}
+                  defaultExpanded={false}
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-text-tertiary text-sm">{outcome.tasks.length} total</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAddTask(!showAddTask)}
+                      className="text-xs"
+                    >
+                      + Add Task
                     </Button>
                   </div>
-                ) : (
-                  <p className="text-text-tertiary text-sm">
-                    No design doc yet. Use the chat to describe your approach.
-                  </p>
-                )}
-              </>
-            )}
-          </CollapsibleSection>
 
-          {/* Tasks */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-tasks`}
-            title="Tasks"
-            badge={taskStats ? `${taskStats.completed}/${taskStats.total}` : undefined}
-            defaultExpanded={false}
-          >
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-text-tertiary text-sm">{outcome.tasks.length} total</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAddTask(!showAddTask)}
-                className="text-xs"
-              >
-                + Add Task
-              </Button>
-            </div>
+                  {showAddTask && (
+                    <div className="mb-4 p-3 border border-border rounded-lg bg-bg-tertiary">
+                      <input
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        placeholder="Task title..."
+                        className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleAddTask();
+                          }
+                        }}
+                      />
+                      <textarea
+                        value={newTaskDescription}
+                        onChange={(e) => setNewTaskDescription(e.target.value)}
+                        placeholder="Description (optional)..."
+                        className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 resize-none h-16 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={handleAddTask}
+                          disabled={addingTask || !newTaskTitle.trim()}
+                        >
+                          {addingTask ? 'Adding...' : 'Add'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setShowAddTask(false);
+                            setNewTaskTitle('');
+                            setNewTaskDescription('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
-            {showAddTask && (
-              <div className="mb-4 p-3 border border-border rounded-lg bg-bg-tertiary">
-                <input
-                  type="text"
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="Task title..."
-                  className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleAddTask();
-                    }
-                  }}
-                />
-                <textarea
-                  value={newTaskDescription}
-                  onChange={(e) => setNewTaskDescription(e.target.value)}
-                  placeholder="Description (optional)..."
-                  className="w-full p-2 text-sm bg-bg-primary border border-border rounded mb-2 resize-none h-16 focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleAddTask}
-                    disabled={addingTask || !newTaskTitle.trim()}
-                  >
-                    {addingTask ? 'Adding...' : 'Add'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowAddTask(false);
-                      setNewTaskTitle('');
-                      setNewTaskDescription('');
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                  {outcome.tasks.length === 0 && !showAddTask ? (
+                    <div className="text-center py-4">
+                      <p className="text-text-tertiary text-sm">No tasks yet</p>
+                    </div>
+                  ) : outcome.tasks.length > 0 && (
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {outcome.tasks.map((task, index) => (
+                        <ExpandableTaskCard
+                          key={task.id}
+                          task={task}
+                          onUpdate={(updatedTask) => {
+                            setOutcome(prev => prev ? {
+                              ...prev,
+                              tasks: prev.tasks.map(t =>
+                                t.id === updatedTask.id ? updatedTask : t
+                              ),
+                            } : null);
+                          }}
+                          onDelete={handleDeleteTask}
+                          onMoveUp={(taskId) => handleMoveTask(taskId, 'up')}
+                          onMoveDown={(taskId) => handleMoveTask(taskId, 'down')}
+                          isFirst={index === 0}
+                          isLast={index === outcome.tasks.length - 1}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </CollapsibleSection>
+
+                {/* Git & Commit Settings */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-git`}
+                  title="Git & Commit Settings"
+                  defaultExpanded={false}
+                >
+                  <div className="space-y-4">
+                    <GitConfigSection
+                      outcomeId={outcomeId}
+                      outcomeName={outcome.name}
+                      config={{
+                        working_directory: outcome.working_directory,
+                        git_mode: outcome.git_mode,
+                        base_branch: outcome.base_branch,
+                        work_branch: outcome.work_branch,
+                        auto_commit: outcome.auto_commit,
+                        create_pr_on_complete: outcome.create_pr_on_complete,
+                      }}
+                      onUpdate={fetchOutcome}
+                    />
+                    <div className="border-t border-border pt-4">
+                      <CommitSettingsSection
+                        outcomeId={outcomeId}
+                        config={{
+                          output_target: outcome.output_target,
+                          skill_target: outcome.skill_target,
+                          tool_target: outcome.tool_target,
+                          file_target: outcome.file_target,
+                          auto_save: outcome.auto_save,
+                          repository_id: outcome.repository_id ?? null,
+                          parent_id: outcome.parent_id ?? null,
+                        }}
+                        onUpdate={fetchOutcome}
+                      />
+                    </div>
+                  </div>
+                </CollapsibleSection>
+
+                {/* Skills */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-skills`}
+                  title="Skills"
+                  defaultExpanded={false}
+                >
+                  <SkillsSection outcomeId={outcomeId} />
+                </CollapsibleSection>
+
+                {/* Tools */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-tools`}
+                  title="Tools"
+                  defaultExpanded={false}
+                >
+                  <ToolsSection outcomeId={outcomeId} />
+                </CollapsibleSection>
+
+                {/* Documents */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-documents`}
+                  title="Documents"
+                  defaultExpanded={false}
+                >
+                  <DocumentsSection outcomeId={outcomeId} />
+                </CollapsibleSection>
               </div>
-            )}
-
-            {outcome.tasks.length === 0 && !showAddTask ? (
-              <div className="text-center py-4">
-                <p className="text-text-tertiary text-sm">No tasks yet</p>
-              </div>
-            ) : outcome.tasks.length > 0 && (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {outcome.tasks.map((task, index) => (
-                  <ExpandableTaskCard
-                    key={task.id}
-                    task={task}
-                    onUpdate={(updatedTask) => {
-                      setOutcome(prev => prev ? {
-                        ...prev,
-                        tasks: prev.tasks.map(t =>
-                          t.id === updatedTask.id ? updatedTask : t
-                        ),
-                      } : null);
-                    }}
-                    onDelete={handleDeleteTask}
-                    onMoveUp={(taskId) => handleMoveTask(taskId, 'up')}
-                    onMoveDown={(taskId) => handleMoveTask(taskId, 'down')}
-                    isFirst={index === 0}
-                    isLast={index === outcome.tasks.length - 1}
-                  />
-                ))}
-              </div>
-            )}
-          </CollapsibleSection>
-
-          {/* Git & Commit Settings */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-git`}
-            title="Git & Commit Settings"
-            defaultExpanded={false}
-          >
-            <div className="space-y-4">
-              <GitConfigSection
+            ) : (
+              /* HOMЯ Tab */
+              <HomrDashboard
                 outcomeId={outcomeId}
-                outcomeName={outcome.name}
-                config={{
-                  working_directory: outcome.working_directory,
-                  git_mode: outcome.git_mode,
-                  base_branch: outcome.base_branch,
-                  work_branch: outcome.work_branch,
-                  auto_commit: outcome.auto_commit,
-                  create_pr_on_complete: outcome.create_pr_on_complete,
-                }}
-                onUpdate={fetchOutcome}
+                pendingEscalations={pendingEscalations}
+                workerSummary={workerSummary}
+                onAnswer={handleHomrAnswer}
+                onDismiss={handleHomrDismiss}
+                onActivityClick={() => setShowHomrActivityLog(true)}
               />
-              <div className="border-t border-border pt-4">
-                <CommitSettingsSection
-                  outcomeId={outcomeId}
-                  config={{
-                    output_target: outcome.output_target,
-                    skill_target: outcome.skill_target,
-                    tool_target: outcome.tool_target,
-                    file_target: outcome.file_target,
-                    auto_save: outcome.auto_save,
-                    repository_id: outcome.repository_id ?? null,
-                    parent_id: outcome.parent_id ?? null,
-                  }}
-                  onUpdate={fetchOutcome}
-                />
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          {/* Skills */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-skills`}
-            title="Skills"
-            defaultExpanded={false}
-          >
-            <SkillsSection outcomeId={outcomeId} />
-          </CollapsibleSection>
-
-          {/* Tools */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-tools`}
-            title="Tools"
-            defaultExpanded={false}
-          >
-            <ToolsSection outcomeId={outcomeId} />
-          </CollapsibleSection>
-
-          {/* Documents */}
-          <CollapsibleSection
-            id={`outcome-${outcomeId}-documents`}
-            title="Documents"
-            defaultExpanded={false}
-          >
-            <DocumentsSection outcomeId={outcomeId} />
-          </CollapsibleSection>
+            )}
+          </div>
         </div>
 
-        {/* Right Panel - Control Tower (60%) */}
+        {/* Right Panel (60%) - Control Tower */}
         <div className="w-3/5 space-y-4">
-          {/* HOMЯ Escalation Alerts - Always at top */}
-          {pendingEscalations.length > 0 && (
-            <div className="space-y-4">
-              {pendingEscalations.map((escalation) => (
-                <EscalationAlert
-                  key={escalation.id}
-                  escalation={escalation}
-                  onAnswer={handleHomrAnswer}
-                  onDismiss={handleHomrDismiss}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Workers Section */}
-          {!isParent && (
-            <Card padding="md">
-              <CardHeader>
-                <CardTitle>Workers</CardTitle>
-                {canStartWorker && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={needsCapabilities ? handleStartOrchestrated : handleStartWorker}
-                    disabled={actionLoading}
-                  >
-                    {needsCapabilities ? 'Build & Run' : 'Start Worker'}
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent>
-                {outcome.workers.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-text-tertiary text-sm mb-2">No workers started yet</p>
-                    {isDraft && hasPendingTasks && (
-                      <p className="text-text-tertiary text-xs">
-                        Click "Start Worker" to begin execution
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-48 overflow-y-auto">
-                    {[...outcome.workers]
-                      .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
-                      .map((worker) => {
-                        const workerStatus = workerStatusConfig[worker.status];
-                        return (
-                          <div
-                            key={worker.id}
-                            className="p-3 rounded bg-bg-secondary cursor-pointer hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border"
-                            onClick={() => router.push(`/worker/${worker.id}`)}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-text-primary text-sm">{worker.name}</span>
-                              <Badge variant={workerStatus.variant}>{workerStatus.label}</Badge>
-                            </div>
-                            <div className="text-xs text-text-tertiary">
-                              Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-
-                {/* Intervention Form when worker is running */}
-                {hasRunningWorker && (
-                  <div className="mt-4 pt-4 border-t border-border">
-                    <InterventionForm
-                      outcomeId={outcomeId}
-                      workerId={outcome.workers.find(w => w.status === 'running')?.id}
-                      onSuccess={fetchOutcome}
-                      compact
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Progress Section */}
+          {/* Progress Section - First */}
           {(!isParent || outcome.tasks.length > 0) && (
             <Card padding="md">
               <CardHeader>
@@ -1112,93 +1165,115 @@ export default function OutcomeDetailPage(): JSX.Element {
             </Card>
           )}
 
-          {/* Unified Chat */}
-          <OutcomeChat
-            outcomeId={outcomeId}
-            outcomeName={outcome.name}
-            hasRunningWorker={hasRunningWorker}
-            hasEverHadWorker={hasEverHadWorker}
-            onSuccess={fetchOutcome}
-            initialInput={refinementInput}
-            onInitialInputConsumed={handleRefinementConsumed}
-          />
-
-          {/* Capability phase status indicator */}
-          {capabilityInProgress && (
-            <div className="flex items-center gap-2 text-xs text-status-info p-3 bg-status-info/10 rounded-lg">
-              <div className="animate-spin h-3 w-3 border-2 border-status-info border-t-transparent rounded-full" />
-              <span>Building capabilities (skills/tools)...</span>
-            </div>
-          )}
-
-          {/* Outputs Section */}
-          <OutputsSection outcomeId={outcomeId} />
-
-          {/* Worker Progress (Episodic Memory) */}
-          {!isDraft && hasEverHadWorker && (
+          {/* Workers Section - Second, with tabs */}
+          {!isParent && (
             <Card padding="md">
               <CardHeader>
-                <CardTitle>Worker Progress</CardTitle>
+                <div className="flex items-center gap-4">
+                  <CardTitle>Workers</CardTitle>
+                  {/* Worker tabs */}
+                  <div className="flex bg-bg-secondary rounded-lg p-1">
+                    <button
+                      onClick={() => setWorkersTab('live')}
+                      className={`px-3 py-1 text-xs rounded ${
+                        workersTab === 'live'
+                          ? 'bg-bg-primary text-text-primary shadow-sm'
+                          : 'text-text-tertiary hover:text-text-secondary'
+                      }`}
+                    >
+                      Live
+                    </button>
+                    <button
+                      onClick={() => setWorkersTab('history')}
+                      className={`px-3 py-1 text-xs rounded ${
+                        workersTab === 'history'
+                          ? 'bg-bg-primary text-text-primary shadow-sm'
+                          : 'text-text-tertiary hover:text-text-secondary'
+                      }`}
+                    >
+                      History
+                    </button>
+                  </div>
+                </div>
+                {canStartWorker && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={needsCapabilities ? handleStartOrchestrated : handleStartWorker}
+                    disabled={actionLoading}
+                  >
+                    {needsCapabilities ? 'Build & Run' : 'Start Worker'}
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
-                <ProgressView outcomeId={outcomeId} />
+                {workersTab === 'live' ? (
+                  /* Live Workers */
+                  <>
+                    {outcome.workers.length === 0 ? (
+                      <div className="text-center py-4">
+                        <p className="text-text-tertiary text-sm mb-2">No workers started yet</p>
+                        {isDraft && hasPendingTasks && (
+                          <p className="text-text-tertiary text-xs">
+                            Click "Start Worker" to begin execution
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-48 overflow-y-auto">
+                        {[...outcome.workers]
+                          .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
+                          .map((worker) => {
+                            const workerStatus = workerStatusConfig[worker.status];
+                            return (
+                              <div
+                                key={worker.id}
+                                className="p-3 rounded bg-bg-secondary cursor-pointer hover:bg-bg-tertiary transition-colors border border-transparent hover:border-border"
+                                onClick={() => router.push(`/worker/${worker.id}`)}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-text-primary text-sm">{worker.name}</span>
+                                  <Badge variant={workerStatus.variant}>{workerStatus.label}</Badge>
+                                </div>
+                                <div className="text-xs text-text-tertiary">
+                                  Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+
+                    {/* Intervention Form when worker is running */}
+                    {hasRunningWorker && (
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <InterventionForm
+                          outcomeId={outcomeId}
+                          workerId={outcome.workers.find(w => w.status === 'running')?.id}
+                          onSuccess={fetchOutcome}
+                          compact
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* Worker History / Progress View */
+                  <div className="max-h-96 overflow-y-auto">
+                    {hasEverHadWorker ? (
+                      <ProgressView outcomeId={outcomeId} />
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-text-tertiary text-sm">No worker history yet</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
 
-          {/* HOMЯ Protocol Status */}
-          <HomrStatusCard
-            outcomeId={outcomeId}
-            onEscalationClick={() => {/* Escalations are at top */}}
-            onActivityClick={() => setShowHomrActivityLog(true)}
-          />
-
-          {/* HOMЯ Activity Log Drawer */}
-          <ActivityLogDrawer
-            outcomeId={outcomeId}
-            isOpen={showHomrActivityLog}
-            onClose={() => setShowHomrActivityLog(false)}
-          />
-
-          {/* Quick Actions */}
-          <Card padding="md">
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowCreateChildModal(true)}
-                >
-                  Manage Hierarchy
-                </Button>
-
-                {!isParent && hasEverHadWorker && (
-                  <Button variant="secondary" size="sm" onClick={handleRunReview} disabled={actionLoading}>
-                    Run Review
-                  </Button>
-                )}
-
-                {outcome.status === 'active' && hasEverHadWorker && (
-                  <Button variant="ghost" size="sm" onClick={() => handleStatusChange('dormant')} disabled={actionLoading}>
-                    Pause Outcome
-                  </Button>
-                )}
-
-                {outcome.status === 'dormant' && (
-                  <Button variant="ghost" size="sm" onClick={() => handleStatusChange('active')} disabled={actionLoading}>
-                    Resume Outcome
-                  </Button>
-                )}
-
-                <Button variant="ghost" size="sm" onClick={() => router.push('/')}>
-                  Dashboard
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Outputs Section */}
+          <OutputsSection outcomeId={outcomeId} />
 
           {/* Timeline */}
           {outcome.timeline && (
@@ -1213,6 +1288,13 @@ export default function OutcomeDetailPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      {/* HOMЯ Activity Log Drawer */}
+      <ActivityLogDrawer
+        outcomeId={outcomeId}
+        isOpen={showHomrActivityLog}
+        onClose={() => setShowHomrActivityLog(false)}
+      />
     </main>
   );
 }

@@ -1128,11 +1128,10 @@ export default function OutcomeDetailPage(): JSX.Element {
                   )}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {/* Sort by most recent first, show max 3 */}
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {/* Sort by most recent first */}
                   {[...outcome.workers]
                     .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
-                    .slice(0, 3)
                     .map((worker) => {
                       const workerStatus = workerStatusConfig[worker.status];
                       return (
@@ -1151,11 +1150,6 @@ export default function OutcomeDetailPage(): JSX.Element {
                         </div>
                       );
                     })}
-                  {outcome.workers.length > 3 && (
-                    <p className="text-xs text-text-tertiary text-center pt-1">
-                      + {outcome.workers.length - 3} more worker{outcome.workers.length - 3 > 1 ? 's' : ''}
-                    </p>
-                  )}
                 </div>
               )}
             </CardContent>

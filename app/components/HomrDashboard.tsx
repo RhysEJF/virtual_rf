@@ -120,54 +120,42 @@ export function HomrDashboard({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Health Dashboard */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-medium text-text-primary">Outcome Health</h3>
+      {/* Compact Health Dashboard */}
+      <div className="px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-text-primary">Outcome Health</h3>
           <Badge variant={stats?.enabled ? 'success' : 'default'}>
             {stats?.enabled ? 'HOMЯ Active' : 'HOMЯ Off'}
           </Badge>
         </div>
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {/* Workers */}
-          <div className="p-3 bg-bg-secondary rounded-lg">
-            <div className="text-2xl font-bold text-text-primary">
-              {workerSummary.running}
-              <span className="text-sm font-normal text-text-tertiary">/{workerSummary.total}</span>
-            </div>
-            <div className="text-xs text-text-tertiary">Workers Running</div>
+        {/* Compact Metrics Row */}
+        <div className="flex gap-4 mb-2">
+          <div className="flex items-baseline gap-1">
+            <span className="text-lg font-bold text-text-primary">{workerSummary.running}</span>
+            <span className="text-xs text-text-tertiary">/{workerSummary.total} workers</span>
           </div>
-
-          {/* Cost */}
-          <div className="p-3 bg-bg-secondary rounded-lg">
-            <div className="text-2xl font-bold text-text-primary">
-              ${workerSummary.totalCost.toFixed(2)}
-            </div>
-            <div className="text-xs text-text-tertiary">Total Cost</div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-lg font-bold text-text-primary">${workerSummary.totalCost.toFixed(2)}</span>
+            <span className="text-xs text-text-tertiary">cost</span>
           </div>
-
-          {/* Escalations */}
-          <div className="p-3 bg-bg-secondary rounded-lg">
-            <div className={`text-2xl font-bold ${pendingEscalations.length > 0 ? 'text-status-warning' : 'text-text-primary'}`}>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-lg font-bold ${pendingEscalations.length > 0 ? 'text-status-warning' : 'text-text-primary'}`}>
               {pendingEscalations.length}
-            </div>
-            <div className="text-xs text-text-tertiary">Pending Decisions</div>
+            </span>
+            <span className="text-xs text-text-tertiary">pending</span>
           </div>
-
-          {/* Issues */}
-          <div className="p-3 bg-bg-secondary rounded-lg">
-            <div className={`text-2xl font-bold ${workerSummary.failed > 0 ? 'text-status-error' : 'text-text-primary'}`}>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-lg font-bold ${workerSummary.failed > 0 ? 'text-status-error' : 'text-text-primary'}`}>
               {workerSummary.failed}
-            </div>
-            <div className="text-xs text-text-tertiary">Failed Tasks</div>
+            </span>
+            <span className="text-xs text-text-tertiary">failed</span>
           </div>
         </div>
 
         {/* HOMЯ Stats Row */}
         {stats && (
-          <div className="flex gap-4 text-xs text-text-tertiary">
+          <div className="flex gap-3 text-xs text-text-tertiary">
             <span>{stats.stats.tasksObserved} observed</span>
             <span>{stats.stats.discoveriesExtracted} discoveries</span>
             <span>{stats.stats.steeringActions} steered</span>

@@ -213,6 +213,16 @@ function runMigrations(database: Database.Database): void {
     }
   }
 
+  // Add depends_on column for task dependency graph
+  const tasksDependsCols = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const hasDependsOn = tasksDependsCols.some(c => c.name === 'depends_on');
+  if (!hasDependsOn) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]'`);
+    database.exec(`UPDATE tasks SET depends_on = '[]' WHERE depends_on IS NULL`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_depends ON tasks(depends_on)`);
+    console.log(`[DB Migration] Added depends_on column to tasks for dependency graph`);
+  }
+
   // HOMЯ Protocol tables are created via SCHEMA_SQL
   // Just log that they're available
   const homrTables = database.prepare(`

@@ -6,9 +6,7 @@ import { CommandBar, type RequestMode } from './components/CommandBar';
 import { SystemStatus } from './components/SystemStatus';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ActivityFeed } from './components/ActivityFeed';
-import { SupervisorAlerts } from './components/SupervisorAlerts';
-import { ImprovementSuggestions } from './components/ImprovementSuggestions';
-import { EscalationInsights } from './components/EscalationInsights';
+import { MultiOutcomeHomrDashboard } from './components/MultiOutcomeHomrDashboard';
 import { OutcomeCard, type OutcomeWithCounts } from './components/OutcomeCard';
 import { OutcomeTreeView, type OutcomeTreeNode } from './components/OutcomeTreeView';
 import { Card, CardContent } from './components/ui/Card';
@@ -292,11 +290,11 @@ export default function Dashboard(): JSX.Element {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/insights')}
+            onClick={() => router.push('/supervisor')}
             className="text-text-tertiary hover:text-text-secondary transition-colors text-sm"
-            title="Escalation Insights"
+            title="Supervisor Dashboard"
           >
-            Insights
+            Supervisor
           </button>
           <button
             onClick={() => router.push('/resources')}
@@ -532,19 +530,10 @@ export default function Dashboard(): JSX.Element {
           )}
         </div>
 
-        {/* Right Column: Supervisor & Activity Feed */}
+        {/* Right Column: HOMЯ & Activity Feed */}
         <div className="space-y-6">
-          {/* Supervisor Alerts */}
-          <SupervisorAlerts
-            onWorkerClick={(workerId) => router.push(`/worker/${workerId}`)}
-            onOutcomeClick={(outcomeId) => router.push(`/outcome/${outcomeId}`)}
-          />
-
-          {/* Improvement Suggestions */}
-          <ImprovementSuggestions />
-
-          {/* Escalation Insights */}
-          <EscalationInsights />
+          {/* Multi-Outcome HOMЯ Dashboard */}
+          <MultiOutcomeHomrDashboard />
 
           {/* Activity Feed */}
           <div className="space-y-4">

@@ -150,6 +150,18 @@ function runMigrations(database: Database.Database): void {
     console.log('[DB Migration] Added pid column to workers');
   }
 
+  // Add branch_name and worktree_path columns to workers for git branch tracking
+  const hasBranchName = workersColumns.some(col => col.name === 'branch_name');
+  if (!hasBranchName) {
+    database.exec(`ALTER TABLE workers ADD COLUMN branch_name TEXT`);
+    console.log('[DB Migration] Added branch_name column to workers');
+  }
+  const hasWorktreePath = workersColumns.some(col => col.name === 'worktree_path');
+  if (!hasWorktreePath) {
+    database.exec(`ALTER TABLE workers ADD COLUMN worktree_path TEXT`);
+    console.log('[DB Migration] Added worktree_path column to workers');
+  }
+
   // Add supervisor settings columns to outcomes
   const supervisorColumns = [
     { name: 'supervisor_enabled', sql: 'ALTER TABLE outcomes ADD COLUMN supervisor_enabled INTEGER NOT NULL DEFAULT 1' },

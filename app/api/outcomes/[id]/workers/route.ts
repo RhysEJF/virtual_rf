@@ -147,8 +147,10 @@ export async function POST(
     );
   } catch (error) {
     console.error('Error starting worker:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
-      { error: 'Failed to start worker' },
+      { error: 'Failed to start worker', details: errorMessage, stack: errorStack },
       { status: 500 }
     );
   }

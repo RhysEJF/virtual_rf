@@ -523,6 +523,18 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
         }
       }
 
+      // Check capability dependencies (skills/tools files) if present
+      if (candidate.required_capabilities) {
+        const capDeps = checkTaskCapabilityDependencies(candidate.id, outcomeId);
+        if (!capDeps.satisfied) {
+          // Log which capabilities are missing for debugging
+          console.log(
+            `[claimNextTask] Skipping task ${candidate.id} - missing capabilities: ${capDeps.missing.join(', ')}`
+          );
+          continue;
+        }
+      }
+
       // All dependencies satisfied
       task = candidate;
       break;

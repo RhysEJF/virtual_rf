@@ -455,13 +455,48 @@ export function claimTask(taskId: string, workerId: string): ClaimResult {
   }
 }
 
+export interface ClaimNextTaskOptions {
+  /** Filter by task phase (capability or execution) */
+  phase?: TaskPhase;
+  /**
+   * Enable dynamic capability task creation when tasks are blocked by missing capabilities.
+   * When true (default), if no task can be claimed due to missing capabilities,
+   * the system will automatically create capability-phase tasks to build those
+   * missing capabilities.
+   * When false, blocked tasks are simply skipped without creating new tasks.
+   */
+  enableDynamicCapabilityCreation?: boolean;
+}
+
 /**
  * Atomically claim the next available task for a worker.
  * Finds the highest priority pending task and claims it.
  * Optionally filter by phase for orchestrated execution.
  * Skips tasks with unsatisfied skill dependencies.
+ *
+ * @param outcomeId - The outcome to claim a task from
+ * @param workerId - The worker claiming the task
+ * @param phaseOrOptions - Either a TaskPhase string (deprecated) or ClaimNextTaskOptions object
  */
-export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskPhase): ClaimResult {
+export function claimNextTask(
+  outcomeId: string,
+  workerId: string,
+  phaseOrOptions?: TaskPhase | ClaimNextTaskOptions
+): ClaimResult {
+  // Parse options - support both legacy phase parameter and new options object
+  let phase: TaskPhase | undefined;
+  let enableDynamicCapabilityCreation = true; // Default to enabled for backwards compatibility
+
+  if (typeof phaseOrOptions === 'string') {
+    // Legacy: phase parameter passed directly
+    phase = phaseOrOptions;
+  } else if (phaseOrOptions && typeof phaseOrOptions === 'object') {
+    // New: options object
+    phase = phaseOrOptions.phase;
+    if (phaseOrOptions.enableDynamicCapabilityCreation !== undefined) {
+      enableDynamicCapabilityCreation = phaseOrOptions.enableDynamicCapabilityCreation;
+    }
+  }
   const db = getDb();
   const timestamp = now();
 
@@ -552,8 +587,9 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
       // No task could be claimed - rollback the IMMEDIATE transaction first
       db.exec('ROLLBACK');
 
-      // Now, OUTSIDE the transaction, create capability tasks for missing capabilities
-      if (missingCapabilitiesSet.size > 0) {
+      // Now, OUTSIDE the transaction, optionally create capability tasks for missing capabilities
+      // This behavior is controlled by the enableDynamicCapabilityCreation flag
+      if (enableDynamicCapabilityCreation && missingCapabilitiesSet.size > 0) {
         const createdTasks: Task[] = [];
 
         for (const capabilityString of Array.from(missingCapabilitiesSet)) {
@@ -581,6 +617,11 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
           );
           touchOutcome(outcomeId);
         }
+      } else if (!enableDynamicCapabilityCreation && missingCapabilitiesSet.size > 0) {
+        // Log that we're skipping dynamic capability creation (disabled by flag)
+        console.log(
+          `[claimNextTask] Skipping dynamic capability creation (disabled) - ${missingCapabilitiesSet.size} missing capabilities`
+        );
       }
 
       return {

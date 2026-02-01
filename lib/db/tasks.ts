@@ -1094,6 +1094,81 @@ export function getTasksWithMissingCapabilities(
 // ============================================================================
 
 /**
+ * Create a single dynamic capability task from a capability string.
+ *
+ * This is a simplified version of createCapabilityTasks() from capability-planner.ts
+ * that creates a single task without requiring the full CapabilityPlan structure.
+ * Used when a missing capability is detected during task claiming.
+ *
+ * @param outcomeId - The outcome ID to create the task for
+ * @param capabilityString - Capability in format 'type:name' (e.g., 'skill:market-research', 'tool:web-scraper')
+ * @returns The created Task, or null if the capability string format is invalid
+ */
+export function createDynamicCapabilityTask(
+  outcomeId: string,
+  capabilityString: string
+): Task | null {
+  // Parse capability string format 'type:name'
+  const colonIndex = capabilityString.indexOf(':');
+  if (colonIndex === -1) {
+    console.log(`[createDynamicCapabilityTask] Invalid capability format: ${capabilityString}`);
+    return null;
+  }
+
+  const capabilityType = capabilityString.substring(0, colonIndex) as CapabilityType;
+  const capabilityName = capabilityString.substring(colonIndex + 1);
+
+  if (!capabilityType || !capabilityName) {
+    console.log(`[createDynamicCapabilityTask] Empty type or name in: ${capabilityString}`);
+    return null;
+  }
+
+  // Validate capability type
+  if (capabilityType !== 'skill' && capabilityType !== 'tool') {
+    console.log(`[createDynamicCapabilityTask] Unknown capability type: ${capabilityType}`);
+    return null;
+  }
+
+  // Determine output path based on type
+  // Skills: skills/{name}.md
+  // Tools: tools/{name}.ts
+  const outputPath = capabilityType === 'skill'
+    ? `skills/${capabilityName}.md`
+    : `tools/${capabilityName}.ts`;
+
+  // Format name for display (convert kebab-case to Title Case)
+  const formattedName = capabilityName
+    .replace(/-/g, ' ')
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+
+  // Create the capability task
+  // Use low priority (1-10 range) so capability tasks run before execution tasks
+  const task = createTask({
+    outcome_id: outcomeId,
+    title: `[Capability] Build ${capabilityType}: ${capabilityName}`,
+    description: `Build ${capabilityType}: ${formattedName}\n\nOutput path: ${outputPath}\n\nThis capability was dynamically detected as a dependency and needs to be built before dependent tasks can proceed.`,
+    prd_context: JSON.stringify({
+      type: 'capability',
+      capability_type: capabilityType,
+      capability_name: capabilityName,
+      capability: capabilityString,
+      path: outputPath,
+      dynamic: true,  // Flag to indicate this was dynamically created
+    }),
+    priority: 5,  // Low priority number = high execution priority (runs first)
+    phase: 'capability',
+    capability_type: capabilityType,
+  });
+
+  console.log(`[createDynamicCapabilityTask] Created capability task ${task.id} for ${capabilityString}`);
+
+  return task;
+}
+
+/**
  * Check if a pending or in-progress capability task already exists for a specific capability.
  *
  * Looks for tasks that match by either:

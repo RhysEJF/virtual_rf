@@ -38,6 +38,10 @@ interface InsightsResponse {
     answered: number;
     dismissed: number;
   };
+  by_incorporation: {
+    new: number;         // Not yet incorporated into an improvement outcome
+    incorporated: number; // Already addressed by an improvement outcome
+  };
   avg_resolution_time_ms: number | null;
   time_range: {
     from: number | null;
@@ -97,8 +101,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     dismissed: 0,
   };
 
+  // Calculate incorporation counts
+  const incorporationCounts = {
+    new: 0,
+    incorporated: 0,
+  };
+
   for (const esc of escalations) {
     statusCounts[esc.status as keyof typeof statusCounts]++;
+
+    // Check if incorporated into an improvement outcome
+    if (esc.incorporated_into_outcome_id) {
+      incorporationCounts.incorporated++;
+    } else {
+      incorporationCounts.new++;
+    }
   }
 
   // Aggregate by trigger_type
@@ -177,6 +194,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     total_escalations: escalations.length,
     by_trigger_type: byTriggerType,
     by_status: statusCounts,
+    by_incorporation: incorporationCounts,
     avg_resolution_time_ms: overallAvgResolutionTime,
     time_range: {
       from: fromTimestamp,

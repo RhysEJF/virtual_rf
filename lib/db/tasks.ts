@@ -32,6 +32,9 @@ export interface CreateTaskInput {
   task_approach?: string;
   // Task dependencies
   depends_on?: string[];
+  // Complexity estimation
+  complexity_score?: number;
+  estimated_turns?: number;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -50,9 +53,10 @@ export function createTask(input: CreateTaskInput): Task {
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
-      task_intent, task_approach, depends_on, created_at, updated_at
+      task_intent, task_approach, depends_on, complexity_score, estimated_turns,
+      created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -71,6 +75,8 @@ export function createTask(input: CreateTaskInput): Task {
     input.task_intent || null,
     input.task_approach || null,
     dependsOnJson,
+    input.complexity_score ?? null,
+    input.estimated_turns ?? null,
     timestamp,
     timestamp
   );
@@ -704,6 +710,9 @@ export interface UpdateTaskInput {
   required_skills?: string | null;
   // Task dependencies (JSON array of task IDs or array)
   depends_on?: string[] | string | null;
+  // Complexity estimation
+  complexity_score?: number | null;
+  estimated_turns?: number | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -763,6 +772,14 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
     } else {
       values.push(input.depends_on);
     }
+  }
+  if (input.complexity_score !== undefined) {
+    updates.push('complexity_score = ?');
+    values.push(input.complexity_score);
+  }
+  if (input.estimated_turns !== undefined) {
+    updates.push('estimated_turns = ?');
+    values.push(input.estimated_turns);
   }
 
   values.push(id);

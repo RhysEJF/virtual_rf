@@ -469,6 +469,8 @@ export interface HomrEscalation {
   answer_option: string | null;
   answer_context: string | null;
   answered_at: number | null;
+  incorporated_into_outcome_id: string | null;  // Improvement outcome that addressed this escalation
+  incorporated_at: number | null;               // When it was incorporated
 }
 
 // HOMЯ Activity Log Entry (database entity)

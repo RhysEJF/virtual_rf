@@ -174,34 +174,37 @@ export function EscalationInsights({ outcomeId, onEscalationClick, defaultView =
 
   const maxCount = data.by_trigger_type.length > 0 ? data.by_trigger_type[0].count : 1;
 
+  // Render view mode toggle (shared between views)
+  const renderViewToggle = (): JSX.Element => (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => setViewMode('leaderboard')}
+        className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+          viewMode === 'leaderboard'
+            ? 'bg-accent-primary text-white'
+            : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+        }`}
+      >
+        Leaderboard
+      </button>
+      <button
+        onClick={() => setViewMode('trends')}
+        className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+          viewMode === 'trends'
+            ? 'bg-accent-primary text-white'
+            : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+        }`}
+      >
+        Trends
+      </button>
+    </div>
+  );
+
   // If viewing trends, render the trends component
   if (viewMode === 'trends') {
     return (
       <div className="space-y-4">
-        {/* View mode toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('leaderboard')}
-            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-              viewMode === 'leaderboard'
-                ? 'bg-accent-primary text-white'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
-            }`}
-          >
-            Leaderboard
-          </button>
-          <button
-            onClick={() => setViewMode('trends')}
-            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-              viewMode === 'trends'
-                ? 'bg-accent-primary text-white'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
-            }`}
-          >
-            Trends
-          </button>
-        </div>
-
+        {renderViewToggle()}
         <EscalationTrends outcomeId={outcomeId} />
       </div>
     );
@@ -209,29 +212,7 @@ export function EscalationInsights({ outcomeId, onEscalationClick, defaultView =
 
   return (
     <div className="space-y-4">
-      {/* View mode toggle */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setViewMode('leaderboard')}
-          className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-            viewMode === 'leaderboard'
-              ? 'bg-accent-primary text-white'
-              : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
-          }`}
-        >
-          Leaderboard
-        </button>
-        <button
-          onClick={() => setViewMode('trends')}
-          className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-            viewMode === 'trends'
-              ? 'bg-accent-primary text-white'
-              : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
-          }`}
-        >
-          Trends
-        </button>
-      </div>
+      {renderViewToggle()}
 
     <Card padding="md">
       <CardHeader>

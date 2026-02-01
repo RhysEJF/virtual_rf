@@ -84,7 +84,7 @@ export async function GET(
         id: task.id,
         title: task.title,
         description: task.description,
-        status: task.status,
+        status: task.status as string,
       };
     })
     .filter((t): t is TaskSummary => t !== null);

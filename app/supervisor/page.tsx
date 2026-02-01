@@ -14,8 +14,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Badge } from '@/app/components/ui/Badge';
+import { Button } from '@/app/components/ui/Button';
 import { EscalationDetailModal } from '@/app/components/EscalationDetailModal';
 import { EscalationTrends } from '@/app/components/EscalationTrends';
+import { ImprovementPreviewModal } from '@/app/components/ImprovementPreviewModal';
 
 interface RecentEscalation {
   id: string;
@@ -42,6 +44,10 @@ interface InsightsData {
     pending: number;
     answered: number;
     dismissed: number;
+  };
+  by_incorporation?: {
+    new: number;
+    incorporated: number;
   };
   avg_resolution_time_ms: number | null;
 }
@@ -91,6 +97,7 @@ export default function SupervisorPage(): JSX.Element {
   const [expandedType, setExpandedType] = useState<string | null>(null);
   const [selectedEscalationId, setSelectedEscalationId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>('overview');
+  const [showImprovementModal, setShowImprovementModal] = useState(false);
 
   const fetchInsights = useCallback(async () => {
     try {
@@ -220,7 +227,25 @@ export default function SupervisorPage(): JSX.Element {
               Monitor escalations, trends, and system health to reduce worker babysitting
             </p>
           </div>
-          <Badge variant="default">{data.total_escalations} total escalations</Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="default">{data.total_escalations} total</Badge>
+            {data.by_incorporation && data.by_incorporation.new > 0 && (
+              <Badge variant="warning" title="Escalations not yet addressed by improvement outcomes">
+                {data.by_incorporation.new} unaddressed
+              </Badge>
+            )}
+            {data.by_incorporation && data.by_incorporation.incorporated > 0 && (
+              <Badge variant="success" title="Escalations incorporated into improvement outcomes">
+                {data.by_incorporation.incorporated} addressed
+              </Badge>
+            )}
+            <Button
+              variant="primary"
+              onClick={() => setShowImprovementModal(true)}
+            >
+              Analyze &amp; Improve
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -607,6 +632,18 @@ export default function SupervisorPage(): JSX.Element {
         <EscalationDetailModal
           escalationId={selectedEscalationId}
           onClose={() => setSelectedEscalationId(null)}
+        />
+      )}
+
+      {/* Improvement Preview Modal */}
+      {showImprovementModal && (
+        <ImprovementPreviewModal
+          onClose={() => setShowImprovementModal(false)}
+          onSuccess={() => {
+            setShowImprovementModal(false);
+            fetchInsights();
+          }}
+          lookbackDays={30}
         />
       )}
     </main>

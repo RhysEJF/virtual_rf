@@ -32,6 +32,8 @@ import {
   failTask,
   getTaskStats,
   getPendingTasks,
+  releaseTask,
+  updateTask as updateTaskDb,
 } from '../db/tasks';
 import type { Task, Intent, TaskPhase } from '../db/schema';
 import { getOutcomeById } from '../db/outcomes';
@@ -51,6 +53,8 @@ import {
 } from '../agents/skill-dependency-resolver';
 import * as homr from '../homr';
 import * as guard from '../guard';
+import { estimateTaskComplexity, assessTurnLimitRisk, ComplexityEstimate } from '../agents/task-complexity-estimator';
+import { autoDecomposeIfNeeded, DecompositionResult } from '../agents/task-decomposer';
 
 // ============================================================================
 // Types
@@ -62,6 +66,432 @@ export interface RalphConfig {
   maxIterations?: number; // Default 50
   heartbeatIntervalMs?: number; // Default 30000 (30 seconds)
   useWorktree?: boolean; // Use git worktree for isolation (parallel workers)
+  circuitBreakerThreshold?: number; // Default 3 - consecutive failures before auto-pause
+  // Pre-claim complexity check options
+  enableComplexityCheck?: boolean; // Default true - check task complexity before claiming
+  autoDecompose?: boolean; // Default false - auto-decompose high-complexity tasks
+  maxTurns?: number; // Default 20 - worker's max turns per task
+}
+
+// ============================================================================
+// Circuit Breaker Types and State
+// ============================================================================
+
+/**
+ * Failure record for circuit breaker analysis
+ */
+interface FailureRecord {
+  taskId: string;
+  errorType: string; // Categorized error type
+  driftType?: string; // If HOMЯ detected drift
+  timestamp: number;
+}
+
+/**
+ * Circuit breaker state per outcome
+ */
+interface CircuitBreakerState {
+  consecutiveFailures: FailureRecord[];
+  lastSuccessAt: number | null;
+  tripCount: number; // How many times the circuit breaker has tripped
+}
+
+// Track circuit breaker state per outcome
+const circuitBreakerStates = new Map<string, CircuitBreakerState>();
+
+/**
+ * Get or create circuit breaker state for an outcome
+ */
+function getCircuitBreakerState(outcomeId: string): CircuitBreakerState {
+  let state = circuitBreakerStates.get(outcomeId);
+  if (!state) {
+    state = {
+      consecutiveFailures: [],
+      lastSuccessAt: null,
+      tripCount: 0,
+    };
+    circuitBreakerStates.set(outcomeId, state);
+  }
+  return state;
+}
+
+/**
+ * Record a task failure for circuit breaker analysis
+ */
+function recordFailure(outcomeId: string, taskId: string, error: string, driftType?: string): void {
+  const state = getCircuitBreakerState(outcomeId);
+
+  // Categorize the error type
+  const errorType = categorizeError(error);
+
+  state.consecutiveFailures.push({
+    taskId,
+    errorType,
+    driftType,
+    timestamp: Date.now(),
+  });
+
+  // Keep only the last 10 failures for analysis
+  if (state.consecutiveFailures.length > 10) {
+    state.consecutiveFailures.shift();
+  }
+}
+
+/**
+ * Record a task success - resets consecutive failures
+ */
+function recordSuccess(outcomeId: string): void {
+  const state = getCircuitBreakerState(outcomeId);
+  state.consecutiveFailures = [];
+  state.lastSuccessAt = Date.now();
+}
+
+/**
+ * Categorize an error string into a general type
+ */
+function categorizeError(error: string): string {
+  const errorLower = error.toLowerCase();
+
+  if (errorLower.includes('timeout') || errorLower.includes('timed out')) {
+    return 'timeout';
+  }
+  if (errorLower.includes('turn') || errorLower.includes('iteration') || errorLower.includes('max_turns')) {
+    return 'turn_limit_exhausted';
+  }
+  if (errorLower.includes('permission') || errorLower.includes('access denied')) {
+    return 'permission_error';
+  }
+  if (errorLower.includes('syntax') || errorLower.includes('parse error')) {
+    return 'syntax_error';
+  }
+  if (errorLower.includes('not found') || errorLower.includes('missing')) {
+    return 'not_found';
+  }
+  if (errorLower.includes('exit code')) {
+    return 'process_exit_error';
+  }
+  if (errorLower.includes('blocked') || errorLower.includes('guard')) {
+    return 'command_blocked';
+  }
+  return 'unknown';
+}
+
+/**
+ * Check if failures have a similar pattern (same error type or drift type)
+ */
+function hasSimilarPattern(failures: FailureRecord[]): { hasSimilar: boolean; pattern: string } {
+  if (failures.length < 2) {
+    return { hasSimilar: false, pattern: '' };
+  }
+
+  // Check for repeated error types
+  const errorTypes = failures.map(f => f.errorType);
+  const errorCounts = errorTypes.reduce((acc, type) => {
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Find the most common error type
+  const mostCommonError = Object.entries(errorCounts)
+    .sort((a, b) => b[1] - a[1])[0];
+
+  if (mostCommonError && mostCommonError[1] >= 2) {
+    return { hasSimilar: true, pattern: `error:${mostCommonError[0]}` };
+  }
+
+  // Check for repeated drift types
+  const driftTypes = failures.map(f => f.driftType).filter(Boolean) as string[];
+  const driftCounts = driftTypes.reduce((acc, type) => {
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const mostCommonDrift = Object.entries(driftCounts)
+    .sort((a, b) => b[1] - a[1])[0];
+
+  if (mostCommonDrift && mostCommonDrift[1] >= 2) {
+    return { hasSimilar: true, pattern: `drift:${mostCommonDrift[0]}` };
+  }
+
+  return { hasSimilar: false, pattern: '' };
+}
+
+/**
+ * Check if circuit breaker should trip
+ */
+function shouldTripCircuitBreaker(outcomeId: string, threshold: number): {
+  shouldTrip: boolean;
+  reason: string;
+  pattern: string;
+  failureCount: number;
+} {
+  const state = getCircuitBreakerState(outcomeId);
+  const failures = state.consecutiveFailures;
+
+  if (failures.length < threshold) {
+    return { shouldTrip: false, reason: '', pattern: '', failureCount: failures.length };
+  }
+
+  // Get the most recent failures up to threshold
+  const recentFailures = failures.slice(-threshold);
+
+  // Check for similar patterns
+  const { hasSimilar, pattern } = hasSimilarPattern(recentFailures);
+
+  if (hasSimilar) {
+    return {
+      shouldTrip: true,
+      reason: `${threshold} consecutive failures with similar pattern`,
+      pattern,
+      failureCount: failures.length,
+    };
+  }
+
+  // Even without similar patterns, too many consecutive failures should trip
+  if (failures.length >= threshold + 1) {
+    return {
+      shouldTrip: true,
+      reason: `${failures.length} consecutive failures (exceeds threshold of ${threshold})`,
+      pattern: 'mixed_failures',
+      failureCount: failures.length,
+    };
+  }
+
+  return { shouldTrip: false, reason: '', pattern: '', failureCount: failures.length };
+}
+
+/**
+ * Mark the circuit breaker as tripped (increment trip count)
+ */
+function markCircuitBreakerTripped(outcomeId: string): void {
+  const state = getCircuitBreakerState(outcomeId);
+  state.tripCount++;
+}
+
+/**
+ * Reset circuit breaker state for an outcome
+ */
+export function resetCircuitBreaker(outcomeId: string): void {
+  circuitBreakerStates.delete(outcomeId);
+}
+
+/**
+ * Get circuit breaker status for an outcome (for monitoring/debugging)
+ */
+export function getCircuitBreakerStatus(outcomeId: string): {
+  consecutiveFailures: number;
+  lastSuccessAt: number | null;
+  tripCount: number;
+  recentFailures: Array<{ taskId: string; errorType: string; timestamp: number }>;
+} {
+  const state = getCircuitBreakerState(outcomeId);
+  return {
+    consecutiveFailures: state.consecutiveFailures.length,
+    lastSuccessAt: state.lastSuccessAt,
+    tripCount: state.tripCount,
+    recentFailures: state.consecutiveFailures.map(f => ({
+      taskId: f.taskId,
+      errorType: f.errorType,
+      timestamp: f.timestamp,
+    })),
+  };
+}
+
+// ============================================================================
+// Pre-Claim Complexity Check
+// ============================================================================
+
+/**
+ * Configuration for pre-claim complexity check
+ */
+export interface ComplexityCheckConfig {
+  maxTurns: number;                 // Worker's max turns limit (default: 20)
+  autoDecompose: boolean;           // Auto-decompose high-complexity tasks (default: false)
+  escalateOnHighComplexity: boolean; // Create escalation for human decision (default: true)
+  complexityThreshold: number;      // Complexity score threshold (default: 6)
+  turnsWarningRatio: number;        // Warn if estimated > maxTurns * ratio (default: 0.8)
+}
+
+const DEFAULT_COMPLEXITY_CHECK_CONFIG: ComplexityCheckConfig = {
+  maxTurns: 20,
+  autoDecompose: false,
+  escalateOnHighComplexity: true,
+  complexityThreshold: 6,
+  turnsWarningRatio: 0.8,
+};
+
+/**
+ * Result of pre-claim complexity check
+ */
+export interface ComplexityCheckResult {
+  shouldProceed: boolean;
+  estimate: ComplexityEstimate | null;
+  action: 'proceed' | 'decomposed' | 'escalated' | 'skipped';
+  decompositionResult?: DecompositionResult;
+  escalationId?: string;
+  reason: string;
+}
+
+/**
+ * Run pre-claim complexity check on a task before claiming it.
+ * Returns whether the task should proceed or be handled differently.
+ */
+async function runPreClaimComplexityCheck(
+  task: Task,
+  outcomeId: string,
+  intent: Intent | null,
+  config: ComplexityCheckConfig,
+  appendLog: (msg: string) => void
+): Promise<ComplexityCheckResult> {
+  appendLog(`[Complexity] Estimating complexity for task: ${task.title}`);
+
+  try {
+    // Estimate task complexity
+    const estimate = await estimateTaskComplexity(
+      {
+        task,
+        outcomeIntent: intent,
+        priorTaskFailures: task.attempts,
+      },
+      {
+        maxTurns: config.maxTurns,
+        warningRatio: config.turnsWarningRatio,
+        splitThreshold: config.complexityThreshold,
+      }
+    );
+
+    appendLog(`[Complexity] Score: ${estimate.complexity_score}/10, Estimated turns: ${estimate.estimated_turns}`);
+
+    // Assess turn limit risk
+    const riskAssessment = assessTurnLimitRisk(estimate, config.maxTurns);
+    appendLog(`[Complexity] Risk level: ${riskAssessment.riskLevel}`);
+
+    // If task is within limits, proceed normally
+    if (!riskAssessment.atRisk && estimate.complexity_score < config.complexityThreshold) {
+      return {
+        shouldProceed: true,
+        estimate,
+        action: 'proceed',
+        reason: `Task complexity (${estimate.complexity_score}) and estimated turns (${estimate.estimated_turns}) are within acceptable limits`,
+      };
+    }
+
+    // Task exceeds limits - take action
+    appendLog(`[Complexity] Task may exceed turn limit. Risk: ${riskAssessment.message}`);
+
+    // Option 1: Auto-decompose if enabled
+    if (config.autoDecompose) {
+      appendLog(`[Complexity] Auto-decomposing high-complexity task...`);
+
+      const decompositionResult = await autoDecomposeIfNeeded(
+        task,
+        intent,
+        null, // approach
+        {
+          minComplexityToDecompose: config.complexityThreshold,
+          maxTurnsPerSubtask: Math.floor(config.maxTurns / 2), // Each subtask should be half the max
+          maxSubtasks: 6,
+          workerMaxTurns: config.maxTurns,
+        }
+      );
+
+      if (decompositionResult && decompositionResult.success) {
+        appendLog(`[Complexity] Task decomposed into ${decompositionResult.createdTaskIds.length} subtasks`);
+        return {
+          shouldProceed: false,
+          estimate,
+          action: 'decomposed',
+          decompositionResult,
+          reason: `Task was too complex (${estimate.complexity_score}/10, ${estimate.estimated_turns} estimated turns). Decomposed into ${decompositionResult.createdTaskIds.length} subtasks.`,
+        };
+      } else {
+        appendLog(`[Complexity] Auto-decomposition failed: ${decompositionResult?.error || decompositionResult?.reasoning || 'unknown'}`);
+        // Fall through to escalation
+      }
+    }
+
+    // Option 2: Create escalation for human decision
+    if (config.escalateOnHighComplexity) {
+      appendLog(`[Complexity] Creating escalation for human decision...`);
+
+      const ambiguity: homr.HomrAmbiguitySignal = {
+        detected: true,
+        type: 'blocking_decision',
+        description: `Task "${task.title}" has high complexity (${estimate.complexity_score}/10) and is estimated to require ${estimate.estimated_turns} turns, which exceeds the worker's ${config.maxTurns} turn limit.`,
+        evidence: [
+          `Complexity score: ${estimate.complexity_score}/10`,
+          `Estimated turns: ${estimate.estimated_turns}`,
+          `Worker max turns: ${config.maxTurns}`,
+          `Risk level: ${riskAssessment.riskLevel}`,
+          ...estimate.risk_factors.map(f => `Risk factor: ${f}`),
+        ],
+        affectedTasks: [task.id],
+        suggestedQuestion: 'This task is too complex for the current turn limit. How should we proceed?',
+        options: [
+          {
+            id: 'break_into_subtasks',
+            label: 'Break Into Subtasks',
+            description: 'Decompose this task into smaller, more manageable pieces',
+            implications: 'Creates new subtasks that replace this task. Original task will be marked as decomposed.',
+          },
+          {
+            id: 'increase_turn_limit',
+            label: 'Increase Turn Limit',
+            description: 'Double the turn limit and attempt this task as-is',
+            implications: `Worker will have ${config.maxTurns * 2} turns instead of ${config.maxTurns}. Task may still fail if complexity is underestimated.`,
+          },
+          {
+            id: 'proceed_anyway',
+            label: 'Proceed Anyway',
+            description: 'Attempt the task with current limits, accepting the risk of failure',
+            implications: 'Task may hit turn limit and fail, requiring retry or manual intervention.',
+          },
+          {
+            id: 'skip_task',
+            label: 'Skip This Task',
+            description: 'Mark this task as skipped and continue with other work',
+            implications: 'Task will not be attempted. You may need to complete it manually.',
+          },
+        ],
+      };
+
+      try {
+        const escalationId = await homr.createEscalation(outcomeId, ambiguity, task);
+        appendLog(`[Complexity] Escalation created: ${escalationId}`);
+
+        return {
+          shouldProceed: false,
+          estimate,
+          action: 'escalated',
+          escalationId,
+          reason: `Task complexity too high. Created escalation ${escalationId} for human decision.`,
+        };
+      } catch (escalationError) {
+        appendLog(`[Complexity] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'unknown'}`);
+        // Fall through to skip
+      }
+    }
+
+    // If all else fails, skip the task
+    appendLog(`[Complexity] Skipping high-complexity task`);
+    return {
+      shouldProceed: false,
+      estimate,
+      action: 'skipped',
+      reason: `Task complexity too high (${estimate.complexity_score}/10, ${estimate.estimated_turns} estimated turns) and no action could be taken.`,
+    };
+
+  } catch (error) {
+    appendLog(`[Complexity] Estimation failed: ${error instanceof Error ? error.message : 'unknown'}`);
+
+    // On error, proceed with caution (let the task run)
+    return {
+      shouldProceed: true,
+      estimate: null,
+      action: 'proceed',
+      reason: `Complexity estimation failed, proceeding with task. Error: ${error instanceof Error ? error.message : 'unknown'}`,
+    };
+  }
 }
 
 export interface RalphProgress {
@@ -300,7 +730,20 @@ export async function startRalphWorker(
     maxIterations = 50,
     heartbeatIntervalMs = 30000,
     useWorktree = false,
+    circuitBreakerThreshold = 3,
+    enableComplexityCheck = true,
+    autoDecompose = false,
+    maxTurns = 20,
   } = config;
+
+  // Build complexity check config
+  const complexityCheckConfig: ComplexityCheckConfig = {
+    maxTurns,
+    autoDecompose,
+    escalateOnHighComplexity: true,
+    complexityThreshold: 6,
+    turnsWarningRatio: 0.8,
+  };
 
   // Verify outcome exists
   const outcome = getOutcomeById(outcomeId);
@@ -549,6 +992,56 @@ export async function startRalphWorker(
         const task = claimResult.task;
         appendLog(`Claimed task: ${task.title} (${task.id})`);
 
+        // Pre-claim complexity check
+        if (enableComplexityCheck) {
+          const complexityResult = await runPreClaimComplexityCheck(
+            task,
+            outcomeId,
+            intent,
+            complexityCheckConfig,
+            appendLog
+          );
+
+          if (!complexityResult.shouldProceed) {
+            appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
+
+            // Release the task since we won't run it
+            releaseTask(task.id);
+
+            // Record progress entry
+            createProgressEntry({
+              outcome_id: outcomeId,
+              worker_id: workerId,
+              iteration,
+              content: `Complexity check: ${complexityResult.action} - ${task.title}`,
+            });
+
+            // If decomposed, the new subtasks will be picked up in the next iteration
+            if (complexityResult.action === 'decomposed') {
+              appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
+              continue; // Move to next iteration to pick up subtasks
+            }
+
+            // If escalated, worker should pause and wait for human decision
+            if (complexityResult.action === 'escalated') {
+              appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
+              workerState.running = false;
+              break;
+            }
+
+            // If skipped for other reasons, continue to next task
+            continue;
+          }
+
+          // Store estimate on task for future reference
+          if (complexityResult.estimate) {
+            updateTaskDb(task.id, {
+              complexity_score: complexityResult.estimate.complexity_score,
+              estimated_turns: complexityResult.estimate.estimated_turns,
+            });
+          }
+        }
+
         // Update progress
         progress.status = 'running';
         progress.currentTaskId = task.id;
@@ -612,6 +1105,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           progress.completedTasks++;
           appendLog(`Task completed: ${task.title}`);
 
+          // Circuit breaker: Record success (resets consecutive failures)
+          recordSuccess(outcomeId);
+
           // Record progress entry with full output for auditing
           createProgressEntry({
             outcome_id: outcomeId,
@@ -657,6 +1153,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           failTask(task.id);
           appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
 
+          // Circuit breaker: Record failure for pattern analysis
+          recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
+
           // Record failure with full output for debugging
           createProgressEntry({
             outcome_id: outcomeId,
@@ -670,6 +1169,69 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           if (taskResult.error?.includes('critical') || taskResult.error?.includes('blocked')) {
             hasError = true;
             errorMessage = taskResult.error;
+            break;
+          }
+
+          // Circuit breaker: Check if we should trip
+          const circuitBreakerCheck = shouldTripCircuitBreaker(outcomeId, circuitBreakerThreshold);
+          if (circuitBreakerCheck.shouldTrip) {
+            appendLog(`[Circuit Breaker] TRIPPED: ${circuitBreakerCheck.reason}`);
+            appendLog(`[Circuit Breaker] Pattern detected: ${circuitBreakerCheck.pattern}`);
+
+            // Mark the circuit breaker as tripped
+            markCircuitBreakerTripped(outcomeId);
+
+            // Create an escalation for human review
+            try {
+              const circuitBreakerAmbiguity: homr.HomrAmbiguitySignal = {
+                detected: true,
+                type: 'blocking_decision',
+                description: `Circuit breaker tripped: ${circuitBreakerCheck.failureCount} consecutive task failures with pattern "${circuitBreakerCheck.pattern}"`,
+                evidence: [
+                  `Threshold: ${circuitBreakerThreshold} consecutive failures`,
+                  `Actual failures: ${circuitBreakerCheck.failureCount}`,
+                  `Pattern: ${circuitBreakerCheck.pattern}`,
+                  `Most recent failed task: ${task.title}`,
+                ],
+                affectedTasks: [task.id],
+                suggestedQuestion: 'Multiple tasks are failing with a similar pattern. How should we proceed?',
+                options: [
+                  {
+                    id: 'increase_turn_limit',
+                    label: 'Increase Turn Limit',
+                    description: 'Double the max turns for affected tasks and retry',
+                    implications: 'Tasks will have more time to complete but may still fail',
+                  },
+                  {
+                    id: 'break_into_subtasks',
+                    label: 'Break Into Subtasks',
+                    description: 'Decompose complex tasks into smaller, more manageable pieces',
+                    implications: 'Creates new subtasks that replace the original failing tasks',
+                  },
+                  {
+                    id: 'skip_failing_tasks',
+                    label: 'Skip Failing Tasks',
+                    description: 'Mark failing tasks as skipped and continue with remaining work',
+                    implications: 'Some work will be incomplete but progress can continue',
+                  },
+                  {
+                    id: 'pause_and_review',
+                    label: 'Pause for Manual Review',
+                    description: 'Stop all work and wait for human investigation',
+                    implications: 'Workers will remain paused until manually resumed',
+                  },
+                ],
+              };
+
+              await homr.createEscalation(outcomeId, circuitBreakerAmbiguity, task);
+              appendLog(`[Circuit Breaker] Escalation created for human review`);
+            } catch (escalationError) {
+              appendLog(`[Circuit Breaker] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'Unknown error'}`);
+            }
+
+            // Pause the worker
+            appendLog(`[Circuit Breaker] Pausing worker to await human decision`);
+            workerState.running = false;
             break;
           }
         }
@@ -1135,6 +1697,9 @@ export interface WorkerLoopOptions {
   phase?: TaskPhase;              // Filter tasks by phase
   skillContext?: string;          // Additional skill context to inject
   maxIterations?: number;         // Override max iterations
+  enableComplexityCheck?: boolean; // Enable pre-claim complexity check (default: true)
+  autoDecompose?: boolean;         // Auto-decompose high-complexity tasks (default: false)
+  maxTurns?: number;               // Worker's max turns per task (default: 20)
 }
 
 /**
@@ -1152,7 +1717,19 @@ export async function runWorkerLoop(
     phase,
     skillContext,
     maxIterations = 50,
+    enableComplexityCheck = true,
+    autoDecompose = false,
+    maxTurns = 20,
   } = options;
+
+  // Build complexity check config
+  const complexityCheckConfig: ComplexityCheckConfig = {
+    maxTurns,
+    autoDecompose,
+    escalateOnHighComplexity: true,
+    complexityThreshold: 6,
+    turnsWarningRatio: 0.8,
+  };
 
   // Get outcome
   const outcome = getOutcomeById(outcomeId);
@@ -1221,6 +1798,47 @@ export async function runWorkerLoop(
 
     const task = claimResult.task;
     appendLog(`Claimed task: ${task.title} (${task.id})`);
+
+    // Pre-claim complexity check
+    if (enableComplexityCheck) {
+      const complexityResult = await runPreClaimComplexityCheck(
+        task,
+        outcomeId,
+        intent,
+        complexityCheckConfig,
+        appendLog
+      );
+
+      if (!complexityResult.shouldProceed) {
+        appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
+
+        // Release the task since we won't run it
+        releaseTask(task.id);
+
+        // If decomposed, the new subtasks will be picked up in the next iteration
+        if (complexityResult.action === 'decomposed') {
+          appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
+          continue; // Move to next iteration to pick up subtasks
+        }
+
+        // If escalated, worker loop should stop and wait for human decision
+        if (complexityResult.action === 'escalated') {
+          appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
+          break;
+        }
+
+        // If skipped for other reasons, continue to next task
+        continue;
+      }
+
+      // Store estimate on task for future reference
+      if (complexityResult.estimate) {
+        updateTaskDb(task.id, {
+          complexity_score: complexityResult.estimate.complexity_score,
+          estimated_turns: complexityResult.estimate.estimated_turns,
+        });
+      }
+    }
 
     // Mark task as running
     startTask(task.id);

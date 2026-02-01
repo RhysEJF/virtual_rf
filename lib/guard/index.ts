@@ -319,10 +319,12 @@ export function getGuardStats(): GuardBlockStats {
 // ============================================================================
 
 // Re-export core validation for direct use if needed
-export { validateCommand, validateCommandWithContext, ValidationResult, ValidationContext };
+export { validateCommand, validateCommandWithContext };
+export type { ValidationResult, ValidationContext };
 
 // Re-export pattern analysis
-export { analyzeCommand, CommandAnalysis, DangerCategory };
+export { analyzeCommand };
+export type { CommandAnalysis, DangerCategory };
 
 // Re-export guard block operations for external access
 export {

@@ -28,6 +28,8 @@ import type {
   HomrConstraint,
   HomrContextInjection,
   HomrDriftItem,
+  HomrEscalation,
+  HomrQuestionOption,
 } from '../db/schema';
 import type {
   ObservationResult,
@@ -36,6 +38,7 @@ import type {
   InjectContextAction,
   CreateTaskAction,
   TaskContext,
+  EscalationAnswer,
 } from './types';
 import { buildTaskContextSection } from './prompts';
 
@@ -875,4 +878,323 @@ export function getTasksDependingOn(taskId: string): string[] {
   }
 
   return dependents;
+}
+
+// ============================================================================
+// Escalation Decision Application
+// ============================================================================
+
+/**
+ * Decision action types that can be applied
+ */
+export type EscalationDecisionAction =
+  | 'inject_context'      // Add context/guidance to affected tasks
+  | 'update_priority'     // Change task priority
+  | 'add_dependency'      // Add a dependency between tasks
+  | 'update_description'  // Append to task description
+  | 'record_decision';    // Record the decision in context store
+
+/**
+ * Result of applying an escalation decision
+ */
+export interface EscalationDecisionResult {
+  success: boolean;
+  actionsApplied: EscalationDecisionAction[];
+  affectedTaskIds: string[];
+  errors: string[];
+  decision?: HomrDecision;
+}
+
+/**
+ * Options for applying an escalation decision
+ */
+export interface ApplyEscalationDecisionOptions {
+  /** The escalation that was answered */
+  escalation: HomrEscalation;
+  /** The selected option from the escalation */
+  selectedOption: HomrQuestionOption;
+  /** Additional context provided by the human */
+  additionalContext?: string;
+  /** Override the affected tasks (defaults to escalation.affected_tasks) */
+  affectedTaskIds?: string[];
+  /** Priority to assign to affected tasks (if changing priority) */
+  newPriority?: number;
+  /** Task ID to add as a dependency to all affected tasks */
+  dependencyTaskId?: string;
+  /** Whether to inject context into affected tasks (default: true) */
+  injectContext?: boolean;
+  /** Whether to update task descriptions (default: true) */
+  updateDescriptions?: boolean;
+  /** Whether to record the decision in context store (default: true) */
+  recordInContext?: boolean;
+}
+
+/**
+ * Apply an escalation decision to affected tasks.
+ *
+ * This function modifies tasks based on a human's answer to an escalation:
+ * - Injects context into pending tasks so they're aware of the decision
+ * - Updates task priorities if specified
+ * - Adds dependencies if specified
+ * - Records the decision in the HOMЯ context store
+ *
+ * @param options Configuration for applying the decision
+ * @returns Result with details of what was applied
+ */
+export function applyEscalationDecision(
+  options: ApplyEscalationDecisionOptions
+): EscalationDecisionResult {
+  const {
+    escalation,
+    selectedOption,
+    additionalContext,
+    affectedTaskIds: overrideAffectedTasks,
+    newPriority,
+    dependencyTaskId,
+    injectContext = true,
+    updateDescriptions = true,
+    recordInContext = true,
+  } = options;
+
+  const result: EscalationDecisionResult = {
+    success: true,
+    actionsApplied: [],
+    affectedTaskIds: [],
+    errors: [],
+  };
+
+  // Parse affected tasks from escalation or use override
+  let affectedTasks: string[] = [];
+  if (overrideAffectedTasks) {
+    affectedTasks = overrideAffectedTasks;
+  } else if (escalation.affected_tasks) {
+    try {
+      affectedTasks = JSON.parse(escalation.affected_tasks);
+      if (!Array.isArray(affectedTasks)) {
+        affectedTasks = [];
+      }
+    } catch {
+      result.errors.push('Failed to parse affected_tasks from escalation');
+      affectedTasks = [];
+    }
+  }
+
+  const outcomeId = escalation.outcome_id;
+
+  // =========================================================================
+  // 1. Record decision in context store
+  // =========================================================================
+  if (recordInContext) {
+    const decision: HomrDecision = {
+      id: generateId('dec'),
+      content: `${selectedOption.label}: ${selectedOption.description}`,
+      madeBy: 'human',
+      madeAt: Date.now(),
+      context: `Escalation question: ${escalation.question_text}${
+        additionalContext ? `\nHuman context: ${additionalContext}` : ''
+      }`,
+      affectedAreas: affectedTasks,
+    };
+
+    const contextStore = getOrCreateHomrContext(outcomeId);
+    const decisions: HomrDecision[] = JSON.parse(contextStore.decisions);
+    decisions.push(decision);
+    updateHomrContext(outcomeId, { decisions });
+
+    result.actionsApplied.push('record_decision');
+    result.decision = decision;
+
+    console.log(`[HOMЯ Steerer] Recorded decision from escalation: ${selectedOption.label}`);
+  }
+
+  // =========================================================================
+  // 2. Inject context into affected tasks
+  // =========================================================================
+  if (injectContext && affectedTasks.length > 0) {
+    const contextContent = buildDecisionContextContent(
+      selectedOption,
+      additionalContext,
+      escalation.question_text
+    );
+
+    // Use '*' if all tasks are affected, otherwise inject per task
+    const targetTaskId = affectedTasks.length > 3 ? '*' : affectedTasks[0];
+
+    if (targetTaskId === '*') {
+      addContextInjection(outcomeId, {
+        id: generateId('inj'),
+        type: 'decision',
+        content: contextContent,
+        source: `Escalation: ${escalation.id}`,
+        priority: 'must_know',
+        targetTaskId: '*',
+        createdAt: Date.now(),
+      });
+    } else {
+      for (const taskId of affectedTasks) {
+        addContextInjection(outcomeId, {
+          id: generateId('inj'),
+          type: 'decision',
+          content: contextContent,
+          source: `Escalation: ${escalation.id}`,
+          priority: 'must_know',
+          targetTaskId: taskId,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
+    result.actionsApplied.push('inject_context');
+    result.affectedTaskIds.push(...affectedTasks);
+
+    console.log(`[HOMЯ Steerer] Injected decision context to ${affectedTasks.length} task(s)`);
+  }
+
+  // =========================================================================
+  // 3. Update task descriptions
+  // =========================================================================
+  if (updateDescriptions && affectedTasks.length > 0) {
+    const descriptionAddition = buildDescriptionAddition(
+      selectedOption,
+      additionalContext
+    );
+
+    for (const taskId of affectedTasks) {
+      const task = getTaskById(taskId);
+      if (!task) {
+        result.errors.push(`Task ${taskId} not found`);
+        continue;
+      }
+
+      // Skip completed/failed tasks
+      if (task.status === 'completed' || task.status === 'failed') {
+        continue;
+      }
+
+      const newDescription = task.description
+        ? `${task.description}\n\n---\n\n${descriptionAddition}`
+        : descriptionAddition;
+
+      updateTask(taskId, { description: newDescription });
+    }
+
+    result.actionsApplied.push('update_description');
+
+    console.log(`[HOMЯ Steerer] Updated descriptions for affected tasks`);
+  }
+
+  // =========================================================================
+  // 4. Update priority if specified
+  // =========================================================================
+  if (newPriority !== undefined && affectedTasks.length > 0) {
+    for (const taskId of affectedTasks) {
+      const task = getTaskById(taskId);
+      if (!task) {
+        result.errors.push(`Task ${taskId} not found for priority update`);
+        continue;
+      }
+
+      // Skip completed/failed tasks
+      if (task.status === 'completed' || task.status === 'failed') {
+        continue;
+      }
+
+      updateTask(taskId, { priority: newPriority });
+    }
+
+    result.actionsApplied.push('update_priority');
+
+    console.log(`[HOMЯ Steerer] Updated priority to ${newPriority} for affected tasks`);
+  }
+
+  // =========================================================================
+  // 5. Add dependency if specified
+  // =========================================================================
+  if (dependencyTaskId && affectedTasks.length > 0) {
+    for (const taskId of affectedTasks) {
+      // Skip if task is the dependency itself
+      if (taskId === dependencyTaskId) continue;
+
+      const depResult = addDependency(taskId, dependencyTaskId);
+      if (!depResult.success) {
+        result.errors.push(`Failed to add dependency for ${taskId}: ${depResult.reason}`);
+      }
+    }
+
+    result.actionsApplied.push('add_dependency');
+
+    console.log(`[HOMЯ Steerer] Added dependency ${dependencyTaskId} to affected tasks`);
+  }
+
+  // =========================================================================
+  // Log the activity
+  // =========================================================================
+  logHomrActivity({
+    outcome_id: outcomeId,
+    type: 'steering',
+    details: {
+      action: 'apply_escalation_decision',
+      escalationId: escalation.id,
+      selectedOption: selectedOption.label,
+      actionsApplied: result.actionsApplied,
+      affectedTaskCount: result.affectedTaskIds.length,
+      errors: result.errors.length > 0 ? result.errors : undefined,
+    },
+    summary: `Applied escalation decision "${selectedOption.label}" to ${result.affectedTaskIds.length} task(s)`,
+  });
+
+  // Set success based on whether we had any errors for critical operations
+  result.success = result.errors.length === 0 || result.actionsApplied.length > 0;
+
+  return result;
+}
+
+/**
+ * Build context content for injection from a decision
+ */
+function buildDecisionContextContent(
+  selectedOption: HomrQuestionOption,
+  additionalContext: string | undefined,
+  questionText: string
+): string {
+  let content = `**Human Decision Made**
+
+**Question:** ${questionText}
+
+**Decision:** ${selectedOption.label}
+${selectedOption.description}`;
+
+  if (selectedOption.implications) {
+    content += `
+
+**Implications:** ${selectedOption.implications}`;
+  }
+
+  if (additionalContext) {
+    content += `
+
+**Additional Guidance:** ${additionalContext}`;
+  }
+
+  return content;
+}
+
+/**
+ * Build description addition for tasks
+ */
+function buildDescriptionAddition(
+  selectedOption: HomrQuestionOption,
+  additionalContext: string | undefined
+): string {
+  let addition = `**[HOMЯ Decision Applied]**
+**Action:** ${selectedOption.label}
+${selectedOption.description}`;
+
+  if (additionalContext) {
+    addition += `
+
+**Human guidance:** ${additionalContext}`;
+  }
+
+  return addition;
 }

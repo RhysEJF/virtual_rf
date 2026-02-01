@@ -298,6 +298,16 @@ function runMigrations(database: Database.Database): void {
   database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_outcome ON guard_blocks(outcome_id)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_time ON guard_blocks(blocked_at DESC)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_pattern ON guard_blocks(pattern_matched)`);
+
+  // Add escalation incorporation tracking columns for self-improvement loop
+  const escalationCols = database.prepare(`PRAGMA table_info(homr_escalations)`).all() as { name: string }[];
+  const hasIncorporatedInto = escalationCols.some(c => c.name === 'incorporated_into_outcome_id');
+  if (!hasIncorporatedInto) {
+    database.exec(`ALTER TABLE homr_escalations ADD COLUMN incorporated_into_outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL`);
+    database.exec(`ALTER TABLE homr_escalations ADD COLUMN incorporated_at INTEGER`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_escalations_incorporated ON homr_escalations(incorporated_into_outcome_id)`);
+    console.log(`[DB Migration] Added escalation incorporation tracking columns`);
+  }
 }
 
 /**

@@ -42,8 +42,15 @@ export {
   blockTaskChain,
   removeDependency,
   getTasksDependingOn,
+  // Escalation decision application
+  applyEscalationDecision,
 } from './steerer';
-export type { DependencyModificationResult } from './steerer';
+export type {
+  DependencyModificationResult,
+  EscalationDecisionAction,
+  EscalationDecisionResult,
+  ApplyEscalationDecisionOptions,
+} from './steerer';
 export { createEscalation, resolveEscalation, dismissEscalation, hasPendingEscalations, getPendingEscalationCount } from './escalator';
 export { buildTaskContextSection } from './prompts';
 

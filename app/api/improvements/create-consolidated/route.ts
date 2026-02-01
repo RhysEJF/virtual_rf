@@ -16,6 +16,7 @@ import {
   upsertDesignDoc,
 } from '@/lib/db/outcomes';
 import { createTasksBatch, type CreateTaskInput } from '@/lib/db/tasks';
+import { markEscalationsByTriggerTypeAsIncorporated } from '@/lib/db/homr';
 import type { TaskPhase } from '@/lib/db/schema';
 
 // Constants
@@ -67,6 +68,7 @@ interface CreateConsolidatedResponse {
   outcome_id: string;
   parent_outcome_id: string;
   task_count: number;
+  escalations_marked?: number;
   message: string;
 }
 
@@ -281,12 +283,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Generate tasks
     const taskCount = generateConsolidatedTasks(childOutcome.id, body.clusters, body.proposals || []);
 
+    // Mark escalations from all clusters as incorporated into this outcome
+    // Collect all trigger types from clusters (fallback if trigger_types not provided)
+    const allTriggerTypes: string[] = body.trigger_types ||
+      Array.from(new Set(body.clusters.flatMap(c => c.triggerTypes || [])));
+
+    let escalationsMarked = 0;
+    if (allTriggerTypes.length > 0) {
+      escalationsMarked = markEscalationsByTriggerTypeAsIncorporated(
+        allTriggerTypes,
+        childOutcome.id,
+        30 * 24 * 60 * 60 * 1000 // 30 days lookback
+      );
+    }
+
     const response: CreateConsolidatedResponse = {
       success: true,
       outcome_id: childOutcome.id,
       parent_outcome_id: parentOutcomeId,
       task_count: taskCount,
-      message: `Created consolidated outcome with ${taskCount} tasks addressing ${patternCount} patterns`,
+      escalations_marked: escalationsMarked,
+      message: `Created consolidated outcome with ${taskCount} tasks addressing ${patternCount} patterns (${escalationsMarked} escalations marked)`,
     };
 
     return NextResponse.json(response);

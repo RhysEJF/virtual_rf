@@ -416,6 +416,109 @@ export function dismissEscalation(escalationId: string): HomrEscalation {
   return getEscalationById(escalationId)!;
 }
 
+/**
+ * Mark escalations as incorporated into an improvement outcome.
+ * This prevents them from being re-analyzed in future improvement runs.
+ */
+export function markEscalationsAsIncorporated(
+  escalationIds: string[],
+  improvementOutcomeId: string
+): number {
+  if (escalationIds.length === 0) return 0;
+
+  const db = getDb();
+  const timestamp = now();
+
+  const stmt = db.prepare(`
+    UPDATE homr_escalations
+    SET incorporated_into_outcome_id = ?, incorporated_at = ?
+    WHERE id = ? AND incorporated_into_outcome_id IS NULL
+  `);
+
+  let count = 0;
+  for (const id of escalationIds) {
+    const result = stmt.run(improvementOutcomeId, timestamp, id);
+    if (result.changes > 0) count++;
+  }
+
+  return count;
+}
+
+/**
+ * Mark escalations by trigger type as incorporated.
+ * Used when creating improvements from trigger type clusters.
+ */
+export function markEscalationsByTriggerTypeAsIncorporated(
+  triggerTypes: string[],
+  improvementOutcomeId: string,
+  lookbackMs?: number
+): number {
+  if (triggerTypes.length === 0) return 0;
+
+  const db = getDb();
+  const timestamp = now();
+
+  // Build query with optional time filter
+  let query = `
+    UPDATE homr_escalations
+    SET incorporated_into_outcome_id = ?, incorporated_at = ?
+    WHERE trigger_type IN (${triggerTypes.map(() => '?').join(', ')})
+      AND incorporated_into_outcome_id IS NULL
+  `;
+
+  const params: (string | number)[] = [improvementOutcomeId, timestamp, ...triggerTypes];
+
+  if (lookbackMs) {
+    const cutoff = timestamp - lookbackMs;
+    query += ` AND created_at >= ?`;
+    params.push(cutoff);
+  }
+
+  const result = db.prepare(query).run(...params);
+  return result.changes;
+}
+
+/**
+ * Get count of escalations not yet incorporated (available for analysis)
+ */
+export function getUnincorporatedEscalationCount(lookbackDays: number = 30): number {
+  const db = getDb();
+  const cutoff = now() - (lookbackDays * 24 * 60 * 60 * 1000);
+
+  const result = db.prepare(`
+    SELECT COUNT(*) as count FROM homr_escalations
+    WHERE created_at >= ? AND incorporated_into_outcome_id IS NULL
+  `).get(cutoff) as { count: number };
+
+  return result.count;
+}
+
+/**
+ * Get escalations for analysis (excluding already incorporated ones)
+ */
+export function getEscalationsForAnalysis(
+  lookbackDays: number = 30,
+  outcomeId?: string
+): HomrEscalation[] {
+  const db = getDb();
+  const cutoff = now() - (lookbackDays * 24 * 60 * 60 * 1000);
+
+  let query = `
+    SELECT * FROM homr_escalations
+    WHERE created_at >= ? AND incorporated_into_outcome_id IS NULL
+  `;
+  const params: (string | number)[] = [cutoff];
+
+  if (outcomeId) {
+    query += ` AND outcome_id = ?`;
+    params.push(outcomeId);
+  }
+
+  query += ` ORDER BY created_at DESC`;
+
+  return db.prepare(query).all(...params) as HomrEscalation[];
+}
+
 // ============================================================================
 // Activity Log Operations
 // ============================================================================

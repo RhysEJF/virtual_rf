@@ -143,7 +143,10 @@ export function fetchRecentEscalations(
       SELECT e.*, o.name as outcome_name
       FROM homr_escalations e
       LEFT JOIN outcomes o ON e.outcome_id = o.id
-      WHERE e.created_at > ? AND e.status IN (${statusPlaceholders}) AND e.outcome_id = ?
+      WHERE e.created_at > ?
+        AND e.status IN (${statusPlaceholders})
+        AND e.outcome_id = ?
+        AND e.incorporated_into_outcome_id IS NULL
       ORDER BY e.created_at DESC
       LIMIT ?
     `;
@@ -153,7 +156,9 @@ export function fetchRecentEscalations(
       SELECT e.*, o.name as outcome_name
       FROM homr_escalations e
       LEFT JOIN outcomes o ON e.outcome_id = o.id
-      WHERE e.created_at > ? AND e.status IN (${statusPlaceholders})
+      WHERE e.created_at > ?
+        AND e.status IN (${statusPlaceholders})
+        AND e.incorporated_into_outcome_id IS NULL
       ORDER BY e.created_at DESC
       LIMIT ?
     `;

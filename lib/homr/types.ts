@@ -177,6 +177,31 @@ export interface EscalationAnswer {
 }
 
 /**
+ * Actions that can be applied when resolving an escalation
+ */
+export type EscalationActionType =
+  | 'increase_turn_limit'
+  | 'break_into_subtasks'
+  | 'skip_failing_tasks';
+
+/**
+ * Result of applying an escalation action
+ */
+export interface EscalationActionResult {
+  action: EscalationActionType;
+  success: boolean;
+  details: {
+    taskId?: string;
+    taskIds?: string[];
+    previousValue?: number;
+    newValue?: number;
+    subtaskCount?: number;
+    createdTaskIds?: string[];
+    error?: string;
+  };
+}
+
+/**
  * Result of resolving an escalation
  */
 export interface EscalationResolution {
@@ -184,6 +209,14 @@ export interface EscalationResolution {
   selectedOption: HomrQuestionOption;
   resumedTasks: string[];
   injectedContext: string;
+  /** Actions that were applied based on the selected option */
+  appliedActions?: EscalationActionResult[];
+  /** Pattern stored for future reference */
+  storedPattern?: {
+    triggerType: string;
+    optionId: string;
+    count: number;
+  };
 }
 
 // ============================================================================

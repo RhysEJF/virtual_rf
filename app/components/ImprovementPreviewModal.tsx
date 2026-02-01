@@ -24,6 +24,8 @@ interface ClusterSummary {
   problemStatement: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   escalationCount: number;
+  /** Unique trigger_types from escalations in this cluster */
+  triggerTypes: string[];
 }
 
 interface ProposalSummary {
@@ -183,10 +185,23 @@ export function ImprovementPreviewModal({
     return analysisData?.proposals.find(p => p.clusterId === clusterId);
   };
 
-  // Create selected outcomes
-  const handleCreateOutcomes = async () => {
+  // Get all trigger types from selected clusters
+  const getSelectedTriggerTypes = (): string[] => {
+    const triggerTypes: string[] = [];
+    for (const clusterId of Array.from(selectedClusterIds)) {
+      const cluster = analysisData?.clusters.find(c => c.id === clusterId);
+      if (cluster?.triggerTypes) {
+        triggerTypes.push(...cluster.triggerTypes);
+      }
+    }
+    // Return unique trigger types
+    return Array.from(new Set(triggerTypes));
+  };
+
+  // Create individual outcomes for each selected cluster
+  const handleCreateIndividualOutcomes = async () => {
     if (selectedClusterIds.size === 0) {
-      toast({ type: 'warning', message: 'Please select at least one cluster' });
+      toast({ type: 'warning', message: 'Please select at least one pattern' });
       return;
     }
 
@@ -194,18 +209,16 @@ export function ImprovementPreviewModal({
     setError(null);
 
     try {
-      // Get the root causes (trigger_types) for selected clusters
-      const clusterIds = Array.from(selectedClusterIds)
-        .map(id => {
-          const cluster = analysisData?.clusters.find(c => c.id === id);
-          return cluster?.rootCause;
-        })
-        .filter((rc): rc is string => rc !== undefined);
+      const triggerTypes = getSelectedTriggerTypes();
+
+      if (triggerTypes.length === 0) {
+        throw new Error('No trigger types found for selected clusters');
+      }
 
       const response = await fetch('/api/improvements/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cluster_ids: clusterIds }),
+        body: JSON.stringify({ cluster_ids: triggerTypes }),
       });
 
       const data = await response.json() as CreateResponse;
@@ -228,6 +241,63 @@ export function ImprovementPreviewModal({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create outcomes');
       toast({ type: 'error', message: 'Failed to create improvement outcomes' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Create one consolidated outcome combining all selected clusters
+  const handleCreateConsolidatedOutcome = async () => {
+    if (selectedClusterIds.size === 0) {
+      toast({ type: 'warning', message: 'Please select at least one pattern' });
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+
+    try {
+      // Gather all selected clusters and their proposals
+      const selectedClusters = Array.from(selectedClusterIds)
+        .map(id => analysisData?.clusters.find(c => c.id === id))
+        .filter((c): c is ClusterSummary => c !== undefined);
+
+      const selectedProposals = selectedClusters
+        .map(c => analysisData?.proposals.find(p => p.clusterId === c.id))
+        .filter((p): p is ProposalSummary => p !== undefined);
+
+      const triggerTypes = getSelectedTriggerTypes();
+
+      const response = await fetch('/api/improvements/create-consolidated', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clusters: selectedClusters,
+          proposals: selectedProposals,
+          trigger_types: triggerTypes,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to create consolidated outcome');
+      }
+
+      toast({
+        type: 'success',
+        message: 'Created consolidated improvement outcome',
+      });
+
+      onSuccess?.();
+
+      // Navigate to the created outcome
+      if (data.outcome_id) {
+        router.push(`/outcome/${data.outcome_id}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create consolidated outcome');
+      toast({ type: 'error', message: 'Failed to create consolidated outcome' });
     } finally {
       setCreating(false);
     }
@@ -557,19 +627,30 @@ export function ImprovementPreviewModal({
           <div className="flex items-center justify-between pt-4 mt-4 border-t border-border">
             <span className="text-text-tertiary text-sm">
               {selectedClusterIds.size > 0
-                ? `${selectedClusterIds.size} improvement outcome(s) will be created`
-                : 'Select clusters to create improvement outcomes'}
+                ? `${selectedClusterIds.size} pattern(s) selected`
+                : 'Select patterns to create improvement outcomes'}
             </span>
             <div className="flex items-center gap-3">
               <Button variant="ghost" onClick={onClose} disabled={creating}>
                 Cancel
               </Button>
+              {selectedClusterIds.size > 1 && (
+                <Button
+                  variant="secondary"
+                  onClick={handleCreateConsolidatedOutcome}
+                  disabled={creating || selectedClusterIds.size === 0}
+                  title="Merge all selected patterns into one outcome"
+                >
+                  {creating ? 'Creating...' : 'Create 1 Consolidated'}
+                </Button>
+              )}
               <Button
                 variant="primary"
-                onClick={handleCreateOutcomes}
+                onClick={handleCreateIndividualOutcomes}
                 disabled={creating || selectedClusterIds.size === 0}
+                title="Create separate outcomes for each pattern"
               >
-                {creating ? 'Creating...' : `Create Selected Outcomes (${selectedClusterIds.size})`}
+                {creating ? 'Creating...' : `Create ${selectedClusterIds.size} Individual`}
               </Button>
             </div>
           </div>

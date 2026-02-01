@@ -26,6 +26,8 @@ interface ClusterSummary {
   problemStatement: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   escalationCount: number;
+  /** Unique trigger_types from escalations in this cluster - needed for API calls */
+  triggerTypes: string[];
 }
 
 interface ProposalSummary {
@@ -62,6 +64,9 @@ interface AnalyzeResponse {
 }
 
 function formatCluster(cluster: EscalationCluster): ClusterSummary {
+  // Extract unique trigger_types from escalations in this cluster
+  const triggerTypes = Array.from(new Set(cluster.escalations.map(e => e.trigger_type)));
+
   return {
     id: cluster.id,
     rootCause: cluster.rootCause,
@@ -69,6 +74,7 @@ function formatCluster(cluster: EscalationCluster): ClusterSummary {
     problemStatement: cluster.problemStatement,
     severity: cluster.severity,
     escalationCount: cluster.escalations.length,
+    triggerTypes,
   };
 }
 

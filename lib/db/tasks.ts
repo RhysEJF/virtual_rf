@@ -11,7 +11,7 @@ import { join } from 'path';
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
-import { touchOutcome } from './outcomes';
+import { touchOutcome, updateOutcome } from './outcomes';
 
 // ============================================================================
 // Create
@@ -499,6 +499,10 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
     ).all(outcomeId) as { id: string; status: TaskStatus }[];
     const taskStatusMap = new Map(allOutcomeTasks.map(t => [t.id, t.status]));
 
+    // Track all missing capabilities encountered during the loop
+    // Use Set to deduplicate capabilities across multiple tasks
+    const missingCapabilitiesSet = new Set<string>();
+
     // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
@@ -531,6 +535,10 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
           console.log(
             `[claimNextTask] Skipping task ${candidate.id} - missing capabilities: ${capDeps.missing.join(', ')}`
           );
+          // Collect missing capabilities for potential dynamic task creation
+          for (const missingCap of capDeps.missing) {
+            missingCapabilitiesSet.add(missingCap);
+          }
           continue;
         }
       }
@@ -541,7 +549,40 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
     }
 
     if (!task) {
+      // No task could be claimed - rollback the IMMEDIATE transaction first
       db.exec('ROLLBACK');
+
+      // Now, OUTSIDE the transaction, create capability tasks for missing capabilities
+      if (missingCapabilitiesSet.size > 0) {
+        const createdTasks: Task[] = [];
+
+        for (const capabilityString of Array.from(missingCapabilitiesSet)) {
+          // Check if a task already exists for this capability
+          const existingTask = getCapabilityTaskForCapability(outcomeId, capabilityString);
+          if (existingTask) {
+            console.log(
+              `[claimNextTask] Capability task already exists for ${capabilityString}: ${existingTask.id}`
+            );
+            continue;
+          }
+
+          // Create a new capability task
+          const newTask = createDynamicCapabilityTask(outcomeId, capabilityString);
+          if (newTask) {
+            createdTasks.push(newTask);
+          }
+        }
+
+        // If any new capability tasks were created, update capability_ready to 1 (in progress)
+        if (createdTasks.length > 0) {
+          updateOutcome(outcomeId, { capability_ready: 1 });
+          console.log(
+            `[claimNextTask] Created ${createdTasks.length} dynamic capability task(s), set capability_ready=1`
+          );
+          touchOutcome(outcomeId);
+        }
+      }
+
       return {
         success: false,
         task: null,

@@ -24,6 +24,9 @@ Complex outcomes need preparation before execution. The Orchestrator ensures wor
 | Parallel capability workers (up to 3) | Complete |
 | Automatic phase transition | Complete |
 | Execution worker spawning | Complete |
+| Dynamic capability planning | Complete |
+| Capability suggestion UI banner | Complete |
+| Manual capability replanning | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -69,6 +72,17 @@ Tasks are tagged with their phase:
 
 Workers only claim tasks matching their current phase.
 
+### Dynamic Capability Planning
+
+Unlike static "build all upfront" planning, Dynamic Capability Planning allows:
+
+1. **Just-in-time detection** - Capabilities detected when approach is modified
+2. **Dependency blocking** - Execution tasks blocked until required capabilities exist
+3. **Auto-creation** - Missing capability tasks created dynamically at claim time
+4. **User feedback** - UI banner suggests new capabilities after approach optimization
+
+Tasks can specify `required_capabilities` (e.g., `['skill:market-research', 'tool:scraper']`). When a worker tries to claim a task, the system checks if those files exist. If not, it auto-creates capability tasks to build them first.
+
 ---
 
 ## Behaviors
@@ -78,6 +92,9 @@ Workers only claim tasks matching their current phase.
 3. **Parallel building** - Runs up to 3 workers simultaneously for capability phase
 4. **Automatic transition** - Moves to execution when all capability tasks complete
 5. **Approach change detection** - Resets capabilities when approach significantly changes
+6. **Dynamic capability detection** - Detects new capabilities when approach is updated
+7. **Capability dependency blocking** - Execution tasks wait for required capabilities
+8. **Auto-creation at claim time** - Missing capability tasks created when execution blocked
 
 ---
 

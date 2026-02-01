@@ -280,6 +280,15 @@ kill -9 <PID>
 - [x] Tool builder - creates TypeScript CLI tools in workspaces
 - [x] Automatic phase transition when capabilities ready
 
+### Dynamic Capability Planning (Complete)
+- [x] Capability detection from approach text (6 pattern strategies)
+- [x] `required_capabilities` field on tasks for dependency declaration
+- [x] Capability dependency checking at task claim time
+- [x] Dynamic capability task creation when execution blocked
+- [x] CapabilitySuggestionBanner UI after approach optimization
+- [x] Manual replanning endpoint (`/api/outcomes/[id]/capabilities/replan`)
+- [x] Deduplication to prevent duplicate capability tasks
+
 ### Skills System (Complete)
 - [x] Global skills library (`/skills` directory, DB-tracked)
 - [x] Outcome-specific skills (`workspaces/{outcomeId}/skills/`)

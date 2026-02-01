@@ -12,6 +12,7 @@ import {
   type SuggestionType,
   type SuggestionStatus,
 } from './index';
+import { addWorkerCost } from './workers';
 
 // ============================================================================
 // Cost Logging
@@ -43,6 +44,15 @@ export function logCost(input: LogCostInput): CostLogEntry {
     input.description || null,
     timestamp
   );
+
+  // Also update the worker's running cost total if this is worker-related
+  if (input.worker_id && input.amount > 0) {
+    try {
+      addWorkerCost(input.worker_id, input.amount);
+    } catch (e) {
+      console.error('[Cost Log] Failed to update worker cost:', e);
+    }
+  }
 
   return getCostLogEntry(result.lastInsertRowid as number)!;
 }

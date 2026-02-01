@@ -55,6 +55,7 @@ import * as homr from '../homr';
 import * as guard from '../guard';
 import { estimateTaskComplexity, assessTurnLimitRisk, ComplexityEstimate } from '../agents/task-complexity-estimator';
 import { autoDecomposeIfNeeded, DecompositionResult } from '../agents/task-decomposer';
+import { logCost } from '../db/logs';
 
 // ============================================================================
 // Types
@@ -1430,6 +1431,38 @@ function checkOutputForDangerousCommands(
 // ============================================================================
 
 /**
+ * Parse cost from Claude CLI JSON output.
+ * The CLI outputs JSON with total_cost_usd field.
+ */
+function extractCostFromOutput(output: string): number {
+  try {
+    // Claude CLI may output multiple JSON lines (streaming), find the result message
+    const lines = output.split('\n').filter(l => l.trim());
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(lines[i]);
+        if (parsed.type === 'result' && typeof parsed.total_cost_usd === 'number') {
+          return parsed.total_cost_usd;
+        }
+      } catch {
+        // Skip non-JSON lines
+      }
+    }
+
+    // Try parsing the entire output as JSON (single-line response)
+    const parsed = JSON.parse(output);
+    if (typeof parsed.total_cost_usd === 'number') {
+      return parsed.total_cost_usd;
+    }
+  } catch {
+    // Failed to parse - no cost available
+  }
+
+  return 0;
+}
+
+/**
  * Execute a single task with Claude CLI
  * Returns success status and captured full output for auditing
  */
@@ -1542,6 +1575,23 @@ async function executeTask(
 
         // Combine all captured output
         const fullOutput = outputChunks.join('\n');
+
+        // Extract and log cost from Claude CLI output
+        const cost = extractCostFromOutput(fullOutput);
+        if (cost > 0) {
+          try {
+            const dbWorker = getWorkerById(workerId);
+            logCost({
+              outcome_id: dbWorker?.outcome_id,
+              worker_id: workerId,
+              amount: cost,
+              description: `Task: ${task.title} (${task.id})`,
+            });
+            appendLog(`[Cost] Task cost: $${cost.toFixed(4)}`);
+          } catch (costError) {
+            appendLog(`[Cost] Failed to log cost: ${costError instanceof Error ? costError.message : 'unknown'}`);
+          }
+        }
 
         // Final guard check on complete output (catches anything missed in streaming)
         if (guardContext && fullOutput) {

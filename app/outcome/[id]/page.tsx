@@ -23,7 +23,9 @@ import { CollapsibleSection } from '@/app/components/CollapsibleSection';
 import { OutcomeChat } from '@/app/components/OutcomeChat';
 import { CommitSettingsSection } from '@/app/components/CommitSettingsSection';
 import { HomrDashboard } from '@/app/components/HomrDashboard';
+import { CapabilitySuggestionBanner } from '@/app/components/CapabilitySuggestionBanner';
 import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
+import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 
 // Types
 interface OutcomeDetail {
@@ -166,6 +168,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [replanningCapabilities, setReplanningCapabilities] = useState(false);
 
   // Hierarchy state
   const [parent, setParent] = useState<{ id: string; name: string } | null>(null);
@@ -195,6 +198,9 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [approachRamble, setApproachRamble] = useState('');
   const [optimizingIntent, setOptimizingIntent] = useState(false);
   const [optimizingApproach, setOptimizingApproach] = useState(false);
+
+  // Detected capabilities after approach optimization
+  const [detectedCapabilities, setDetectedCapabilities] = useState<CapabilityNeed[]>([]);
 
   // Review response state
   const [lastReviewResponse, setLastReviewResponse] = useState<string | null>(null);
@@ -393,6 +399,58 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  const handleReplanCapabilities = async () => {
+    setReplanningCapabilities(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/capabilities/replan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detectOnlyNew: true }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.totalNewCapabilities > 0) {
+          toast({ type: 'success', message: `Created ${data.totalNewCapabilities} new capability task(s)` });
+        } else {
+          toast({ type: 'info', message: 'No new capabilities detected' });
+        }
+        fetchOutcome();
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to replan capabilities' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to replan capabilities' });
+    } finally {
+      setReplanningCapabilities(false);
+    }
+  };
+
+  // Handler to create capabilities from the suggestion banner
+  const handleCreateCapabilitiesFromBanner = async (): Promise<void> => {
+    // Use the replan endpoint to create capability tasks
+    const response = await fetch(`/api/outcomes/${outcomeId}/capabilities/replan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ detectOnlyNew: true }),
+    });
+    const data = await response.json();
+    if (response.ok && data.success) {
+      if (data.totalNewCapabilities > 0) {
+        toast({ type: 'success', message: `Created ${data.totalNewCapabilities} capability task(s)` });
+      }
+      // Clear the detected capabilities since they've been created
+      setDetectedCapabilities([]);
+      fetchOutcome();
+    } else {
+      throw new Error(data.error || 'Failed to create capabilities');
+    }
+  };
+
+  // Handler to dismiss capability suggestions
+  const handleDismissCapabilities = (): void => {
+    setDetectedCapabilities([]);
+  };
+
   // Direct edit handlers
   const handleStartEditIntent = () => {
     if (outcome?.intent) {
@@ -519,8 +577,13 @@ export default function OutcomeDetailPage(): JSX.Element {
         body: JSON.stringify({ ramble: approachRamble }),
       });
       if (response.ok) {
+        const data = await response.json();
         toast({ type: 'success', message: 'Approach optimized' });
         setApproachRamble('');
+        // Set detected capabilities if any were found
+        if (data.detectedCapabilities && data.detectedCapabilities.length > 0) {
+          setDetectedCapabilities(data.detectedCapabilities);
+        }
         fetchOutcome();
       } else {
         const data = await response.json();
@@ -724,6 +787,17 @@ export default function OutcomeDetailPage(): JSX.Element {
               {!isParent && capabilityReady && outcome.capability_ready !== 0 && (
                 <Badge variant="success">Capabilities Ready</Badge>
               )}
+              {!isParent && outcome.design_doc?.approach && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReplanCapabilities}
+                  disabled={replanningCapabilities || capabilityInProgress}
+                  className="text-xs"
+                >
+                  {replanningCapabilities ? 'Re-planning...' : 'Re-plan Capabilities'}
+                </Button>
+              )}
             </div>
             {outcome.brief && (
               <div className="max-w-3xl">
@@ -796,6 +870,18 @@ export default function OutcomeDetailPage(): JSX.Element {
           initialInput={refinementInput}
           onInitialInputConsumed={handleRefinementConsumed}
         />
+
+        {/* Capability suggestion banner - shown after approach optimization */}
+        {detectedCapabilities.length > 0 && (
+          <div className="mt-4">
+            <CapabilitySuggestionBanner
+              capabilities={detectedCapabilities}
+              outcomeId={outcomeId}
+              onCreateCapabilities={handleCreateCapabilitiesFromBanner}
+              onDismiss={handleDismissCapabilities}
+            />
+          </div>
+        )}
 
         {/* Capability phase status indicator */}
         {capabilityInProgress && (

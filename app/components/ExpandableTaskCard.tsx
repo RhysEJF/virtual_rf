@@ -27,6 +27,14 @@ interface BlockingTaskInfo {
   status: TaskStatus;
 }
 
+/** Capability status information */
+interface CapabilityStatus {
+  id: string;  // e.g., 'skill:database' or 'tool:api-client'
+  type: 'skill' | 'tool';
+  name: string;
+  exists: boolean;
+}
+
 /** Task with dependency information */
 export interface TaskWithDependencies extends Task {
   dependency_ids?: string[];
@@ -84,6 +92,10 @@ export function ExpandableTaskCard({
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [showSkillDropdown, setShowSkillDropdown] = useState(false);
 
+  // Capabilities state (required_capabilities field)
+  const [capabilities, setCapabilities] = useState<CapabilityStatus[]>([]);
+  const [loadingCapabilities, setLoadingCapabilities] = useState(false);
+
   const status = statusConfig[task.status];
   const hasContext = Boolean(task.task_intent || task.task_approach);
 
@@ -124,6 +136,94 @@ export function ExpandableTaskCard({
       fetchSkills();
     }
   }, [expanded, fetchSkills]);
+
+  // Parse and fetch capability status when expanded
+  const fetchCapabilities = useCallback(async () => {
+    // Parse required_capabilities from task
+    let rawCapabilities: string[] = [];
+    if (task.required_capabilities) {
+      try {
+        rawCapabilities = JSON.parse(task.required_capabilities);
+      } catch {
+        rawCapabilities = [];
+      }
+    }
+
+    if (rawCapabilities.length === 0) {
+      setCapabilities([]);
+      return;
+    }
+
+    setLoadingCapabilities(true);
+    try {
+      // Parse capabilities into structured format
+      const parsedCaps: CapabilityStatus[] = rawCapabilities.map((cap) => {
+        const [type, ...nameParts] = cap.split(':');
+        const name = nameParts.join(':'); // Handle names with colons
+        return {
+          id: cap,
+          type: (type === 'skill' || type === 'tool') ? type : 'skill',
+          name: name || cap,
+          exists: false, // Will be updated after fetching
+        };
+      });
+
+      // Check which skills exist (from available skills in DB)
+      const skillNames = parsedCaps.filter(c => c.type === 'skill').map(c => c.name);
+      const toolNames = parsedCaps.filter(c => c.type === 'tool').map(c => c.name);
+
+      // Fetch global skills to check existence
+      let existingSkillNames: string[] = [];
+      if (skillNames.length > 0) {
+        try {
+          const skillsResponse = await fetch('/api/skills');
+          if (skillsResponse.ok) {
+            const skillsData = await skillsResponse.json();
+            existingSkillNames = (skillsData.skills || []).map((s: { name: string }) => s.name.toLowerCase());
+          }
+        } catch {
+          // Skills check failed, assume none exist
+        }
+      }
+
+      // For tools, we'd need to check outcome-specific tools
+      // For now, we'll assume tools need to be built if not found
+      let existingToolNames: string[] = [];
+      if (toolNames.length > 0) {
+        try {
+          // Extract outcome_id from task to check outcome tools
+          const toolsResponse = await fetch(`/api/tools/outcome?outcomeId=${task.outcome_id}`);
+          if (toolsResponse.ok) {
+            const toolsData = await toolsResponse.json();
+            existingToolNames = (toolsData.tools || []).map((t: { name: string }) => t.name.toLowerCase());
+          }
+        } catch {
+          // Tools check failed, assume none exist
+        }
+      }
+
+      // Update existence status
+      const updatedCaps = parsedCaps.map(cap => ({
+        ...cap,
+        exists: cap.type === 'skill'
+          ? existingSkillNames.includes(cap.name.toLowerCase())
+          : existingToolNames.includes(cap.name.toLowerCase()),
+      }));
+
+      setCapabilities(updatedCaps);
+    } catch (err) {
+      console.error('Failed to fetch capabilities:', err);
+      setCapabilities([]);
+    } finally {
+      setLoadingCapabilities(false);
+    }
+  }, [task.required_capabilities, task.outcome_id]);
+
+  useEffect(() => {
+    if (expanded) {
+      fetchCapabilities();
+    }
+  }, [expanded, fetchCapabilities]);
 
   // Add skill to task
   const handleAddSkill = async (skillName: string) => {
@@ -647,6 +747,54 @@ export function ExpandableTaskCard({
               </p>
             )}
           </div>
+
+          {/* Required Capabilities Section */}
+          {(capabilities.length > 0 || loadingCapabilities) && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-text-tertiary uppercase tracking-wide">
+                  Required Capabilities
+                </label>
+                {capabilities.some(c => !c.exists) && (
+                  <span className="text-[10px] text-status-warning flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    Some capabilities need to be built
+                  </span>
+                )}
+              </div>
+
+              {loadingCapabilities ? (
+                <p className="text-text-tertiary text-sm">Loading capabilities...</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {capabilities.map((cap) => (
+                    <div
+                      key={cap.id}
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs border ${
+                        cap.exists
+                          ? 'bg-status-success/10 border-status-success/30 text-status-success'
+                          : 'bg-status-warning/10 border-status-warning/30 text-status-warning'
+                      }`}
+                      title={cap.exists ? `${cap.type}: ${cap.name} (ready)` : `${cap.type}: ${cap.name} (not yet built)`}
+                    >
+                      <span>
+                        {cap.exists ? '✓' : '⚠'}
+                      </span>
+                      <span className="text-[10px] opacity-70 uppercase">{cap.type}</span>
+                      <span>{cap.name}</span>
+                      {!cap.exists && (
+                        <span className="text-[10px] opacity-80">(pending)</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Save/Delete buttons */}
           <div className="flex items-center justify-between pt-2 border-t border-border">

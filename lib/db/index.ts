@@ -308,6 +308,15 @@ function runMigrations(database: Database.Database): void {
     database.exec(`CREATE INDEX IF NOT EXISTS idx_escalations_incorporated ON homr_escalations(incorporated_into_outcome_id)`);
     console.log(`[DB Migration] Added escalation incorporation tracking columns`);
   }
+
+  // Add required_capabilities column to tasks for capability dependency tracking
+  const tasksReqCapCols = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const hasRequiredCapabilities = tasksReqCapCols.some(c => c.name === 'required_capabilities');
+  if (!hasRequiredCapabilities) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN required_capabilities TEXT DEFAULT '[]'`);
+    database.exec(`UPDATE tasks SET required_capabilities = '[]' WHERE required_capabilities IS NULL`);
+    console.log(`[DB Migration] Added required_capabilities column to tasks`);
+  }
 }
 
 /**

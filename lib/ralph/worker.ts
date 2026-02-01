@@ -1072,7 +1072,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         const args = [
           '-p', ralphPrompt,
           '--dangerously-skip-permissions',
-          '--max-turns', '20',
+          '--max-turns', String(maxTurns),
         ];
 
         appendLog(`Spawning Claude for task: claude ${args.join(' ')}`);
@@ -1866,7 +1866,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     const args = [
       '-p', ralphPrompt,
       '--dangerously-skip-permissions',
-      '--max-turns', '20',
+      '--max-turns', String(maxTurns),
     ];
 
     appendLog(`Spawning Claude for task`);

@@ -713,6 +713,8 @@ export interface UpdateTaskInput {
   // Complexity estimation
   complexity_score?: number | null;
   estimated_turns?: number | null;
+  // Status override (use with caution - mainly for decomposition)
+  status?: 'pending' | 'completed' | 'failed';
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -780,6 +782,15 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.estimated_turns !== undefined) {
     updates.push('estimated_turns = ?');
     values.push(input.estimated_turns);
+  }
+  if (input.status !== undefined) {
+    updates.push('status = ?');
+    values.push(input.status);
+    // Also set completed_at if marking as completed
+    if (input.status === 'completed') {
+      updates.push('completed_at = ?');
+      values.push(timestamp);
+    }
   }
 
   values.push(id);

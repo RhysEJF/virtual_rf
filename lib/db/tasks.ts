@@ -6,6 +6,8 @@
  * race conditions when multiple workers try to claim tasks.
  */
 
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
@@ -956,6 +958,118 @@ export function getTasksWithMissingSkills(outcomeId: string): { task: Task; miss
       const deps = checkTaskSkillDependencies(task.id);
       if (!deps.satisfied) {
         result.push({ task, missingSkills: deps.missingSkills });
+      }
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Capability Dependency Checking (File-based)
+// ============================================================================
+
+export interface CapabilityDependencyResult {
+  satisfied: boolean;
+  missing: string[];
+}
+
+/**
+ * Check if a task's required capabilities (skills/tools) exist as files in the workspace.
+ *
+ * Capabilities are specified in format 'type:name':
+ * - 'skill:market-research' checks workspaces/{outcomeId}/skills/market-research.md
+ * - 'tool:fetch-data' checks workspaces/{outcomeId}/tools/fetch-data.ts
+ *
+ * @param taskId - The task ID to check
+ * @param outcomeId - The outcome ID for workspace path resolution
+ * @returns Object with satisfied boolean and array of missing capability strings
+ */
+export function checkTaskCapabilityDependencies(
+  taskId: string,
+  outcomeId: string
+): CapabilityDependencyResult {
+  const task = getTaskById(taskId);
+
+  // No task or no required_capabilities means all dependencies are satisfied
+  if (!task) {
+    return { satisfied: true, missing: [] };
+  }
+
+  // Parse required_capabilities JSON
+  let capabilities: string[];
+  try {
+    if (!task.required_capabilities) {
+      return { satisfied: true, missing: [] };
+    }
+    const parsed = JSON.parse(task.required_capabilities);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return { satisfied: true, missing: [] };
+    }
+    capabilities = parsed;
+  } catch {
+    // Invalid JSON or empty - treat as satisfied
+    return { satisfied: true, missing: [] };
+  }
+
+  const missing: string[] = [];
+  const workspacesRoot = join(process.cwd(), 'workspaces', outcomeId);
+
+  for (const capability of capabilities) {
+    // Parse capability format 'type:name'
+    const colonIndex = capability.indexOf(':');
+    if (colonIndex === -1) {
+      // Invalid format - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    const type = capability.substring(0, colonIndex);
+    const name = capability.substring(colonIndex + 1);
+
+    if (!type || !name) {
+      // Empty type or name - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    let filePath: string;
+    if (type === 'skill') {
+      filePath = join(workspacesRoot, 'skills', `${name}.md`);
+    } else if (type === 'tool') {
+      filePath = join(workspacesRoot, 'tools', `${name}.ts`);
+    } else {
+      // Unknown capability type - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    if (!existsSync(filePath)) {
+      missing.push(capability);
+    }
+  }
+
+  return {
+    satisfied: missing.length === 0,
+    missing,
+  };
+}
+
+/**
+ * Get all tasks with unsatisfied capability dependencies for an outcome.
+ * Only checks pending tasks.
+ */
+export function getTasksWithMissingCapabilities(
+  outcomeId: string
+): { task: Task; missing: string[] }[] {
+  const tasks = getTasksByOutcome(outcomeId);
+  const result: { task: Task; missing: string[] }[] = [];
+
+  for (const task of tasks) {
+    if (task.required_capabilities && task.status === 'pending') {
+      const deps = checkTaskCapabilityDependencies(task.id, outcomeId);
+      if (!deps.satisfied) {
+        result.push({ task, missing: deps.missing });
       }
     }
   }

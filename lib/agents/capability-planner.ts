@@ -399,6 +399,178 @@ export function hasCapabilityNeeds(approach: string): boolean {
 export const hasInfrastructureNeeds = hasCapabilityNeeds;
 
 // ============================================================================
+// Dynamic Capability Detection
+// ============================================================================
+
+/**
+ * Represents an existing capability that has already been identified
+ */
+export interface ExistingCapability {
+  type: CapabilityType;
+  name: string;
+  path: string;
+}
+
+/**
+ * Detect new capability needs from an approach that aren't already in the existing list.
+ * This is used for dynamic capability planning where users can modify the approach
+ * at any point and the system should detect newly-mentioned capabilities.
+ *
+ * @param approach - The approach text to scan for capability mentions
+ * @param existingCapabilities - List of capabilities already identified/built
+ * @returns Array of newly detected CapabilityNeed objects not in existingCapabilities
+ */
+export function detectNewCapabilityNeeds(
+  approach: string,
+  existingCapabilities: ExistingCapability[]
+): CapabilityNeed[] {
+  const detectedNeeds: CapabilityNeed[] = [];
+
+  // Create a Set of existing capability paths for efficient lookup
+  const existingPaths = new Set(
+    existingCapabilities.map(cap => cap.path.toLowerCase())
+  );
+  // Also track by normalized name for fuzzy matching
+  const existingNames = new Set(
+    existingCapabilities.map(cap => cap.name.toLowerCase().replace(/\s+/g, '-'))
+  );
+
+  // Helper to check if a capability is already known
+  const isAlreadyKnown = (path: string, name: string): boolean => {
+    const normalizedPath = path.toLowerCase();
+    const normalizedName = name.toLowerCase().replace(/\s+/g, '-');
+    return existingPaths.has(normalizedPath) || existingNames.has(normalizedName);
+  };
+
+  // Pattern 1: Explicit skills/ directory mentioned
+  const skillsMatch = approach.match(/skills\/[\w-]+\.md/gi);
+  if (skillsMatch) {
+    for (const match of skillsMatch) {
+      const name = match.replace('skills/', '').replace('.md', '');
+      if (!isAlreadyKnown(match, name)) {
+        const spec = extractSpecification(approach, name, 'skill');
+        detectedNeeds.push({
+          type: 'skill',
+          name: formatName(name),
+          path: match,
+          description: `Build skill: ${formatName(name)}`,
+          specification: spec,
+        });
+      }
+    }
+  }
+
+  // Pattern 2: Explicit tools/ directory mentioned
+  const toolsMatch = approach.match(/tools\/[\w-]+\.(ts|js)/gi);
+  if (toolsMatch) {
+    for (const match of toolsMatch) {
+      const name = match.replace('tools/', '').replace(/\.(ts|js)$/, '');
+      if (!isAlreadyKnown(match, name)) {
+        const spec = extractSpecification(approach, name, 'tool');
+        detectedNeeds.push({
+          type: 'tool',
+          name: formatName(name),
+          path: match,
+          description: `Build tool: ${formatName(name)}`,
+          specification: spec,
+        });
+      }
+    }
+  }
+
+  // Pattern 3: Skill document structure mentioned
+  const skillDocPattern = /skill[- ]?(?:document|file|md)s?.*?:\s*([\w\s,-]+\.md)/gi;
+  let skillDocMatch;
+  while ((skillDocMatch = skillDocPattern.exec(approach)) !== null) {
+    const files = skillDocMatch[1].split(',').map(f => f.trim());
+    for (const file of files) {
+      if (file.endsWith('.md')) {
+        const name = file.replace('.md', '');
+        const path = `skills/${file}`;
+        if (!isAlreadyKnown(path, name) && !detectedNeeds.some(n => n.path === path)) {
+          detectedNeeds.push({
+            type: 'skill',
+            name: formatName(name),
+            path,
+            description: `Build skill: ${formatName(name)}`,
+            specification: extractSpecification(approach, name, 'skill'),
+          });
+        }
+      }
+    }
+  }
+
+  // Pattern 4: Architecture section with skills/tools list
+  const archSection = approach.match(/```[\s\S]*?(skills\/|tools\/)[\s\S]*?```/gi);
+  if (archSection) {
+    for (const section of archSection) {
+      const lines = section.split('\n');
+      for (const line of lines) {
+        if (line.includes('skills/') && line.endsWith('.md')) {
+          const match = line.match(/(skills\/[\w-]+\.md)/);
+          if (match) {
+            const name = match[1].replace('skills/', '').replace('.md', '');
+            if (!isAlreadyKnown(match[1], name) && !detectedNeeds.some(n => n.path === match[1])) {
+              detectedNeeds.push({
+                type: 'skill',
+                name: formatName(name),
+                path: match[1],
+                description: `Build skill: ${formatName(name)}`,
+                specification: extractSpecification(approach, name, 'skill'),
+              });
+            }
+          }
+        }
+        if (line.includes('tools/') && line.match(/\.(ts|js)$/)) {
+          const match = line.match(/(tools\/[\w-]+\.(ts|js))/);
+          if (match) {
+            const name = match[1].replace('tools/', '').replace(/\.(ts|js)$/, '');
+            if (!isAlreadyKnown(match[1], name) && !detectedNeeds.some(n => n.path === match[1])) {
+              detectedNeeds.push({
+                type: 'tool',
+                name: formatName(name),
+                path: match[1],
+                description: `Build tool: ${formatName(name)}`,
+                specification: extractSpecification(approach, name, 'tool'),
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Pattern 5: Natural skill mentions like "**Market Intelligence Skill**"
+  const naturalSkillPatterns = [
+    /\*\*([\w\s]+)\s+Skill\*\*/gi,
+    /^\s*[\d\-\*\.]+\s*\*\*([\w\s]+)\s+Skill\*\*\s*:/gim,
+    /^\s*[\d\-\*\.]+\s*([\w\s]+)\s+Skill\s*:/gim,
+  ];
+
+  for (const pattern of naturalSkillPatterns) {
+    let match;
+    while ((match = pattern.exec(approach)) !== null) {
+      const skillName = match[1].trim();
+      const pathName = skillName.toLowerCase().replace(/\s+/g, '-');
+      const path = `skills/${pathName}.md`;
+
+      if (!isAlreadyKnown(path, skillName) && !detectedNeeds.some(n => n.path === path)) {
+        detectedNeeds.push({
+          type: 'skill',
+          name: skillName + ' Skill',
+          path,
+          description: `Build skill: ${skillName} Skill`,
+          specification: extractSpecification(approach, skillName, 'skill'),
+        });
+      }
+    }
+  }
+
+  // Deduplicate by path
+  return deduplicateNeeds(detectedNeeds);
+}
+
+// ============================================================================
 // Utilities
 // ============================================================================
 

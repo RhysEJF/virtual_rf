@@ -343,6 +343,32 @@ async function runPreClaimComplexityCheck(
   config: ComplexityCheckConfig,
   appendLog: (msg: string) => void
 ): Promise<ComplexityCheckResult> {
+  // Skip re-estimation if task already has complexity score below threshold
+  if (task.complexity_score !== null && task.complexity_score !== undefined) {
+    const existingScore = task.complexity_score;
+    const existingTurns = task.estimated_turns ?? config.maxTurns;
+
+    appendLog(`[Complexity] Using existing estimate: score=${existingScore}, turns=${existingTurns}`);
+
+    if (existingScore < config.complexityThreshold && existingTurns <= config.maxTurns) {
+      return {
+        shouldProceed: true,
+        estimate: {
+          complexity_score: existingScore,
+          estimated_turns: existingTurns,
+          confidence: 'high' as const,
+          reasoning: 'Using pre-existing complexity estimate',
+          risk_factors: [],
+          recommendations: [],
+        },
+        action: 'proceed',
+        reason: `Task has existing complexity score (${existingScore}) below threshold (${config.complexityThreshold})`,
+      };
+    }
+    // If existing score is high, still re-estimate to be safe (user may have changed task)
+    appendLog(`[Complexity] Existing score ${existingScore} >= threshold ${config.complexityThreshold}, re-estimating...`);
+  }
+
   appendLog(`[Complexity] Estimating complexity for task: ${task.title}`);
 
   try {

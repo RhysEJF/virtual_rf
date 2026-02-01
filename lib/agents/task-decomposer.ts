@@ -100,8 +100,8 @@ export async function decomposeTask(
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 1,
-      timeout: 60000,
+      maxTurns: 3, // Increased from 1 - Claude may need extra turns for complex decomposition
+      timeout: 90000,
       description: `Task decomposition for: ${task.title}`,
     });
 

@@ -31,8 +31,12 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Intervention handling | Complete |
 | Git worktree support | Complete |
 | HOMЯ integration | Complete |
+| Circuit breaker (auto-pause on failures) | Complete |
+| Task complexity estimation | Complete |
+| Auto-decomposition for complex tasks | Complete |
+| Destructive command guard | Complete |
 
-**Overall:** Complete and production-ready (largest module at 29KB)
+**Overall:** Complete and production-ready (largest module at ~50KB)
 
 ---
 
@@ -94,6 +98,56 @@ After each task completes, if HOMЯ is enabled:
 
 This makes Ralph "smarter" by letting HOMЯ provide oversight and coordination across tasks.
 
+### Circuit Breaker Pattern
+
+Workers now implement a circuit breaker to prevent cascading failures:
+
+1. **Failure Tracking** - Records consecutive task failures with error categorization
+2. **Trip Threshold** - After 3 consecutive failures (configurable), the circuit "trips"
+3. **Auto-Pause** - Worker automatically pauses and creates an escalation
+4. **Pattern Analysis** - Categorizes errors (timeout, permission, syntax, runtime) to identify systemic issues
+
+When the circuit breaker trips, all active workers on the outcome pause, preventing wasted resources on a broken outcome.
+
+### Task Complexity Estimation
+
+Before claiming a task, workers now estimate its complexity:
+
+1. **Pre-Claim Check** - Analyze task description for complexity signals
+2. **Factors Analyzed:**
+   - Ambiguity level (vague requirements, missing details)
+   - Scope breadth (multi-file, cross-system changes)
+   - Technical depth (new tech, complex algorithms)
+   - Dependency complexity (external APIs, unclear integrations)
+3. **Turn Limit Risk** - Estimate if task can complete within worker's max turns (default 20)
+
+High-complexity tasks are flagged for potential decomposition before execution.
+
+### Auto-Decomposition
+
+When a task is too complex for a single worker iteration:
+
+1. **Detection** - Complexity estimate exceeds turn limit threshold
+2. **Decomposition** - Task is automatically broken into smaller subtasks
+3. **Dependency Chain** - Subtasks are linked with proper `depends_on` relationships
+4. **Original Task** - Parent task is skipped, replaced by subtask chain
+
+This prevents workers from hitting turn limits mid-task and losing progress.
+
+### Destructive Command Guard
+
+Workers now have proactive command interception:
+
+1. **Pre-Execution Check** - All bash commands are validated before execution
+2. **Pattern Matching** - Checks against known dangerous patterns:
+   - `rm -rf` with dangerous paths
+   - `git push --force` to protected branches
+   - File operations outside workspace
+   - System-level commands (shutdown, format, etc.)
+3. **Context-Aware** - Understands workspace boundaries and git branch protection
+4. **Block & Log** - Dangerous commands are blocked and logged to `guard_blocks` table
+5. **Escalation** - Critical blocks create HOMЯ escalations for human review
+
 ---
 
 ## Behaviors
@@ -120,10 +174,11 @@ This makes Ralph "smarter" by letting HOMЯ provide oversight and coordination a
 
 1. **Parallel worker coordination** - When multiple workers run on same outcome, how do they avoid conflicts? Currently relies on atomic claiming, but file conflicts are possible.
 
-2. **Task timeout** - What if a task runs forever? Currently relies on Supervisor detection (10 min threshold).
+2. ~~**Task timeout** - What if a task runs forever? Currently relies on Supervisor detection (10 min threshold).~~
+   **Resolved:** Task complexity estimation now predicts tasks that may exceed turn limits. Auto-decomposition breaks them into smaller subtasks.
 
 3. ~~**Retry logic** - Failed tasks increment `attempts`. When should we give up?~~
-   **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3).
+   **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3). Circuit breaker pattern provides additional protection.
 
 4. **Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.
 

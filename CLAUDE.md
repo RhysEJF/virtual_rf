@@ -216,6 +216,7 @@ Users can request changes after completion via the Iterate section:
 - `repositories` - External git repos for syncing (private/team)
 - `outcome_items` - Tracked files with sync status (skills, tools, outputs)
 - `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
+- `guard_blocks` - Blocked dangerous commands with context
 
 ## Requirements
 
@@ -344,6 +345,23 @@ kill -9 <PID>
 - [x] Improvement proposals API (`app/api/improvements/analyze/`)
 - [x] EscalationInsights component with trends visualization
 - [x] ImprovementPreviewModal for reviewing proposed outcomes
+- [x] Create individual or consolidated improvement outcomes
+- [x] Escalation incorporation tracking (prevents re-analyzing addressed escalations)
+- [x] Supervisor page shows "X unaddressed / Y addressed" badges
+
+### Worker Resilience (Complete)
+- [x] Circuit breaker pattern - auto-pause after consecutive failures (`lib/ralph/worker.ts`)
+- [x] Task complexity estimation before claiming (`lib/agents/task-complexity-estimator.ts`)
+- [x] Auto-decomposition for high-complexity tasks (`lib/agents/task-decomposer.ts`)
+- [x] Failure pattern categorization (timeout, permission, syntax, runtime)
+- [x] Turn limit risk assessment to prevent mid-task failures
+
+### Destructive Command Guard (Complete)
+- [x] Command validation before execution (`lib/guard/index.ts`)
+- [x] Dangerous pattern detection (rm -rf, force push, etc.)
+- [x] Workspace boundary enforcement
+- [x] Guard blocks logged to database (`lib/db/guard-blocks.ts`)
+- [x] Integration with Ralph worker execution
 
 ### CLI (In Progress)
 - [x] Basic command structure (`cli/`)

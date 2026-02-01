@@ -131,9 +131,10 @@ export async function decomposeTask(
     // Create the subtasks in the database
     const createdIds = await createSubtasks(task, parseResult.subtasks);
 
-    // Mark original task as decomposed (update description to note it was split)
+    // Mark original task as decomposed and completed so workers claim subtasks instead
     await updateTask(task.id, {
       description: `${task.description || ''}\n\n[DECOMPOSED into ${createdIds.length} subtasks: ${createdIds.join(', ')}]`,
+      status: 'completed', // Critical: prevents workers from re-claiming the decomposed task
     });
 
     return {

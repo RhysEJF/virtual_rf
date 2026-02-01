@@ -161,6 +161,8 @@ export interface Task {
   task_approach: string | null;     // How to execute: methodology, tools, constraints
   // Task dependencies
   depends_on: string | null;        // JSON array of task IDs this task depends on
+  // Required capabilities (skills/tools) for this task
+  required_capabilities: string | null;  // JSON array of strings like 'skill:name' or 'tool:name'
   // Complexity estimation (for worker resilience feedback loop)
   complexity_score: number | null;  // AI-estimated complexity (1-10 scale)
   estimated_turns: number | null;   // AI-estimated turns/iterations to complete
@@ -682,6 +684,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   task_approach TEXT,
   -- Task dependencies
   depends_on TEXT DEFAULT '[]',
+  -- Required capabilities (skills/tools)
+  required_capabilities TEXT DEFAULT '[]',
   -- Complexity estimation (for worker resilience feedback loop)
   complexity_score INTEGER,
   estimated_turns INTEGER,
@@ -1283,4 +1287,15 @@ export const TASK_COMPLEXITY_MIGRATION_SQL = `
 
 ALTER TABLE tasks ADD COLUMN complexity_score INTEGER;
 ALTER TABLE tasks ADD COLUMN estimated_turns INTEGER;
+`;
+
+export const REQUIRED_CAPABILITIES_MIGRATION_SQL = `
+-- Migration: Add required_capabilities column to tasks table
+-- This column stores a JSON array of capability identifiers like 'skill:name' or 'tool:name'
+-- that must be available before this task can be executed
+
+ALTER TABLE tasks ADD COLUMN required_capabilities TEXT DEFAULT '[]';
+
+-- Update any existing tasks to have empty capabilities array
+UPDATE tasks SET required_capabilities = '[]' WHERE required_capabilities IS NULL;
 `;

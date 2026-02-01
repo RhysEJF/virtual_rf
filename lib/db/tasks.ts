@@ -32,6 +32,8 @@ export interface CreateTaskInput {
   task_approach?: string;
   // Task dependencies
   depends_on?: string[];
+  // Required capabilities (skills/tools) - array of strings like 'skill:name' or 'tool:name'
+  required_capabilities?: string[];
   // Complexity estimation
   complexity_score?: number;
   estimated_turns?: number;
@@ -47,16 +49,20 @@ export function createTask(input: CreateTaskInput): Task {
   const dependsOnJson = input.depends_on && input.depends_on.length > 0
     ? JSON.stringify(input.depends_on)
     : '[]';
+  const requiredCapabilitiesJson = input.required_capabilities && input.required_capabilities.length > 0
+    ? JSON.stringify(input.required_capabilities)
+    : '[]';
 
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
-      task_intent, task_approach, depends_on, complexity_score, estimated_turns,
+      task_intent, task_approach, depends_on, required_capabilities,
+      complexity_score, estimated_turns,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -75,6 +81,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.task_intent || null,
     input.task_approach || null,
     dependsOnJson,
+    requiredCapabilitiesJson,
     input.complexity_score ?? null,
     input.estimated_turns ?? null,
     timestamp,
@@ -710,6 +717,8 @@ export interface UpdateTaskInput {
   required_skills?: string | null;
   // Task dependencies (JSON array of task IDs or array)
   depends_on?: string[] | string | null;
+  // Required capabilities (skills/tools) - array of strings like 'skill:name' or 'tool:name', or JSON string
+  required_capabilities?: string[] | string | null;
   // Complexity estimation
   complexity_score?: number | null;
   estimated_turns?: number | null;
@@ -773,6 +782,17 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
       values.push(JSON.stringify(input.depends_on));
     } else {
       values.push(input.depends_on);
+    }
+  }
+  if (input.required_capabilities !== undefined) {
+    updates.push('required_capabilities = ?');
+    // Handle both array and string (JSON) input
+    if (input.required_capabilities === null) {
+      values.push('[]');
+    } else if (Array.isArray(input.required_capabilities)) {
+      values.push(JSON.stringify(input.required_capabilities));
+    } else {
+      values.push(input.required_capabilities);
     }
   }
   if (input.complexity_score !== undefined) {

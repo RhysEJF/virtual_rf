@@ -432,6 +432,7 @@ async function applyBreakIntoSubtasks(
         task,
         outcomeIntent: intent,
         outcomeApproach: approach,
+        forceDecompose: true, // User explicitly requested decomposition - skip complexity check
       };
 
       const decompositionResult = await decomposeTask(decompositionContext);

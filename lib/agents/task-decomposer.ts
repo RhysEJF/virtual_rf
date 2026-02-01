@@ -42,6 +42,7 @@ export interface DecompositionContext {
   outcomeIntent?: Intent | null;
   outcomeApproach?: Approach | null;
   maxTurnsPerSubtask?: number;    // Target max turns per subtask (default: 10)
+  forceDecompose?: boolean;       // Skip complexity threshold check (for user-requested decomposition)
 }
 
 export interface DecompositionThresholds {
@@ -70,7 +71,7 @@ export async function decomposeTask(
   context: DecompositionContext,
   thresholds: DecompositionThresholds = DEFAULT_THRESHOLDS
 ): Promise<DecompositionResult> {
-  const { task, complexityEstimate, outcomeIntent, outcomeApproach, maxTurnsPerSubtask } = context;
+  const { task, complexityEstimate, outcomeIntent, outcomeApproach, maxTurnsPerSubtask, forceDecompose } = context;
   const effectiveMaxTurns = maxTurnsPerSubtask ?? thresholds.maxTurnsPerSubtask;
 
   // Get or estimate complexity
@@ -82,8 +83,8 @@ export async function decomposeTask(
     );
   }
 
-  // Check if decomposition is needed
-  if (estimate.complexity_score < thresholds.minComplexityToDecompose) {
+  // Check if decomposition is needed (skip check if forceDecompose is true)
+  if (!forceDecompose && estimate.complexity_score < thresholds.minComplexityToDecompose) {
     return {
       success: false,
       originalTaskId: task.id,

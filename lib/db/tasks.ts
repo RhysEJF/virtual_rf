@@ -1088,3 +1088,86 @@ export function getTasksWithMissingCapabilities(
 
   return result;
 }
+
+// ============================================================================
+// Capability Task Lookup
+// ============================================================================
+
+/**
+ * Check if a pending or in-progress capability task already exists for a specific capability.
+ *
+ * Looks for tasks that match by either:
+ * 1. Title pattern: "[Capability] Build {type}: {name}" (e.g., "[Capability] Build skill: market-research")
+ * 2. prd_context JSON containing the capability info
+ *
+ * @param outcomeId - The outcome ID to search within
+ * @param capabilityString - Capability in format 'type:name' (e.g., 'skill:market-research', 'tool:web-scraper')
+ * @returns The matching task if found, null otherwise
+ */
+export function getCapabilityTaskForCapability(
+  outcomeId: string,
+  capabilityString: string
+): Task | null {
+  // Parse capability string format 'type:name'
+  const colonIndex = capabilityString.indexOf(':');
+  if (colonIndex === -1) {
+    // Invalid format
+    return null;
+  }
+
+  const capabilityType = capabilityString.substring(0, colonIndex);
+  const capabilityName = capabilityString.substring(colonIndex + 1);
+
+  if (!capabilityType || !capabilityName) {
+    // Empty type or name
+    return null;
+  }
+
+  const db = getDb();
+
+  // Get all pending or in-progress capability tasks for this outcome
+  const candidates = db.prepare(`
+    SELECT * FROM tasks
+    WHERE outcome_id = ?
+      AND phase = 'capability'
+      AND status IN ('pending', 'claimed', 'running')
+    ORDER BY created_at ASC
+  `).all(outcomeId) as Task[];
+
+  // Expected title pattern: "[Capability] Build {type}: {name}"
+  const expectedTitlePattern = `[Capability] Build ${capabilityType}: ${capabilityName}`;
+
+  for (const task of candidates) {
+    // Check 1: Title pattern match (case-insensitive)
+    if (task.title.toLowerCase() === expectedTitlePattern.toLowerCase()) {
+      return {
+        ...task,
+        from_review: Boolean(task.from_review),
+      };
+    }
+
+    // Check 2: prd_context JSON containing the capability info
+    if (task.prd_context) {
+      try {
+        const context = JSON.parse(task.prd_context);
+        // Check if prd_context contains capability information
+        // Could be structured as { type: 'skill', name: 'market-research' }
+        // or { capability: 'skill:market-research' }
+        if (
+          (context.type === capabilityType && context.name === capabilityName) ||
+          context.capability === capabilityString ||
+          context.capability_type === capabilityType && context.capability_name === capabilityName
+        ) {
+          return {
+            ...task,
+            from_review: Boolean(task.from_review),
+          };
+        }
+      } catch {
+        // prd_context is not valid JSON, skip this check
+      }
+    }
+  }
+
+  return null;
+}

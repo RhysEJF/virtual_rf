@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from './ui/Badge';
 import { EscalationAlert } from './homr/EscalationAlert';
+import { OutcomeRetro } from './OutcomeRetro';
 
 interface HomrStats {
   enabled: boolean;
@@ -214,6 +215,9 @@ export function HomrDashboard({
             </div>
           </div>
         )}
+
+        {/* Outcome Retro - Analyze escalations for this outcome */}
+        <OutcomeRetro outcomeId={outcomeId} />
       </div>
     </div>
   );

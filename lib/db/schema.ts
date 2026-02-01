@@ -161,6 +161,9 @@ export interface Task {
   task_approach: string | null;     // How to execute: methodology, tools, constraints
   // Task dependencies
   depends_on: string | null;        // JSON array of task IDs this task depends on
+  // Complexity estimation (for worker resilience feedback loop)
+  complexity_score: number | null;  // AI-estimated complexity (1-10 scale)
+  estimated_turns: number | null;   // AI-estimated turns/iterations to complete
 }
 
 export interface Worker {
@@ -539,6 +542,17 @@ export type PatternSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type SupervisorAction = 'log' | 'alert' | 'pause';
 export type BehaviorRecommendation = 'continue' | 'review' | 'pause';
 
+// Guard block for destructive command interception
+export interface GuardBlock {
+  id: string;
+  worker_id: string;
+  outcome_id: string;
+  command: string;                // The blocked command
+  pattern_matched: string;        // Which pattern triggered the block
+  blocked_at: number;             // Timestamp when blocked
+  context: string | null;         // JSON context about why this was blocked
+}
+
 export interface ChangeSnapshot {
   id: string;
   worker_id: string;
@@ -666,6 +680,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   task_approach TEXT,
   -- Task dependencies
   depends_on TEXT DEFAULT '[]',
+  -- Complexity estimation (for worker resilience feedback loop)
+  complexity_score INTEGER,
+  estimated_turns INTEGER,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
 );
@@ -1006,6 +1023,19 @@ CREATE TABLE IF NOT EXISTS pattern_detections (
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
 );
 
+-- Guard blocks: Track blocked destructive commands
+CREATE TABLE IF NOT EXISTS guard_blocks (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  command TEXT NOT NULL,           -- The command that was blocked
+  pattern_matched TEXT NOT NULL,   -- Which pattern triggered the block
+  blocked_at INTEGER NOT NULL,     -- Timestamp when blocked
+  context TEXT,                    -- JSON context (working dir, env, etc.)
+  FOREIGN KEY (worker_id) REFERENCES workers(id),
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
+);
+
 -- Indexes for supervisor tables
 CREATE INDEX IF NOT EXISTS idx_change_snapshots_worker ON change_snapshots(worker_id);
 CREATE INDEX IF NOT EXISTS idx_change_snapshots_outcome ON change_snapshots(outcome_id);
@@ -1020,6 +1050,11 @@ CREATE INDEX IF NOT EXISTS idx_pattern_detections_worker ON pattern_detections(w
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_outcome ON pattern_detections(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_severity ON pattern_detections(severity);
 CREATE INDEX IF NOT EXISTS idx_pattern_detections_time ON pattern_detections(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_guard_blocks_worker ON guard_blocks(worker_id);
+CREATE INDEX IF NOT EXISTS idx_guard_blocks_outcome ON guard_blocks(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_guard_blocks_time ON guard_blocks(blocked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guard_blocks_pattern ON guard_blocks(pattern_matched);
 
 -- ============================================================================
 -- HOMЯ Protocol Tables
@@ -1238,4 +1273,12 @@ ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]';
 
 -- Update any existing tasks to have empty dependency array
 UPDATE tasks SET depends_on = '[]' WHERE depends_on IS NULL;
+`;
+
+export const TASK_COMPLEXITY_MIGRATION_SQL = `
+-- Migration: Add complexity_score and estimated_turns columns to tasks table
+-- These columns support the worker resilience feedback loop by tracking AI-estimated task complexity
+
+ALTER TABLE tasks ADD COLUMN complexity_score INTEGER;
+ALTER TABLE tasks ADD COLUMN estimated_turns INTEGER;
 `;

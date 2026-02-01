@@ -50,6 +50,7 @@ import {
   resolveSkillDependencies,
 } from '../agents/skill-dependency-resolver';
 import * as homr from '../homr';
+import * as guard from '../guard';
 
 // ============================================================================
 // Types
@@ -583,14 +584,28 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
         appendLog(`Spawning Claude for task: claude ${args.join(' ')}`);
 
+        // Build guard context for command validation
+        const taskGuardContext: TaskGuardContext = {
+          workerId,
+          outcomeId,
+          taskId: task.id,
+          workspacePath: outcomeWorkspace,
+        };
+
         const taskResult = await executeTask(
           taskWorkspace,
           args,
           progressPath,
           workerId,
           task,
-          appendLog
+          appendLog,
+          taskGuardContext
         );
+
+        // Log guard activity if any commands were blocked
+        if (taskResult.guardBlocks && taskResult.guardBlocks > 0) {
+          appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
+        }
 
         if (taskResult.success) {
           completeTask(task.id);
@@ -711,6 +726,121 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
   return { workerId, started: true };
 }
 
+// ============================================================================
+// Guard Integration
+// ============================================================================
+
+/**
+ * Extract potential shell commands from worker output.
+ * Looks for common patterns like tool calls, bash commands, etc.
+ */
+function extractCommandsFromOutput(output: string): string[] {
+  const commands: string[] = [];
+  const seen = new Set<string>();
+
+  // Pattern 1: Lines that look like shell commands (start with common commands)
+  // This catches logged bash commands from Claude Code output
+  const shellCommandPrefixes = [
+    'rm', 'mv', 'cp', 'chmod', 'chown', 'sudo', 'su ', 'dd ',
+    'git push', 'git reset', 'git clean', 'git checkout .',
+    'curl', 'wget', 'nc ', 'mkfs', 'shred',
+    'DROP ', 'TRUNCATE ', 'DELETE FROM',
+  ];
+
+  const lines = output.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip empty lines or very short lines
+    if (trimmed.length < 3) continue;
+
+    // Check if line starts with a shell command prefix
+    for (const prefix of shellCommandPrefixes) {
+      if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (!seen.has(trimmed)) {
+          seen.add(trimmed);
+          commands.push(trimmed);
+        }
+        break;
+      }
+    }
+
+    // Pattern 2: Look for Bash tool calls in JSON format
+    // Claude Code outputs tool uses in a structured format
+    const bashMatch = trimmed.match(/"command"\s*:\s*"([^"]+)"/);
+    if (bashMatch && bashMatch[1]) {
+      const cmd = bashMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+      if (!seen.has(cmd)) {
+        seen.add(cmd);
+        commands.push(cmd);
+      }
+    }
+  }
+
+  return commands;
+}
+
+/**
+ * Guard context for a worker task.
+ */
+interface TaskGuardContext {
+  workerId: string;
+  outcomeId: string;
+  taskId: string;
+  workspacePath: string;
+}
+
+/**
+ * Check extracted commands against the guard and log any blocks.
+ * Returns the number of blocked commands.
+ */
+function checkOutputForDangerousCommands(
+  output: string,
+  context: TaskGuardContext,
+  appendLog: (msg: string) => void
+): { blockedCount: number; blockedCommands: string[] } {
+  const commands = extractCommandsFromOutput(output);
+  const blockedCommands: string[] = [];
+
+  if (commands.length === 0) {
+    return { blockedCount: 0, blockedCommands: [] };
+  }
+
+  appendLog(`[Guard] Checking ${commands.length} extracted commands...`);
+
+  for (const command of commands) {
+    const result = guard.checkCommand(command, {
+      workerId: context.workerId,
+      outcomeId: context.outcomeId,
+      taskId: context.taskId,
+      workspacePath: context.workspacePath,
+    });
+
+    if (!result.allowed) {
+      blockedCommands.push(command);
+      appendLog(`[Guard] BLOCKED: ${command.substring(0, 100)}${command.length > 100 ? '...' : ''}`);
+      appendLog(`[Guard] Reason: ${result.reason}`);
+
+      if (result.blockRecorded) {
+        appendLog(`[Guard] Block recorded with ID: ${result.blockId}`);
+      }
+      if (result.alertCreated) {
+        appendLog(`[Guard] Supervisor alert created`);
+      }
+    }
+  }
+
+  if (blockedCommands.length > 0) {
+    appendLog(`[Guard] Total blocked: ${blockedCommands.length} of ${commands.length} commands`);
+  }
+
+  return { blockedCount: blockedCommands.length, blockedCommands };
+}
+
+// ============================================================================
+// Task Execution
+// ============================================================================
+
 /**
  * Execute a single task with Claude CLI
  * Returns success status and captured full output for auditing
@@ -721,8 +851,9 @@ async function executeTask(
   progressPath: string,
   workerId: string,
   task: Task,
-  appendLog: (msg: string) => void
-): Promise<{ success: boolean; error?: string; fullOutput?: string }> {
+  appendLog: (msg: string) => void,
+  guardContext?: TaskGuardContext
+): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number }> {
   return new Promise((resolve) => {
     try {
       const claudeProcess = spawn('claude', args, {
@@ -750,6 +881,7 @@ async function executeTask(
       const outputChunks: string[] = [];
       const MAX_OUTPUT_SIZE = 500000; // 500KB max to prevent memory issues
       let totalOutputSize = 0;
+      let totalGuardBlocks = 0;
 
       // Poll progress file
       const checkProgress = () => {
@@ -774,7 +906,7 @@ async function executeTask(
 
       checkInterval = setInterval(checkProgress, 2000);
 
-      // Handle stdout - capture full output
+      // Handle stdout - capture full output and check for dangerous commands
       claudeProcess.stdout?.on('data', (data: Buffer) => {
         const output = data.toString();
         // Log truncated version
@@ -784,9 +916,15 @@ async function executeTask(
           outputChunks.push(`[stdout] ${output}`);
           totalOutputSize += output.length;
         }
+
+        // Real-time guard check on output (if context provided)
+        if (guardContext) {
+          const guardResult = checkOutputForDangerousCommands(output, guardContext, appendLog);
+          totalGuardBlocks += guardResult.blockedCount;
+        }
       });
 
-      // Handle stderr - capture full output
+      // Handle stderr - capture full output and check for dangerous commands
       claudeProcess.stderr?.on('data', (data: Buffer) => {
         const output = data.toString();
         // Log truncated version
@@ -795,6 +933,12 @@ async function executeTask(
         if (totalOutputSize < MAX_OUTPUT_SIZE) {
           outputChunks.push(`[stderr] ${output}`);
           totalOutputSize += output.length;
+        }
+
+        // Real-time guard check on output (if context provided)
+        if (guardContext) {
+          const guardResult = checkOutputForDangerousCommands(output, guardContext, appendLog);
+          totalGuardBlocks += guardResult.blockedCount;
         }
       });
 
@@ -811,24 +955,40 @@ async function executeTask(
         // Combine all captured output
         const fullOutput = outputChunks.join('\n');
 
+        // Final guard check on complete output (catches anything missed in streaming)
+        if (guardContext && fullOutput) {
+          const finalGuardResult = checkOutputForDangerousCommands(fullOutput, guardContext, appendLog);
+          // Note: We don't add to totalGuardBlocks here as we already checked in real-time
+          // This is just a safety check for edge cases
+          if (finalGuardResult.blockedCount > 0) {
+            appendLog(`[Guard] Final scan found ${finalGuardResult.blockedCount} additional blocked commands`);
+          }
+        }
+
+        // Log guard summary
+        if (totalGuardBlocks > 0) {
+          appendLog(`[Guard] Task completed with ${totalGuardBlocks} blocked dangerous commands`);
+        }
+
         if (existsSync(progressPath)) {
           const content = readFileSync(progressPath, 'utf-8');
           const parsed = parseTaskProgress(content);
 
           if (parsed.done) {
-            resolve({ success: true, fullOutput });
+            resolve({ success: true, fullOutput, guardBlocks: totalGuardBlocks });
           } else if (parsed.error) {
-            resolve({ success: false, error: parsed.error, fullOutput });
+            resolve({ success: false, error: parsed.error, fullOutput, guardBlocks: totalGuardBlocks });
           } else if (code === 0) {
-            resolve({ success: true, fullOutput });
+            resolve({ success: true, fullOutput, guardBlocks: totalGuardBlocks });
           } else {
-            resolve({ success: false, error: `Process exited with code ${code}`, fullOutput });
+            resolve({ success: false, error: `Process exited with code ${code}`, fullOutput, guardBlocks: totalGuardBlocks });
           }
         } else {
           resolve({
             success: code === 0,
             error: code !== 0 ? `Exit code ${code}` : undefined,
-            fullOutput
+            fullOutput,
+            guardBlocks: totalGuardBlocks
           });
         }
       });
@@ -836,7 +996,7 @@ async function executeTask(
       claudeProcess.on('error', (err) => {
         clearInterval(checkInterval);
         const fullOutput = outputChunks.join('\n');
-        resolve({ success: false, error: err.message, fullOutput });
+        resolve({ success: false, error: err.message, fullOutput, guardBlocks: totalGuardBlocks });
       });
 
       // Timeout after 10 minutes per task
@@ -851,6 +1011,7 @@ async function executeTask(
       resolve({
         success: false,
         error: err instanceof Error ? err.message : 'Failed to spawn process',
+        guardBlocks: 0,
       });
     }
   });
@@ -1092,14 +1253,28 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
     appendLog(`Spawning Claude for task`);
 
+    // Build guard context for command validation
+    const taskGuardContext: TaskGuardContext = {
+      workerId,
+      outcomeId,
+      taskId: task.id,
+      workspacePath: outcomeWorkspace,
+    };
+
     const taskResult = await executeTask(
       taskWorkspace,
       args,
       progressPath,
       workerId,
       task,
-      appendLog
+      appendLog,
+      taskGuardContext
     );
+
+    // Log guard activity if any commands were blocked
+    if (taskResult.guardBlocks && taskResult.guardBlocks > 0) {
+      appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
+    }
 
     if (taskResult.success) {
       completeTask(task.id);

@@ -235,6 +235,19 @@ function runMigrations(database: Database.Database): void {
     console.log(`[DB Migration] Added depends_on column to tasks for dependency graph`);
   }
 
+  // Add complexity estimation columns for worker resilience feedback loop
+  const tasksComplexityCols = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const hasComplexityScore = tasksComplexityCols.some(c => c.name === 'complexity_score');
+  if (!hasComplexityScore) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN complexity_score INTEGER`);
+    console.log(`[DB Migration] Added complexity_score column to tasks`);
+  }
+  const hasEstimatedTurns = tasksComplexityCols.some(c => c.name === 'estimated_turns');
+  if (!hasEstimatedTurns) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN estimated_turns INTEGER`);
+    console.log(`[DB Migration] Added estimated_turns column to tasks`);
+  }
+
   // HOMЯ Protocol tables are created via SCHEMA_SQL
   // Just log that they're available
   const homrTables = database.prepare(`
@@ -278,6 +291,13 @@ function runMigrations(database: Database.Database): void {
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to)`);
+
+  // Create guard_blocks table and indexes if they don't exist
+  // (table is created via SCHEMA_SQL, indexes are created here for existing DBs)
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_worker ON guard_blocks(worker_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_outcome ON guard_blocks(outcome_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_time ON guard_blocks(blocked_at DESC)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_guard_blocks_pattern ON guard_blocks(pattern_matched)`);
 }
 
 /**

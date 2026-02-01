@@ -154,7 +154,7 @@ async function generateEscalationQuestion(
   const response = await complete({
     system: 'You are HOMЯ, generating clear questions for human decision-making. Respond only with valid JSON.',
     prompt,
-    maxTurns: 1,
+    maxTurns: 3, // Increased from 1
     timeout: 30000,
     description: 'HOMЯ escalation question generation',
   });

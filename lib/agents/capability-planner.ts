@@ -277,7 +277,7 @@ Be specific about file paths (e.g., skills/market-research.md or tools/web-scrap
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 1,
+      maxTurns: 3, // Increased from 1
       timeout: 30000,
     });
 

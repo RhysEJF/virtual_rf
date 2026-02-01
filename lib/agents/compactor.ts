@@ -82,7 +82,7 @@ Write a concise summary (2-4 paragraphs):`;
     const result = await claudeComplete({
       prompt,
       timeout: 60000, // 1 minute for summarization
-      maxTurns: 1,
+      maxTurns: 3, // Increased from 1
     });
 
     if (!result.success || !result.text) {

@@ -254,7 +254,7 @@ Only output the JSON, nothing else.`;
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 1,
+      maxTurns: 3, // Increased from 1
       timeout: 60000,
       description: 'Improvement analyzer - clustering escalations',
     });
@@ -375,7 +375,7 @@ Only output the JSON, nothing else.`;
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 1,
+      maxTurns: 3, // Increased from 1
       timeout: 90000,
       description: `Improvement analyzer - generating proposal for ${cluster.rootCause}`,
     });

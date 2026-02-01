@@ -1,13 +1,19 @@
 /**
  * Improvements Analyze API Route
  *
- * GET /api/improvements/analyze - Analyze escalation patterns and return improvement proposals
+ * GET /api/improvements/analyze - Analyze escalation patterns synchronously (legacy)
+ * POST /api/improvements/analyze - Start a background analysis job (recommended)
  *
- * Query parameters:
+ * Query parameters (GET):
  * - lookbackDays: Number of days to look back (default: 30)
  * - outcomeId: Optional - filter escalations to a specific outcome
  * - maxProposals: Maximum number of proposals to generate (default: 3)
  * - autoCreate: If 'true', automatically create outcomes from proposals
+ *
+ * Body (POST):
+ * - outcomeId: Optional - filter escalations to a specific outcome
+ * - lookbackDays: Number of days to look back (default: 30)
+ * - maxProposals: Maximum number of proposals to generate (default: 5)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,6 +24,16 @@ import {
   type EscalationCluster,
   type ImprovementProposal,
 } from '@/lib/agents/improvement-analyzer';
+import {
+  logAnalysisStarted,
+  logAnalysisCompleted,
+  logAnalysisFailed,
+} from '@/lib/db/activity';
+import { getOutcomeById } from '@/lib/db/outcomes';
+import {
+  startBackgroundAnalysis,
+  hasActiveAnalysis,
+} from '@/lib/analysis/runner';
 
 interface ClusterSummary {
   id: string;
@@ -134,6 +150,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       });
     }
 
+    // Get outcome name for activity logging
+    let outcomeName: string | null = null;
+    if (outcomeId) {
+      const outcome = getOutcomeById(outcomeId);
+      outcomeName = outcome?.name || null;
+    }
+
+    // Log analysis started
+    logAnalysisStarted(outcomeId || null, outcomeName, lookbackDays);
+
     // Run the full analysis
     const result: AnalysisResult = await analyzeForImprovements({
       lookbackDays,
@@ -141,6 +167,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       autoCreateOutcomes: autoCreate,
       maxProposals,
     });
+
+    // Log analysis completed
+    logAnalysisCompleted(
+      outcomeId || null,
+      outcomeName,
+      result.clusters.length,
+      result.proposals.length,
+      result.escalationsAnalyzed
+    );
 
     // Format the response
     const response: AnalyzeResponse = {
@@ -163,6 +198,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(response);
   } catch (error) {
     console.error('Error analyzing improvements:', error);
+
+    // Log analysis failed (use outcomeId from earlier if available)
+    const failedOutcomeId = new URL(request.url).searchParams.get('outcomeId') || null;
+    logAnalysisFailed(
+      failedOutcomeId,
+      null,
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+
     return NextResponse.json(
       {
         success: false,
@@ -192,4 +236,84 @@ function generateMessage(result: AnalysisResult): string {
     : '';
 
   return `Analyzed ${result.escalationsAnalyzed} escalation(s), identified ${result.clusters.length} pattern cluster(s), and generated ${result.proposals.length} improvement proposal(s).${outcomeText}`;
+}
+
+// ============================================================================
+// POST Handler - Start Background Analysis Job
+// ============================================================================
+
+interface StartAnalysisRequest {
+  outcomeId?: string;
+  lookbackDays?: number;
+  maxProposals?: number;
+}
+
+interface StartAnalysisResponse {
+  success: boolean;
+  jobId: string;
+  status: 'pending';
+  message: string;
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  try {
+    const body = (await request.json()) as StartAnalysisRequest;
+
+    const outcomeId = body.outcomeId || undefined;
+    const lookbackDays = body.lookbackDays || 30;
+    const maxProposals = body.maxProposals || 5;
+
+    // Validate parameters
+    if (lookbackDays < 1 || lookbackDays > 365) {
+      return NextResponse.json(
+        { error: 'lookbackDays must be between 1 and 365' },
+        { status: 400 }
+      );
+    }
+
+    if (maxProposals < 1 || maxProposals > 10) {
+      return NextResponse.json(
+        { error: 'maxProposals must be between 1 and 10' },
+        { status: 400 }
+      );
+    }
+
+    // Check if there's already an active analysis for this scope
+    if (hasActiveAnalysis(outcomeId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'An analysis is already running for this scope',
+          message: 'Please wait for the current analysis to complete',
+        },
+        { status: 409 }
+      );
+    }
+
+    // Start the background job
+    const jobId = startBackgroundAnalysis({
+      outcomeId,
+      lookbackDays,
+      maxProposals,
+    });
+
+    const response: StartAnalysisResponse = {
+      success: true,
+      jobId,
+      status: 'pending',
+      message: `Analysis job started. Poll /api/improvements/jobs/${jobId} for status.`,
+    };
+
+    return NextResponse.json(response, { status: 202 }); // 202 Accepted
+  } catch (error) {
+    console.error('Error starting analysis job:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Failed to start analysis job',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
 }

@@ -17,6 +17,7 @@ import {
 } from '@/lib/db/outcomes';
 import { createTasksBatch, type CreateTaskInput } from '@/lib/db/tasks';
 import { markEscalationsByTriggerTypeAsIncorporated } from '@/lib/db/homr';
+import { logImprovementCreated } from '@/lib/db/activity';
 import type { TaskPhase } from '@/lib/db/schema';
 
 // Constants
@@ -296,6 +297,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         30 * 24 * 60 * 60 * 1000 // 30 days lookback
       );
     }
+
+    // Log improvement creation to activity feed
+    logImprovementCreated(
+      parentOutcomeId,
+      SELF_IMPROVEMENT_OUTCOME_NAME,
+      outcomeName,
+      taskCount,
+      escalationsMarked
+    );
 
     const response: CreateConsolidatedResponse = {
       success: true,

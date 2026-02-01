@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import { Button } from './ui/Button';
@@ -69,11 +69,21 @@ interface CreateResponse {
   message: string;
 }
 
+interface JobStatus {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progressMessage: string | null;
+  result?: AnalyzeResponse | null;
+  error?: string | null;
+}
+
 interface ImprovementPreviewModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   lookbackDays?: number;
   outcomeId?: string;
+  /** If provided, skip starting a new analysis and use this job's results */
+  existingJobId?: string;
 }
 
 // ============================================================================
@@ -88,6 +98,12 @@ const severityConfig: Record<string, { label: string; variant: 'default' | 'succ
 };
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const POLL_INTERVAL = 2000; // 2 seconds
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -96,6 +112,7 @@ export function ImprovementPreviewModal({
   onSuccess,
   lookbackDays = 30,
   outcomeId,
+  existingJobId,
 }: ImprovementPreviewModalProps): JSX.Element {
   const router = useRouter();
   const { toast } = useToast();
@@ -108,48 +125,175 @@ export function ImprovementPreviewModal({
   const [selectedClusterIds, setSelectedClusterIds] = useState<Set<string>>(new Set());
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
 
-  // Fetch analysis data on mount
-  const fetchAnalysis = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Background job state
+  const [jobId, setJobId] = useState<string | null>(existingJobId || null);
+  const [jobStatus, setJobStatus] = useState<'pending' | 'running' | 'completed' | 'failed' | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [canClose, setCanClose] = useState(false);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Poll for job status
+  const pollJobStatus = useCallback(async (id: string) => {
     try {
-      const params = new URLSearchParams({
-        lookbackDays: lookbackDays.toString(),
-        maxProposals: '5',
-      });
-
-      if (outcomeId) {
-        params.set('outcomeId', outcomeId);
-      }
-
-      const response = await fetch(`/api/improvements/analyze?${params}`);
-      const data = await response.json() as AnalyzeResponse;
+      const response = await fetch(`/api/improvements/jobs/${id}`);
+      const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to analyze improvements');
+        throw new Error(data.error || 'Failed to get job status');
       }
 
-      setAnalysisData(data);
+      const job = data.job as JobStatus;
+      setJobStatus(job.status);
+      setProgressMessage(job.progressMessage);
 
-      // Auto-select high and critical severity clusters
-      const autoSelected = new Set<string>();
-      for (const cluster of data.clusters) {
-        if (cluster.severity === 'high' || cluster.severity === 'critical') {
-          autoSelected.add(cluster.id);
+      if (job.status === 'completed' && job.result) {
+        // Job finished successfully
+        setAnalysisData(job.result);
+        setLoading(false);
+        setCanClose(true);
+
+        // Auto-select high and critical severity clusters
+        const autoSelected = new Set<string>();
+        for (const cluster of job.result.clusters) {
+          if (cluster.severity === 'high' || cluster.severity === 'critical') {
+            autoSelected.add(cluster.id);
+          }
+        }
+        setSelectedClusterIds(autoSelected);
+
+        // Stop polling
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+      } else if (job.status === 'failed') {
+        // Job failed
+        setError(job.error || 'Analysis failed');
+        setLoading(false);
+        setCanClose(true);
+
+        // Stop polling
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
         }
       }
-      setSelectedClusterIds(autoSelected);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze escalation patterns');
-    } finally {
+      console.error('Error polling job status:', err);
+    }
+  }, []);
+
+  // Start a background analysis job
+  const startBackgroundAnalysis = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setCanClose(true); // Allow closing while analysis runs
+
+    try {
+      const response = await fetch('/api/improvements/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outcomeId,
+          lookbackDays,
+          maxProposals: 5,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to start analysis');
+      }
+
+      setJobId(data.jobId);
+      setJobStatus('pending');
+      setProgressMessage('Queued for analysis...');
+
+      // Start polling
+      pollIntervalRef.current = setInterval(() => {
+        pollJobStatus(data.jobId);
+      }, POLL_INTERVAL);
+
+      // Initial poll
+      setTimeout(() => pollJobStatus(data.jobId), 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start analysis');
+      setLoading(false);
+      setCanClose(true);
+    }
+  }, [lookbackDays, outcomeId, pollJobStatus]);
+
+  // Fetch existing job results if jobId provided
+  const fetchExistingJob = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`/api/improvements/jobs/${id}`);
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to get job');
+      }
+
+      const job = data.job as JobStatus;
+
+      if (job.status === 'completed' && job.result) {
+        setAnalysisData(job.result);
+        setLoading(false);
+
+        // Auto-select high and critical severity clusters
+        const autoSelected = new Set<string>();
+        for (const cluster of job.result.clusters) {
+          if (cluster.severity === 'high' || cluster.severity === 'critical') {
+            autoSelected.add(cluster.id);
+          }
+        }
+        setSelectedClusterIds(autoSelected);
+      } else if (job.status === 'failed') {
+        setError(job.error || 'Analysis failed');
+        setLoading(false);
+      } else {
+        // Job still running, start polling
+        setJobStatus(job.status);
+        setProgressMessage(job.progressMessage);
+        setCanClose(true);
+
+        pollIntervalRef.current = setInterval(() => {
+          pollJobStatus(id);
+        }, POLL_INTERVAL);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load job');
       setLoading(false);
     }
-  }, [lookbackDays, outcomeId]);
+  }, [pollJobStatus]);
 
+  // Start analysis or load existing job on mount
   useEffect(() => {
-    fetchAnalysis();
-  }, [fetchAnalysis]);
+    if (existingJobId) {
+      fetchExistingJob(existingJobId);
+    } else {
+      startBackgroundAnalysis();
+    }
+
+    // Cleanup polling on unmount
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [existingJobId, startBackgroundAnalysis, fetchExistingJob]);
+
+  // Handle close - show toast if job still running
+  const handleClose = () => {
+    if (loading && jobId && (jobStatus === 'pending' || jobStatus === 'running')) {
+      toast({
+        type: 'info',
+        message: 'Analysis continues in background. Check activity feed for results.',
+        duration: 5000,
+      });
+    }
+    onClose();
+  };
 
   // Toggle cluster selection
   const toggleClusterSelection = (clusterId: string) => {
@@ -303,19 +447,22 @@ export function ImprovementPreviewModal({
     }
   };
 
-  // Render loading state
+  // Render loading state with progress
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
         <Card padding="lg" className="w-full max-w-3xl mx-4 shadow-xl">
           <CardHeader>
             <CardTitle>Analyzing Escalation Patterns...</CardTitle>
-            <button
-              onClick={onClose}
-              className="text-text-tertiary hover:text-text-secondary text-xl leading-none"
-            >
-              ×
-            </button>
+            {canClose && (
+              <button
+                onClick={handleClose}
+                className="text-text-tertiary hover:text-text-secondary text-xl leading-none"
+                title="Close (analysis will continue in background)"
+              >
+                ×
+              </button>
+            )}
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-center py-12">
@@ -334,8 +481,13 @@ export function ImprovementPreviewModal({
                   />
                 </svg>
                 <p className="text-text-secondary text-sm">
-                  Analyzing {lookbackDays} days of escalation data...
+                  {progressMessage || `Analyzing ${lookbackDays} days of escalation data...`}
                 </p>
+                {canClose && (
+                  <p className="text-text-tertiary text-xs">
+                    You can close this modal. Analysis will continue in the background.
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -352,7 +504,7 @@ export function ImprovementPreviewModal({
           <CardHeader>
             <CardTitle>Analysis Error</CardTitle>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-text-tertiary hover:text-text-secondary text-xl leading-none"
             >
               ×
@@ -369,8 +521,8 @@ export function ImprovementPreviewModal({
               </div>
               <p className="text-text-primary text-center">{error}</p>
               <div className="flex gap-3">
-                <Button variant="ghost" onClick={onClose}>Close</Button>
-                <Button variant="primary" onClick={fetchAnalysis}>Retry</Button>
+                <Button variant="ghost" onClick={handleClose}>Close</Button>
+                <Button variant="primary" onClick={startBackgroundAnalysis}>Retry</Button>
               </div>
             </div>
           </CardContent>
@@ -387,7 +539,7 @@ export function ImprovementPreviewModal({
           <CardHeader>
             <CardTitle>Improvement Analysis</CardTitle>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-text-tertiary hover:text-text-secondary text-xl leading-none"
             >
               ×
@@ -407,7 +559,7 @@ export function ImprovementPreviewModal({
               <p className="text-text-tertiary text-sm text-center">
                 Analyzed {analysisData?.escalationsAnalyzed || 0} escalation(s) from the last {lookbackDays} days.
               </p>
-              <Button variant="ghost" onClick={onClose}>Close</Button>
+              <Button variant="ghost" onClick={handleClose}>Close</Button>
             </div>
           </CardContent>
         </Card>
@@ -427,7 +579,7 @@ export function ImprovementPreviewModal({
             </Badge>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-text-tertiary hover:text-text-secondary text-xl leading-none"
           >
             ×
@@ -631,7 +783,7 @@ export function ImprovementPreviewModal({
                 : 'Select patterns to create improvement outcomes'}
             </span>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={onClose} disabled={creating}>
+              <Button variant="ghost" onClick={handleClose} disabled={creating}>
                 Cancel
               </Button>
               {selectedClusterIds.size > 1 && (

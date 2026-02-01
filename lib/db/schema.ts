@@ -313,7 +313,11 @@ export type ActivityType =
   | 'outcome_created'
   | 'outcome_achieved'
   | 'design_updated'
-  | 'intent_updated';
+  | 'intent_updated'
+  | 'analysis_started'
+  | 'analysis_completed'
+  | 'analysis_failed'
+  | 'improvement_created';
 
 export interface Activity {
   id: number;
@@ -555,6 +559,26 @@ export interface GuardBlock {
   pattern_matched: string;        // Which pattern triggered the block
   blocked_at: number;             // Timestamp when blocked
   context: string | null;         // JSON context about why this was blocked
+}
+
+// ============================================================================
+// Analysis Job Entities
+// ============================================================================
+
+export type AnalysisJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type AnalysisJobType = 'improvement_analysis';
+
+export interface AnalysisJob {
+  id: string;
+  outcome_id: string | null;      // NULL for system-wide analysis
+  job_type: AnalysisJobType;
+  status: AnalysisJobStatus;
+  progress_message: string | null;// Current step description
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  result: string | null;          // JSON of analysis results
+  error: string | null;
 }
 
 export interface ChangeSnapshot {
@@ -1137,6 +1161,28 @@ CREATE TABLE IF NOT EXISTS homr_activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_homr_activity_outcome ON homr_activity_log(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_homr_activity_type ON homr_activity_log(type);
+
+-- ============================================================================
+-- Analysis Jobs Tables
+-- ============================================================================
+
+-- Analysis Jobs: Track background analysis jobs
+CREATE TABLE IF NOT EXISTS analysis_jobs (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT REFERENCES outcomes(id) ON DELETE CASCADE,
+  job_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  progress_message TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  result TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON analysis_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_outcome ON analysis_jobs(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created ON analysis_jobs(created_at DESC);
 `;
 
 // ============================================================================

@@ -73,6 +73,7 @@ Repositories can be configured per-outcome with inheritance through the outcome 
 | **Cost Log** | API cost tracking |
 | **Bottleneck Log** | Failure analysis for improvements |
 | **Improvement Suggestions** | Auto-generated ideas |
+| **Analysis Jobs** | Background analysis job tracking |
 
 ### Atomic Task Claiming
 

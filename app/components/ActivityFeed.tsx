@@ -23,6 +23,10 @@ const activityConfig: Record<ActivityType, { icon: string; color: string }> = {
   outcome_achieved: { icon: '★', color: 'text-status-warning' },
   design_updated: { icon: '◇', color: 'text-text-secondary' },
   intent_updated: { icon: '◆', color: 'text-text-secondary' },
+  analysis_started: { icon: '◌', color: 'text-status-info' },
+  analysis_completed: { icon: '◉', color: 'text-status-success' },
+  analysis_failed: { icon: '⊘', color: 'text-status-error' },
+  improvement_created: { icon: '↑', color: 'text-accent' },
 };
 
 function formatTimeAgo(timestamp: number): string {

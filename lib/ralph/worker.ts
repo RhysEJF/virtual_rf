@@ -56,6 +56,14 @@ import * as guard from '../guard';
 import { estimateTaskComplexity, assessTurnLimitRisk, ComplexityEstimate } from '../agents/task-complexity-estimator';
 import { autoDecomposeIfNeeded, DecompositionResult } from '../agents/task-decomposer';
 import { logCost } from '../db/logs';
+import {
+  logTaskCompleted,
+  logTaskClaimed,
+  logTaskFailed,
+  logWorkerStarted,
+  logWorkerCompleted,
+  logWorkerFailed,
+} from '../db/activity';
 
 // ============================================================================
 // Types
@@ -789,9 +797,10 @@ export async function startRalphWorker(
   }
 
   // Create worker in database first (needed for worktree branch name)
+  const workerName = `Ralph Worker ${Date.now()}`;
   const dbWorker = createWorker({
     outcome_id: outcomeId,
-    name: `Ralph Worker ${Date.now()}`,
+    name: workerName,
   });
   const workerId = dbWorker.id;
 
@@ -854,6 +863,9 @@ export async function startRalphWorker(
 
   // Start the worker (sets status to 'running', started_at, heartbeat)
   startWorkerDb(workerId);
+
+  // Log worker started activity
+  logWorkerStarted(outcomeId, outcome.name, workerName, workerId);
 
   // Get initial task stats
   const stats = getTaskStats(outcomeId);
@@ -1018,6 +1030,7 @@ export async function startRalphWorker(
 
         const task = claimResult.task;
         appendLog(`Claimed task: ${task.title} (${task.id})`);
+        logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
 
         // Pre-claim complexity check
         if (enableComplexityCheck) {
@@ -1131,6 +1144,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           completeTask(task.id);
           progress.completedTasks++;
           appendLog(`Task completed: ${task.title}`);
+          logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
 
           // Circuit breaker: Record success (resets consecutive failures)
           recordSuccess(outcomeId);
@@ -1179,6 +1193,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         } else {
           failTask(task.id);
           appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
+          logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
 
           // Circuit breaker: Record failure for pattern analysis
           recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
@@ -1294,12 +1309,14 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
       failWorker(workerId);
       progress.status = 'failed';
       progress.error = errorMessage;
+      logWorkerFailed(outcomeId, outcome.name, workerName, errorMessage);
     } else if (wasPaused) {
       updateWorker(workerId, { status: 'paused' });
       progress.status = 'stopped';
     } else {
       completeWorker(workerId);
       progress.status = 'completed';
+      logWorkerCompleted(outcomeId, outcome.name, workerName, progress.completedTasks);
     }
 
     progress.lastUpdate = Date.now();
@@ -1813,6 +1830,10 @@ export async function runWorkerLoop(
     throw new Error('Outcome not found');
   }
 
+  // Get worker name for activity logging
+  const worker = getWorkerById(workerId);
+  const workerName = worker?.name || `Worker ${workerId}`;
+
   // Parse intent
   let intent: Intent | null = null;
   if (outcome.intent) {
@@ -1874,6 +1895,7 @@ export async function runWorkerLoop(
 
     const task = claimResult.task;
     appendLog(`Claimed task: ${task.title} (${task.id})`);
+    logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
 
     // Pre-claim complexity check
     if (enableComplexityCheck) {
@@ -1973,6 +1995,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     if (taskResult.success) {
       completeTask(task.id);
       appendLog(`Task completed: ${task.title}`);
+      logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
 
       // Record progress with full output for auditing
       createProgressEntry({
@@ -2015,6 +2038,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     } else {
       failTask(task.id);
       appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
+      logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
 
       // Record failure with full output for debugging
       createProgressEntry({

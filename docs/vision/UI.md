@@ -43,6 +43,8 @@ The UI is the user's window into Digital Twin. It provides:
 | Supervisor page (renamed from insights) | Complete |
 | Editable task descriptions | Complete |
 | Improvement preview modal | Complete |
+| Background analysis with polling | Complete |
+| Actionable toast notifications | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 
@@ -121,6 +123,28 @@ Provides deep analytics on escalation patterns:
 - **Trends over time** - Chart of escalation volume, resolution times
 - **Root cause clustering** - Group by underlying issue
 - **Detail modal** - Click any escalation for full context and resolution history
+
+### Actionable Toast Notifications
+
+Toasts can include action buttons for user interaction:
+
+| Feature | Description |
+|---------|-------------|
+| **persistent** | Toast stays until dismissed (no auto-close) |
+| **actions** | Array of clickable buttons (e.g., "View Results") |
+| **onDismiss** | Callback when toast is closed |
+
+Used for background job completion notifications - user can click "View Results" to open the results modal.
+
+### Background Analysis UX
+
+Improvement analysis can take several minutes. The UI handles this gracefully:
+
+1. **Modal shows progress** - Displays current step from job progress_message
+2. **Can close modal** - Job continues in background
+3. **Toast on close** - Informs user analysis continues
+4. **Toast on complete** - Notification with "View Results" action
+5. **Status indicator** - Optional header indicator (AnalysisStatusIndicator component)
 
 ### Intervention System
 

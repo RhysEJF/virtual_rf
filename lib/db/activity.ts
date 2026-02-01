@@ -252,6 +252,101 @@ export function logIntentUpdated(
 }
 
 // ============================================================================
+// Analysis Activity Helpers
+// ============================================================================
+
+/**
+ * Log when an improvement analysis is started
+ */
+export function logAnalysisStarted(
+  outcomeId: string | null,
+  outcomeName: string | null,
+  lookbackDays: number
+): Activity {
+  // For system-wide analysis, use a placeholder outcome
+  const actualOutcomeId = outcomeId || 'system';
+  return createActivity({
+    outcome_id: actualOutcomeId,
+    outcome_name: outcomeName || 'System-wide',
+    type: 'analysis_started',
+    title: 'Improvement analysis started',
+    description: `Analyzing ${lookbackDays} days of escalation data`,
+    metadata: { lookback_days: lookbackDays, scope: outcomeId ? 'outcome' : 'system' },
+  });
+}
+
+/**
+ * Log when an improvement analysis completes successfully
+ */
+export function logAnalysisCompleted(
+  outcomeId: string | null,
+  outcomeName: string | null,
+  clustersFound: number,
+  proposalsGenerated: number,
+  escalationsAnalyzed: number
+): Activity {
+  const actualOutcomeId = outcomeId || 'system';
+  const description = clustersFound === 0
+    ? `No recurring patterns found in ${escalationsAnalyzed} escalation(s)`
+    : `Found ${clustersFound} pattern cluster(s), generated ${proposalsGenerated} proposal(s)`;
+
+  return createActivity({
+    outcome_id: actualOutcomeId,
+    outcome_name: outcomeName || 'System-wide',
+    type: 'analysis_completed',
+    title: 'Improvement analysis completed',
+    description,
+    metadata: {
+      clusters_found: clustersFound,
+      proposals_generated: proposalsGenerated,
+      escalations_analyzed: escalationsAnalyzed,
+    },
+  });
+}
+
+/**
+ * Log when an improvement analysis fails
+ */
+export function logAnalysisFailed(
+  outcomeId: string | null,
+  outcomeName: string | null,
+  error: string
+): Activity {
+  const actualOutcomeId = outcomeId || 'system';
+  return createActivity({
+    outcome_id: actualOutcomeId,
+    outcome_name: outcomeName || 'System-wide',
+    type: 'analysis_failed',
+    title: 'Improvement analysis failed',
+    description: error,
+  });
+}
+
+/**
+ * Log when an improvement outcome is created
+ */
+export function logImprovementCreated(
+  parentOutcomeId: string,
+  parentOutcomeName: string,
+  improvementName: string,
+  taskCount: number,
+  escalationsMarked?: number
+): Activity {
+  const description = escalationsMarked
+    ? `${taskCount} task(s), addressing ${escalationsMarked} escalation(s)`
+    : `${taskCount} task(s) created`;
+
+  return createActivity({
+    outcome_id: parentOutcomeId,
+    outcome_name: parentOutcomeName,
+    type: 'improvement_created',
+    title: `Improvement created: ${improvementName}`,
+    description,
+    metadata: { task_count: taskCount, escalations_marked: escalationsMarked },
+  });
+}
+
+// ============================================================================
 // Delete (for cleanup)
 // ============================================================================
 

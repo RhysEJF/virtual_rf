@@ -39,6 +39,8 @@ export interface CreateTaskInput {
   // Complexity estimation
   complexity_score?: number;
   estimated_turns?: number;
+  // Decomposition tracking - set when this task is a subtask from decomposition
+  decomposed_from_task_id?: string;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -61,10 +63,10 @@ export function createTask(input: CreateTaskInput): Task {
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, depends_on, required_capabilities,
-      complexity_score, estimated_turns,
+      complexity_score, estimated_turns, decomposed_from_task_id,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -86,6 +88,7 @@ export function createTask(input: CreateTaskInput): Task {
     requiredCapabilitiesJson,
     input.complexity_score ?? null,
     input.estimated_turns ?? null,
+    input.decomposed_from_task_id || null,
     timestamp,
     timestamp
   );
@@ -541,6 +544,15 @@ export function claimNextTask(
     // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
+      // Skip tasks that are currently being decomposed (prevents race condition
+      // where worker claims a task that's mid-decomposition into subtasks)
+      if (candidate.decomposition_status === 'in_progress') {
+        console.log(
+          `[claimNextTask] Skipping task ${candidate.id} - decomposition in progress`
+        );
+        continue;
+      }
+
       // Check task dependencies first
       const dependencyIds = parseDependsOnInternal(candidate.depends_on);
       const hasBlockingDependencies = dependencyIds.some(depId => {
@@ -820,6 +832,9 @@ export interface UpdateTaskInput {
   estimated_turns?: number | null;
   // Status override (use with caution - mainly for decomposition)
   status?: 'pending' | 'completed' | 'failed';
+  // Decomposition tracking
+  decomposition_status?: 'in_progress' | 'completed' | 'failed' | null;
+  decomposed_from_task_id?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -907,6 +922,14 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
       updates.push('completed_at = ?');
       values.push(timestamp);
     }
+  }
+  if (input.decomposition_status !== undefined) {
+    updates.push('decomposition_status = ?');
+    values.push(input.decomposition_status);
+  }
+  if (input.decomposed_from_task_id !== undefined) {
+    updates.push('decomposed_from_task_id = ?');
+    values.push(input.decomposed_from_task_id);
   }
 
   values.push(id);
@@ -1248,6 +1271,27 @@ export function createDynamicCapabilityTask(
   console.log(`[createDynamicCapabilityTask] Created capability task ${task.id} for ${capabilityString}`);
 
   return task;
+}
+
+/**
+ * Get all subtasks that were decomposed from a parent task.
+ * Used for idempotency checking during decomposition.
+ *
+ * @param parentTaskId - The ID of the parent task that was decomposed
+ * @returns Array of Task objects that have decomposed_from_task_id matching the parent
+ */
+export function getSubtasksByParentTaskId(parentTaskId: string): Task[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM tasks
+    WHERE decomposed_from_task_id = ?
+    ORDER BY priority ASC, created_at ASC
+  `).all(parentTaskId) as Task[];
+
+  return rows.map(row => ({
+    ...row,
+    from_review: Boolean(row.from_review),
+  }));
 }
 
 /**

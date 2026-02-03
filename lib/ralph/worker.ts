@@ -447,6 +447,24 @@ async function runPreClaimComplexityCheck(
 
     // Option 2: Create escalation for human decision
     if (config.escalateOnHighComplexity) {
+      // First check if there's already a pending escalation for this task with the same trigger type
+      // This prevents duplicate blocking questions for the same issue
+      const pendingEscalations = homr.getPendingEscalations(outcomeId);
+      const existingEscalation = pendingEscalations.find(
+        esc => esc.trigger_task_id === task.id && esc.trigger_type === 'blocking_decision'
+      );
+
+      if (existingEscalation) {
+        appendLog(`[Complexity] Found existing pending escalation ${existingEscalation.id} for task ${task.id}, skipping duplicate creation`);
+        return {
+          shouldProceed: false,
+          estimate,
+          action: 'escalated',
+          escalationId: existingEscalation.id,
+          reason: `Task already has pending complexity escalation ${existingEscalation.id}. Waiting for human decision.`,
+        };
+      }
+
       appendLog(`[Complexity] Creating escalation for human decision...`);
 
       const ambiguity: homr.HomrAmbiguitySignal = {

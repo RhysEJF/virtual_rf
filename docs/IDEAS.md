@@ -354,6 +354,229 @@ This is more complex because it requires:
 
 ---
 
+### 8. Persistent Learnings Layer (Cross-Outcome Memory)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-02-03 |
+| **Source** | James conversation (james-call-3.txt) - Memory architecture discussion |
+
+**Problem:**
+Each outcome is an island. HOMЯ discovers patterns and constraints during one outcome, but those learnings don't carry forward. A worker solving a similar problem next month starts from scratch.
+
+Current system:
+- Discoveries stored in `homr_context` JSON blob per outcome
+- No cross-outcome search capability
+- No tracking of which discoveries were actually helpful
+
+**Proposed Solution:**
+Build a persistent learnings layer with semantic search across all outcomes.
+
+#### Core Components
+
+**1. Learnings Table**
+```typescript
+interface Learning {
+  id: string;
+  content: string;
+  format: 'COIA';  // Context, Observation, Implication, Action
+  confidence: number;  // 0.0-1.0, decays over time if unused
+  times_used: number;
+  times_helpful: number;  // Worker marked it useful
+  last_used_at: number;
+  source_outcome_id: string;
+  source_task_id: string;
+  embedding?: number[];  // For semantic search
+  tags: string[];  // e.g., ["api", "authentication", "oauth"]
+}
+```
+
+**2. COIA Format (from James's RALPH system)**
+```markdown
+### [Date] - [Brief Title]
+
+**Context**: What were you working on?
+**Observation**: What did you notice?
+**Implication**: How should this change future work?
+**Action**: Specific change to make
+```
+
+**3. Hybrid Search at Task Claim**
+```typescript
+const relevantLearnings = await searchLearnings({
+  query: task.title + task.description,
+  strategy: 'hybrid',  // BM25 + semantic embedding search
+  outcomeContext: task.outcome_id,  // Boost same-outcome learnings
+  limit: 5,
+  minConfidence: 0.6,
+});
+```
+
+**4. Usage Tracking**
+- Inject learning ID with content
+- Worker can mark learning as helpful: `LEARNING_HELPFUL: learn_123`
+- Track usage → boost confidence for helpful learnings
+- Decay confidence for unused learnings over time
+
+**Value:**
+- System gets smarter with every completed outcome
+- Past solutions accelerate future work
+- Confidence scoring surfaces the most valuable learnings
+- "How did we handle X before?" becomes a real capability
+
+**Effort:** Large
+
+**References:**
+- [Cross-Outcome Session Search](#5-cross-outcome-session-search) - Related idea
+- [LEARNINGS.md format](james-call-3.txt) - COIA pattern from James's book project
+- [HOMЯ Observer](../lib/homr/observer.ts) - Current discovery extraction
+
+---
+
+### 9. Dynamic Task Scoring Formula
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-02-03 |
+| **Source** | James conversation - Task orchestration discussion |
+
+**Problem:**
+Currently, workers claim tasks by simple priority number. This doesn't account for:
+- How many tasks are blocked waiting on this one
+- How long the task has been pending
+- Task type (capability tasks should complete first)
+- Worker specialization (some workers better at certain tasks)
+
+**Proposed Solution:**
+Replace simple priority with a scoring formula:
+
+```typescript
+function calculateTaskScore(task: Task): number {
+  const base = task.priority || 3;  // Default priority
+  const typeBonus = task.phase === 'capability' ? 10 : 0;  // Capability tasks first
+  const blockingBonus = getTasksDependingOn(task.id).length * 5;  // More dependents = higher priority
+  const ageBonus = Math.min(10, (Date.now() - task.created_at) / (1000 * 60 * 60));  // +1 per hour, max 10
+
+  return base + typeBonus + blockingBonus + ageBonus;
+}
+```
+
+**Value:**
+- Critical path tasks naturally bubble up
+- Stale tasks don't get forgotten
+- Capability phase completes faster
+- Better parallelization of independent work
+
+**Effort:** Small
+
+**References:**
+- James's formula: `priority + type_bonus + blocking_bonus + age_bonus`
+- Current implementation: `lib/db/tasks.ts` - `claimNextTask()`
+
+---
+
+### 10. Parallel Review Swarm
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-02-03 |
+| **Source** | James conversation - Two-phase generation pattern |
+
+**Problem:**
+Current review is single-pass: one Reviewer agent checks all work. This misses issues that require specialized attention (security, performance, accessibility, etc.).
+
+**Proposed Solution:**
+Replace single reviewer with parallel specialized sub-agents:
+
+```typescript
+const reviewSwarm = [
+  { name: 'security', prompt: 'Check for OWASP top 10 vulnerabilities...' },
+  { name: 'performance', prompt: 'Check for N+1 queries, unnecessary renders...' },
+  { name: 'accessibility', prompt: 'Check for WCAG 2.1 compliance...' },
+  { name: 'consistency', prompt: 'Check naming conventions, code style...' },
+];
+
+// Run all reviews in parallel
+const results = await Promise.all(
+  reviewSwarm.map(r => reviewWithAgent(r.name, r.prompt, completedWork))
+);
+
+// Merge findings, deduplicate, create tasks
+const allIssues = mergeReviewResults(results);
+```
+
+**Value:**
+- Specialized expertise catches more issues
+- Parallel execution = faster reviews
+- Each reviewer has focused, smaller context
+- Easy to add new review dimensions
+
+**Effort:** Medium
+
+**References:**
+- James's "Generate then polish" pattern
+- Current implementation: `lib/agents/reviewer.ts`
+
+---
+
+### 11. Evaluation Harness
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-02-03 |
+| **Source** | James conversation - "Metrics not vibes" philosophy |
+
+**Problem:**
+We have no systematic way to measure if changes improve the system. Questions like "Does the new capability planner work better?" require manual testing and gut feel.
+
+**Proposed Solution:**
+Build an eval suite that measures agent performance against known test cases.
+
+```typescript
+interface Evaluation {
+  id: string;
+  name: string;
+  description: string;
+  input: {
+    intent: string;
+    expectedSkills?: string[];
+    expectedTasks?: string[];
+    testFiles?: string[];  // For code quality evals
+  };
+  assertions: {
+    type: 'tasks_generated' | 'skills_matched' | 'code_compiles' | 'tests_pass';
+    expected: unknown;
+  }[];
+}
+
+// Run eval suite
+const results = await runEvalSuite('capability-planner', [
+  { input: 'Build a REST API', assertions: [{ type: 'skills_matched', expected: ['api-design'] }] },
+  { input: 'Scrape website', assertions: [{ type: 'tasks_generated', expected: 3 }] },
+]);
+
+console.log(`Pass rate: ${results.passRate}%`);
+```
+
+**Value:**
+- Regression detection when changing agents
+- A/B test different prompts or models
+- Confidence to refactor core systems
+- Documentation of expected behavior
+
+**Effort:** Medium
+
+**References:**
+- James's eval approach in his codebase
+- Anthropic's eval patterns
+- [improvement-analyzer.ts](../lib/agents/improvement-analyzer.ts) - Could generate evals from escalation patterns
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

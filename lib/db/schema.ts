@@ -64,6 +64,9 @@ export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 // Repository configuration for skills/tools/files/outputs
 export type SaveTarget = 'local' | 'repo' | 'inherit';
 
+// Sync status for item-to-repo relationships
+export type SyncStatus = 'synced' | 'failed' | 'stale';
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -161,6 +164,8 @@ export interface Task {
   task_approach: string | null;     // How to execute: methodology, tools, constraints
   // Task dependencies
   depends_on: string | null;        // JSON array of task IDs this task depends on
+  // Required capabilities (skills/tools) for this task
+  required_capabilities: string | null;  // JSON array of strings like 'skill:name' or 'tool:name'
   // Complexity estimation (for worker resilience feedback loop)
   complexity_score: number | null;  // AI-estimated complexity (1-10 scale)
   estimated_turns: number | null;   // AI-estimated turns/iterations to complete
@@ -252,8 +257,24 @@ export interface OutcomeItem {
   filename: string;
   file_path: string;
   target_override: SaveTarget | null;  // null = use outcome default, 'local' | 'repo' | 'inherit'
-  synced_to: string | null;         // Repository ID it was synced to (null = local only)
-  last_synced_at: number | null;
+  synced_to: string | null;         // @deprecated - Use item_repo_syncs junction table instead
+  last_synced_at: number | null;    // @deprecated - Use item_repo_syncs junction table instead
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * Junction table for multi-destination repository syncing
+ * An item can be synced to multiple repositories independently
+ */
+export interface ItemRepoSync {
+  id: string;
+  item_id: string;                  // FK to outcome_items.id
+  repo_id: string;                  // FK to repositories.id
+  synced_at: number;                // Timestamp of last successful sync
+  commit_hash: string | null;       // Git commit hash if applicable
+  sync_status: SyncStatus;          // 'synced' | 'failed' | 'stale'
+  error_message: string | null;     // Error details if sync_status is 'failed'
   created_at: number;
   updated_at: number;
 }
@@ -311,7 +332,11 @@ export type ActivityType =
   | 'outcome_created'
   | 'outcome_achieved'
   | 'design_updated'
-  | 'intent_updated';
+  | 'intent_updated'
+  | 'analysis_started'
+  | 'analysis_completed'
+  | 'analysis_failed'
+  | 'improvement_created';
 
 export interface Activity {
   id: number;
@@ -555,6 +580,26 @@ export interface GuardBlock {
   context: string | null;         // JSON context about why this was blocked
 }
 
+// ============================================================================
+// Analysis Job Entities
+// ============================================================================
+
+export type AnalysisJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type AnalysisJobType = 'improvement_analysis';
+
+export interface AnalysisJob {
+  id: string;
+  outcome_id: string | null;      // NULL for system-wide analysis
+  job_type: AnalysisJobType;
+  status: AnalysisJobStatus;
+  progress_message: string | null;// Current step description
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  result: string | null;          // JSON of analysis results
+  error: string | null;
+}
+
 export interface ChangeSnapshot {
   id: string;
   worker_id: string;
@@ -682,6 +727,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   task_approach TEXT,
   -- Task dependencies
   depends_on TEXT DEFAULT '[]',
+  -- Required capabilities (skills/tools)
+  required_capabilities TEXT DEFAULT '[]',
   -- Complexity estimation (for worker resilience feedback loop)
   complexity_score INTEGER,
   estimated_turns INTEGER,
@@ -809,6 +856,25 @@ CREATE TABLE IF NOT EXISTS outcome_items (
 CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to);
+
+-- Item-Repository Sync: Junction table for multi-destination syncing
+-- An item can be synced to multiple repositories independently
+CREATE TABLE IF NOT EXISTS item_repo_syncs (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES outcome_items(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  synced_at INTEGER NOT NULL,
+  commit_hash TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'synced',  -- 'synced' | 'failed' | 'stale'
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(item_id, repo_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_item ON item_repo_syncs(item_id);
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_repo ON item_repo_syncs(repo_id);
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_status ON item_repo_syncs(sync_status);
 
 -- Cost tracking
 CREATE TABLE IF NOT EXISTS cost_log (
@@ -1133,6 +1199,28 @@ CREATE TABLE IF NOT EXISTS homr_activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_homr_activity_outcome ON homr_activity_log(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_homr_activity_type ON homr_activity_log(type);
+
+-- ============================================================================
+-- Analysis Jobs Tables
+-- ============================================================================
+
+-- Analysis Jobs: Track background analysis jobs
+CREATE TABLE IF NOT EXISTS analysis_jobs (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT REFERENCES outcomes(id) ON DELETE CASCADE,
+  job_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  progress_message TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  result TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON analysis_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_outcome ON analysis_jobs(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created ON analysis_jobs(created_at DESC);
 `;
 
 // ============================================================================
@@ -1283,4 +1371,15 @@ export const TASK_COMPLEXITY_MIGRATION_SQL = `
 
 ALTER TABLE tasks ADD COLUMN complexity_score INTEGER;
 ALTER TABLE tasks ADD COLUMN estimated_turns INTEGER;
+`;
+
+export const REQUIRED_CAPABILITIES_MIGRATION_SQL = `
+-- Migration: Add required_capabilities column to tasks table
+-- This column stores a JSON array of capability identifiers like 'skill:name' or 'tool:name'
+-- that must be available before this task can be executed
+
+ALTER TABLE tasks ADD COLUMN required_capabilities TEXT DEFAULT '[]';
+
+-- Update any existing tasks to have empty capabilities array
+UPDATE tasks SET required_capabilities = '[]' WHERE required_capabilities IS NULL;
 `;

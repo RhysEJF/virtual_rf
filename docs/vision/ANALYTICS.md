@@ -28,6 +28,8 @@ Digital Twin should get smarter over time. The Analytics system:
 | Escalation insights (trends, clustering) | Complete |
 | Improvement analyzer agent | Complete |
 | Self-improvement outcome creation | Complete |
+| Background analysis jobs | Complete |
+| Analysis activity logging | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -48,6 +50,10 @@ Digital Twin should get smarter over time. The Analytics system:
 | `worker_failed` | Worker crashed or was stopped |
 | `review_completed` | Review cycle finished |
 | `intervention_sent` | Human instruction sent |
+| `analysis_started` | Improvement analysis began |
+| `analysis_completed` | Improvement analysis finished |
+| `analysis_failed` | Improvement analysis errored |
+| `improvement_created` | Improvement outcome created |
 
 ### Pattern Detection
 
@@ -94,6 +100,18 @@ The `improvement-analyzer.ts` agent analyzes escalation patterns and generates i
 4. **Creates parent-child hierarchy** - Improvements link to a "Self-Improvement" parent outcome
 
 The analyzer can be triggered via `/api/improvements/analyze` to create new improvement outcomes automatically.
+
+### Background Analysis Jobs
+
+Analysis can take several minutes. To improve UX, analysis runs as background jobs:
+
+1. **POST starts job** - Returns job ID immediately (202 Accepted)
+2. **Job runs async** - Progress messages updated in database
+3. **User can navigate away** - Analysis continues in background
+4. **Poll for results** - GET `/api/improvements/jobs/{jobId}` returns status
+5. **Toast notification** - User notified when job completes with "View Results" action
+
+This prevents the UI from blocking during long analysis operations.
 
 ---
 

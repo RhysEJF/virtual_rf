@@ -3,6 +3,7 @@
  *
  * POST /api/outcomes/[id]/optimize-approach
  * Takes user ramble and creates/updates the design doc (approach)
+ * Also detects new capability needs after optimization
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,6 +11,8 @@ import { getOutcomeById } from '@/lib/db/outcomes';
 import { getLatestDesignDoc, createDesignDoc } from '@/lib/db/design-docs';
 import { claudeComplete } from '@/lib/claude/client';
 import { logDesignUpdated } from '@/lib/db/activity';
+import { detectNewCapabilityNeeds, type CapabilityNeed, type ExistingCapability } from '@/lib/agents/capability-planner';
+import { getTasksByPhase } from '@/lib/db/tasks';
 
 interface OptimizeApproachRequest {
   ramble: string;
@@ -110,10 +113,45 @@ Rules:
     // Log activity
     logDesignUpdated(id, outcome.name, newVersion, 'Design doc updated from user ramble');
 
+    // Detect new capability needs from the updated approach
+    // Get existing capability tasks to compare against
+    const capabilityTasks = getTasksByPhase(id, 'capability');
+    const existingCapabilities: ExistingCapability[] = capabilityTasks.map(task => {
+      // Parse prd_context to extract capability type and path
+      let capType: 'skill' | 'tool' = 'skill';
+      let capPath = '';
+      if (task.prd_context) {
+        try {
+          const ctx = JSON.parse(task.prd_context);
+          capType = ctx.capability_type || 'skill';
+          capPath = ctx.path || '';
+        } catch {
+          // If parsing fails, try to infer from title
+          capType = task.title.toLowerCase().includes('tool') ? 'tool' : 'skill';
+        }
+      }
+      // Extract name from task title (format: "[Capability] Build skill: Name")
+      const nameMatch = task.title.match(/Build (?:skill|tool): (.+)$/);
+      const capName = nameMatch ? nameMatch[1] : task.title;
+
+      return {
+        type: capType,
+        name: capName,
+        path: capPath,
+      };
+    });
+
+    // Detect new capabilities that aren't already known
+    const detectedCapabilities: CapabilityNeed[] = detectNewCapabilityNeeds(
+      approachText,
+      existingCapabilities
+    );
+
     return NextResponse.json({
       success: true,
       approach: approachText,
       version: newVersion,
+      detectedCapabilities,
     });
   } catch (error) {
     console.error('Error optimizing approach:', error);

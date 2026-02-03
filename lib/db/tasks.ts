@@ -6,10 +6,12 @@
  * race conditions when multiple workers try to claim tasks.
  */
 
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
-import { touchOutcome } from './outcomes';
+import { touchOutcome, updateOutcome } from './outcomes';
 
 // ============================================================================
 // Create
@@ -32,6 +34,8 @@ export interface CreateTaskInput {
   task_approach?: string;
   // Task dependencies
   depends_on?: string[];
+  // Required capabilities (skills/tools) - array of strings like 'skill:name' or 'tool:name'
+  required_capabilities?: string[];
   // Complexity estimation
   complexity_score?: number;
   estimated_turns?: number;
@@ -47,16 +51,20 @@ export function createTask(input: CreateTaskInput): Task {
   const dependsOnJson = input.depends_on && input.depends_on.length > 0
     ? JSON.stringify(input.depends_on)
     : '[]';
+  const requiredCapabilitiesJson = input.required_capabilities && input.required_capabilities.length > 0
+    ? JSON.stringify(input.required_capabilities)
+    : '[]';
 
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
-      task_intent, task_approach, depends_on, complexity_score, estimated_turns,
+      task_intent, task_approach, depends_on, required_capabilities,
+      complexity_score, estimated_turns,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -75,6 +83,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.task_intent || null,
     input.task_approach || null,
     dependsOnJson,
+    requiredCapabilitiesJson,
     input.complexity_score ?? null,
     input.estimated_turns ?? null,
     timestamp,
@@ -446,13 +455,48 @@ export function claimTask(taskId: string, workerId: string): ClaimResult {
   }
 }
 
+export interface ClaimNextTaskOptions {
+  /** Filter by task phase (capability or execution) */
+  phase?: TaskPhase;
+  /**
+   * Enable dynamic capability task creation when tasks are blocked by missing capabilities.
+   * When true (default), if no task can be claimed due to missing capabilities,
+   * the system will automatically create capability-phase tasks to build those
+   * missing capabilities.
+   * When false, blocked tasks are simply skipped without creating new tasks.
+   */
+  enableDynamicCapabilityCreation?: boolean;
+}
+
 /**
  * Atomically claim the next available task for a worker.
  * Finds the highest priority pending task and claims it.
  * Optionally filter by phase for orchestrated execution.
  * Skips tasks with unsatisfied skill dependencies.
+ *
+ * @param outcomeId - The outcome to claim a task from
+ * @param workerId - The worker claiming the task
+ * @param phaseOrOptions - Either a TaskPhase string (deprecated) or ClaimNextTaskOptions object
  */
-export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskPhase): ClaimResult {
+export function claimNextTask(
+  outcomeId: string,
+  workerId: string,
+  phaseOrOptions?: TaskPhase | ClaimNextTaskOptions
+): ClaimResult {
+  // Parse options - support both legacy phase parameter and new options object
+  let phase: TaskPhase | undefined;
+  let enableDynamicCapabilityCreation = true; // Default to enabled for backwards compatibility
+
+  if (typeof phaseOrOptions === 'string') {
+    // Legacy: phase parameter passed directly
+    phase = phaseOrOptions;
+  } else if (phaseOrOptions && typeof phaseOrOptions === 'object') {
+    // New: options object
+    phase = phaseOrOptions.phase;
+    if (phaseOrOptions.enableDynamicCapabilityCreation !== undefined) {
+      enableDynamicCapabilityCreation = phaseOrOptions.enableDynamicCapabilityCreation;
+    }
+  }
   const db = getDb();
   const timestamp = now();
 
@@ -490,6 +534,10 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
     ).all(outcomeId) as { id: string; status: TaskStatus }[];
     const taskStatusMap = new Map(allOutcomeTasks.map(t => [t.id, t.status]));
 
+    // Track all missing capabilities encountered during the loop
+    // Use Set to deduplicate capabilities across multiple tasks
+    const missingCapabilitiesSet = new Set<string>();
+
     // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
@@ -514,13 +562,68 @@ export function claimNextTask(outcomeId: string, workerId: string, phase?: TaskP
         }
       }
 
+      // Check capability dependencies (skills/tools files) if present
+      if (candidate.required_capabilities) {
+        const capDeps = checkTaskCapabilityDependencies(candidate.id, outcomeId);
+        if (!capDeps.satisfied) {
+          // Log which capabilities are missing for debugging
+          console.log(
+            `[claimNextTask] Skipping task ${candidate.id} - missing capabilities: ${capDeps.missing.join(', ')}`
+          );
+          // Collect missing capabilities for potential dynamic task creation
+          for (const missingCap of capDeps.missing) {
+            missingCapabilitiesSet.add(missingCap);
+          }
+          continue;
+        }
+      }
+
       // All dependencies satisfied
       task = candidate;
       break;
     }
 
     if (!task) {
+      // No task could be claimed - rollback the IMMEDIATE transaction first
       db.exec('ROLLBACK');
+
+      // Now, OUTSIDE the transaction, optionally create capability tasks for missing capabilities
+      // This behavior is controlled by the enableDynamicCapabilityCreation flag
+      if (enableDynamicCapabilityCreation && missingCapabilitiesSet.size > 0) {
+        const createdTasks: Task[] = [];
+
+        for (const capabilityString of Array.from(missingCapabilitiesSet)) {
+          // Check if a task already exists for this capability
+          const existingTask = getCapabilityTaskForCapability(outcomeId, capabilityString);
+          if (existingTask) {
+            console.log(
+              `[claimNextTask] Capability task already exists for ${capabilityString}: ${existingTask.id}`
+            );
+            continue;
+          }
+
+          // Create a new capability task
+          const newTask = createDynamicCapabilityTask(outcomeId, capabilityString);
+          if (newTask) {
+            createdTasks.push(newTask);
+          }
+        }
+
+        // If any new capability tasks were created, update capability_ready to 1 (in progress)
+        if (createdTasks.length > 0) {
+          updateOutcome(outcomeId, { capability_ready: 1 });
+          console.log(
+            `[claimNextTask] Created ${createdTasks.length} dynamic capability task(s), set capability_ready=1`
+          );
+          touchOutcome(outcomeId);
+        }
+      } else if (!enableDynamicCapabilityCreation && missingCapabilitiesSet.size > 0) {
+        // Log that we're skipping dynamic capability creation (disabled by flag)
+        console.log(
+          `[claimNextTask] Skipping dynamic capability creation (disabled) - ${missingCapabilitiesSet.size} missing capabilities`
+        );
+      }
+
       return {
         success: false,
         task: null,
@@ -710,6 +813,8 @@ export interface UpdateTaskInput {
   required_skills?: string | null;
   // Task dependencies (JSON array of task IDs or array)
   depends_on?: string[] | string | null;
+  // Required capabilities (skills/tools) - array of strings like 'skill:name' or 'tool:name', or JSON string
+  required_capabilities?: string[] | string | null;
   // Complexity estimation
   complexity_score?: number | null;
   estimated_turns?: number | null;
@@ -773,6 +878,17 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
       values.push(JSON.stringify(input.depends_on));
     } else {
       values.push(input.depends_on);
+    }
+  }
+  if (input.required_capabilities !== undefined) {
+    updates.push('required_capabilities = ?');
+    // Handle both array and string (JSON) input
+    if (input.required_capabilities === null) {
+      values.push('[]');
+    } else if (Array.isArray(input.required_capabilities)) {
+      values.push(JSON.stringify(input.required_capabilities));
+    } else {
+      values.push(input.required_capabilities);
     }
   }
   if (input.complexity_score !== undefined) {
@@ -941,4 +1057,274 @@ export function getTasksWithMissingSkills(outcomeId: string): { task: Task; miss
   }
 
   return result;
+}
+
+// ============================================================================
+// Capability Dependency Checking (File-based)
+// ============================================================================
+
+export interface CapabilityDependencyResult {
+  satisfied: boolean;
+  missing: string[];
+}
+
+/**
+ * Check if a task's required capabilities (skills/tools) exist as files in the workspace.
+ *
+ * Capabilities are specified in format 'type:name':
+ * - 'skill:market-research' checks workspaces/{outcomeId}/skills/market-research.md
+ * - 'tool:fetch-data' checks workspaces/{outcomeId}/tools/fetch-data.ts
+ *
+ * @param taskId - The task ID to check
+ * @param outcomeId - The outcome ID for workspace path resolution
+ * @returns Object with satisfied boolean and array of missing capability strings
+ */
+export function checkTaskCapabilityDependencies(
+  taskId: string,
+  outcomeId: string
+): CapabilityDependencyResult {
+  const task = getTaskById(taskId);
+
+  // No task or no required_capabilities means all dependencies are satisfied
+  if (!task) {
+    return { satisfied: true, missing: [] };
+  }
+
+  // Parse required_capabilities JSON
+  let capabilities: string[];
+  try {
+    if (!task.required_capabilities) {
+      return { satisfied: true, missing: [] };
+    }
+    const parsed = JSON.parse(task.required_capabilities);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return { satisfied: true, missing: [] };
+    }
+    capabilities = parsed;
+  } catch {
+    // Invalid JSON or empty - treat as satisfied
+    return { satisfied: true, missing: [] };
+  }
+
+  const missing: string[] = [];
+  const workspacesRoot = join(process.cwd(), 'workspaces', outcomeId);
+
+  for (const capability of capabilities) {
+    // Parse capability format 'type:name'
+    const colonIndex = capability.indexOf(':');
+    if (colonIndex === -1) {
+      // Invalid format - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    const type = capability.substring(0, colonIndex);
+    const name = capability.substring(colonIndex + 1);
+
+    if (!type || !name) {
+      // Empty type or name - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    let filePath: string;
+    if (type === 'skill') {
+      filePath = join(workspacesRoot, 'skills', `${name}.md`);
+    } else if (type === 'tool') {
+      filePath = join(workspacesRoot, 'tools', `${name}.ts`);
+    } else {
+      // Unknown capability type - treat as missing
+      missing.push(capability);
+      continue;
+    }
+
+    if (!existsSync(filePath)) {
+      missing.push(capability);
+    }
+  }
+
+  return {
+    satisfied: missing.length === 0,
+    missing,
+  };
+}
+
+/**
+ * Get all tasks with unsatisfied capability dependencies for an outcome.
+ * Only checks pending tasks.
+ */
+export function getTasksWithMissingCapabilities(
+  outcomeId: string
+): { task: Task; missing: string[] }[] {
+  const tasks = getTasksByOutcome(outcomeId);
+  const result: { task: Task; missing: string[] }[] = [];
+
+  for (const task of tasks) {
+    if (task.required_capabilities && task.status === 'pending') {
+      const deps = checkTaskCapabilityDependencies(task.id, outcomeId);
+      if (!deps.satisfied) {
+        result.push({ task, missing: deps.missing });
+      }
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Capability Task Lookup
+// ============================================================================
+
+/**
+ * Create a single dynamic capability task from a capability string.
+ *
+ * This is a simplified version of createCapabilityTasks() from capability-planner.ts
+ * that creates a single task without requiring the full CapabilityPlan structure.
+ * Used when a missing capability is detected during task claiming.
+ *
+ * @param outcomeId - The outcome ID to create the task for
+ * @param capabilityString - Capability in format 'type:name' (e.g., 'skill:market-research', 'tool:web-scraper')
+ * @returns The created Task, or null if the capability string format is invalid
+ */
+export function createDynamicCapabilityTask(
+  outcomeId: string,
+  capabilityString: string
+): Task | null {
+  // Parse capability string format 'type:name'
+  const colonIndex = capabilityString.indexOf(':');
+  if (colonIndex === -1) {
+    console.log(`[createDynamicCapabilityTask] Invalid capability format: ${capabilityString}`);
+    return null;
+  }
+
+  const capabilityType = capabilityString.substring(0, colonIndex) as CapabilityType;
+  const capabilityName = capabilityString.substring(colonIndex + 1);
+
+  if (!capabilityType || !capabilityName) {
+    console.log(`[createDynamicCapabilityTask] Empty type or name in: ${capabilityString}`);
+    return null;
+  }
+
+  // Validate capability type
+  if (capabilityType !== 'skill' && capabilityType !== 'tool') {
+    console.log(`[createDynamicCapabilityTask] Unknown capability type: ${capabilityType}`);
+    return null;
+  }
+
+  // Determine output path based on type
+  // Skills: skills/{name}.md
+  // Tools: tools/{name}.ts
+  const outputPath = capabilityType === 'skill'
+    ? `skills/${capabilityName}.md`
+    : `tools/${capabilityName}.ts`;
+
+  // Format name for display (convert kebab-case to Title Case)
+  const formattedName = capabilityName
+    .replace(/-/g, ' ')
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+
+  // Create the capability task
+  // Use low priority (1-10 range) so capability tasks run before execution tasks
+  const task = createTask({
+    outcome_id: outcomeId,
+    title: `[Capability] Build ${capabilityType}: ${capabilityName}`,
+    description: `Build ${capabilityType}: ${formattedName}\n\nOutput path: ${outputPath}\n\nThis capability was dynamically detected as a dependency and needs to be built before dependent tasks can proceed.`,
+    prd_context: JSON.stringify({
+      type: 'capability',
+      capability_type: capabilityType,
+      capability_name: capabilityName,
+      capability: capabilityString,
+      path: outputPath,
+      dynamic: true,  // Flag to indicate this was dynamically created
+    }),
+    priority: 5,  // Low priority number = high execution priority (runs first)
+    phase: 'capability',
+    capability_type: capabilityType,
+  });
+
+  console.log(`[createDynamicCapabilityTask] Created capability task ${task.id} for ${capabilityString}`);
+
+  return task;
+}
+
+/**
+ * Check if a pending or in-progress capability task already exists for a specific capability.
+ *
+ * Looks for tasks that match by either:
+ * 1. Title pattern: "[Capability] Build {type}: {name}" (e.g., "[Capability] Build skill: market-research")
+ * 2. prd_context JSON containing the capability info
+ *
+ * @param outcomeId - The outcome ID to search within
+ * @param capabilityString - Capability in format 'type:name' (e.g., 'skill:market-research', 'tool:web-scraper')
+ * @returns The matching task if found, null otherwise
+ */
+export function getCapabilityTaskForCapability(
+  outcomeId: string,
+  capabilityString: string
+): Task | null {
+  // Parse capability string format 'type:name'
+  const colonIndex = capabilityString.indexOf(':');
+  if (colonIndex === -1) {
+    // Invalid format
+    return null;
+  }
+
+  const capabilityType = capabilityString.substring(0, colonIndex);
+  const capabilityName = capabilityString.substring(colonIndex + 1);
+
+  if (!capabilityType || !capabilityName) {
+    // Empty type or name
+    return null;
+  }
+
+  const db = getDb();
+
+  // Get all pending or in-progress capability tasks for this outcome
+  const candidates = db.prepare(`
+    SELECT * FROM tasks
+    WHERE outcome_id = ?
+      AND phase = 'capability'
+      AND status IN ('pending', 'claimed', 'running')
+    ORDER BY created_at ASC
+  `).all(outcomeId) as Task[];
+
+  // Expected title pattern: "[Capability] Build {type}: {name}"
+  const expectedTitlePattern = `[Capability] Build ${capabilityType}: ${capabilityName}`;
+
+  for (const task of candidates) {
+    // Check 1: Title pattern match (case-insensitive)
+    if (task.title.toLowerCase() === expectedTitlePattern.toLowerCase()) {
+      return {
+        ...task,
+        from_review: Boolean(task.from_review),
+      };
+    }
+
+    // Check 2: prd_context JSON containing the capability info
+    if (task.prd_context) {
+      try {
+        const context = JSON.parse(task.prd_context);
+        // Check if prd_context contains capability information
+        // Could be structured as { type: 'skill', name: 'market-research' }
+        // or { capability: 'skill:market-research' }
+        if (
+          (context.type === capabilityType && context.name === capabilityName) ||
+          context.capability === capabilityString ||
+          context.capability_type === capabilityType && context.capability_name === capabilityName
+        ) {
+          return {
+            ...task,
+            from_review: Boolean(task.from_review),
+          };
+        }
+      } catch {
+        // prd_context is not valid JSON, skip this check
+      }
+    }
+  }
+
+  return null;
 }

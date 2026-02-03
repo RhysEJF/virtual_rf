@@ -2,16 +2,19 @@
 
 import { createContext, useCallback, useState, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Toast, type ToastData, type ToastType } from './Toast';
+import { Toast, type ToastData, type ToastType, type ToastAction } from './Toast';
 
 export interface ToastInput {
   type: ToastType;
   message: string;
   duration?: number;
+  persistent?: boolean;
+  actions?: ToastAction[];
+  onDismiss?: () => void;
 }
 
 export interface ToastContextValue {
-  toast: (input: ToastInput) => void;
+  toast: (input: ToastInput) => string;
   dismissToast: (id: string) => void;
 }
 
@@ -28,15 +31,19 @@ export function ToastProvider({ children }: { children: ReactNode }): JSX.Elemen
     setMounted(true);
   }, []);
 
-  const toast = useCallback((input: ToastInput) => {
+  const toast = useCallback((input: ToastInput): string => {
     const id = `toast-${++toastCounter}-${Date.now()}`;
     const newToast: ToastData = {
       id,
       type: input.type,
       message: input.message,
       duration: input.duration,
+      persistent: input.persistent,
+      actions: input.actions,
+      onDismiss: input.onDismiss,
     };
     setToasts((prev) => [...prev, newToast]);
+    return id;
   }, []);
 
   const dismissToast = useCallback((id: string) => {

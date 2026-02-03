@@ -10,14 +10,21 @@
 
 | File | Purpose | Size |
 |------|---------|------|
-| `lib/db/activity.ts` | Activity logging | ~3KB |
+| `lib/db/activity.ts` | Activity logging | ~7KB |
 | `lib/db/cost.ts` | Cost tracking | ~2KB |
 | `lib/db/bottleneck.ts` | Bottleneck logging | ~2KB |
+| `lib/db/analysis-jobs.ts` | Analysis job CRUD | ~5KB |
 | `lib/agents/self-improvement.ts` | Pattern detection | ~5KB |
 | `lib/agents/compactor.ts` | Progress compaction | ~4KB |
+| `lib/agents/improvement-analyzer.ts` | Escalation analysis | ~15KB |
+| `lib/analysis/runner.ts` | Background job execution | ~7KB |
 | `app/api/activity/route.ts` | Activity API | ~2KB |
 | `app/api/costs/route.ts` | Costs API | ~1KB |
-| `app/api/improvements/route.ts` | Suggestions API | ~2KB |
+| `app/api/improvements/analyze/route.ts` | Analysis API (GET/POST) | ~8KB |
+| `app/api/improvements/create/route.ts` | Create improvement outcomes | ~10KB |
+| `app/api/improvements/create-consolidated/route.ts` | Create consolidated outcomes | ~8KB |
+| `app/api/improvements/jobs/[jobId]/route.ts` | Job status endpoint | ~2KB |
+| `app/api/improvements/jobs/active/route.ts` | Active jobs list | ~1KB |
 
 ---
 
@@ -76,6 +83,24 @@ CREATE TABLE improvement_suggestions (
   priority INTEGER DEFAULT 2,
   status TEXT DEFAULT 'pending',  -- pending/accepted/dismissed
   created_at TEXT
+);
+```
+
+### analysis_jobs
+
+```sql
+CREATE TABLE analysis_jobs (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT,           -- NULL for system-wide analysis
+  job_type TEXT NOT NULL,    -- 'improvement_analysis'
+  status TEXT NOT NULL,      -- 'pending' | 'running' | 'completed' | 'failed'
+  progress_message TEXT,     -- Current step description
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  result TEXT,               -- JSON of analysis results
+  error TEXT,
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE
 );
 ```
 
@@ -300,6 +325,69 @@ Update suggestion status.
 ```json
 {
   "status": "accepted"
+}
+```
+
+### POST /api/improvements/analyze
+
+Start a background improvement analysis job.
+
+**Request:**
+```json
+{
+  "outcomeId": "optional - filter to specific outcome",
+  "lookbackDays": 30,
+  "maxProposals": 5
+}
+```
+
+**Response (202 Accepted):**
+```json
+{
+  "success": true,
+  "jobId": "uuid",
+  "status": "pending",
+  "message": "Analysis job started. Poll /api/improvements/jobs/{jobId} for status."
+}
+```
+
+### GET /api/improvements/jobs/{jobId}
+
+Get status of an analysis job.
+
+**Response:**
+```json
+{
+  "success": true,
+  "job": {
+    "id": "uuid",
+    "status": "running",
+    "progressMessage": "Analyzing escalation patterns with AI...",
+    "result": null,
+    "error": null,
+    "createdAt": 1706745600000,
+    "startedAt": 1706745601000,
+    "completedAt": null
+  }
+}
+```
+
+### GET /api/improvements/jobs/active
+
+List all active (running/pending) analysis jobs.
+
+**Response:**
+```json
+{
+  "success": true,
+  "jobs": [
+    {
+      "id": "uuid",
+      "status": "running",
+      "progressMessage": "Analyzing...",
+      "createdAt": 1706745600000
+    }
+  ]
 }
 ```
 

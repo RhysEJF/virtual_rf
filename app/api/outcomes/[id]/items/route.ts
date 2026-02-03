@@ -2,6 +2,7 @@
  * Items API
  *
  * Manages outcome items (skills, tools, files, outputs) and their sync status.
+ * Supports multi-destination repository syncing.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,9 +11,17 @@ import {
   upsertOutcomeItem,
   getOutcomeItem,
   updateOutcomeItem,
+  getItemRepoSyncsWithDetails,
+  getAllRepositories,
 } from '@/lib/db/repositories';
 import { getOutcomeById } from '@/lib/db/outcomes';
-import { syncItem, promoteItem } from '@/lib/sync/repository-sync';
+import {
+  syncItem,
+  promoteItem,
+  syncItemToRepos,
+  unsyncItemFromRepo,
+  getItemSyncStatusFull,
+} from '@/lib/sync/repository-sync';
 import type { OutcomeItemType, SaveTarget } from '@/lib/db/schema';
 
 interface RouteContext {
@@ -21,7 +30,7 @@ interface RouteContext {
 
 /**
  * GET /api/outcomes/[id]/items
- * List all tracked items for an outcome
+ * List all tracked items for an outcome with sync details
  */
 export async function GET(
   request: NextRequest,
@@ -38,11 +47,33 @@ export async function GET(
     // Optional filter by type
     const { searchParams } = new URL(request.url);
     const typeFilter = searchParams.get('type') as OutcomeItemType | null;
+    const includeSyncs = searchParams.get('include_syncs') === 'true';
 
     let items = getOutcomeItems(id);
 
     if (typeFilter) {
       items = items.filter(item => item.item_type === typeFilter);
+    }
+
+    // Optionally include sync details from junction table
+    if (includeSyncs) {
+      const itemsWithSyncs = items.map(item => {
+        const syncs = getItemRepoSyncsWithDetails(item.id);
+        return {
+          ...item,
+          syncs: syncs.map(s => ({
+            repo_id: s.repo_id,
+            repo_name: s.repo_name,
+            synced_at: s.synced_at,
+            sync_status: s.sync_status,
+            commit_hash: s.commit_hash,
+          })),
+        };
+      });
+      return NextResponse.json({
+        items: itemsWithSyncs,
+        available_repos: getAllRepositories(),
+      });
     }
 
     return NextResponse.json({ items });
@@ -126,14 +157,20 @@ export async function POST(
 
 /**
  * PATCH /api/outcomes/[id]/items
- * Update an item (e.g., promote to different target)
+ * Update an item (e.g., promote to different target, sync to specific repos)
  *
- * Body: {
- *   item_type: 'skill' | 'tool' | 'file' | 'output',
- *   filename: string,
- *   action: 'promote',
- *   target: 'local' | 'private' | 'team'
- * }
+ * Actions:
+ * - promote: Sync to outcome's default repo (legacy)
+ *   { action: 'promote', target: 'local' | 'repo', item_type, filename }
+ *
+ * - sync: Sync to specific repository/repositories
+ *   { action: 'sync', repo_ids: string[], item_type, filename }
+ *
+ * - unsync: Remove from specific repository
+ *   { action: 'unsync', repo_id: string, item_type, filename }
+ *
+ * - get_sync_status: Get detailed sync status for an item
+ *   { action: 'get_sync_status', item_type, filename }
  */
 export async function PATCH(
   request: NextRequest,
@@ -148,7 +185,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { item_type, filename, action, target } = body;
+    const { item_type, filename, action, target, repo_ids, repo_id } = body;
 
     // Validate item_type
     const validTypes: OutcomeItemType[] = ['skill', 'tool', 'file', 'output'];
@@ -159,7 +196,13 @@ export async function PATCH(
       );
     }
 
-    // Get existing item
+    // Handle get_sync_status action (doesn't require existing item)
+    if (action === 'get_sync_status') {
+      const status = getItemSyncStatusFull(id, item_type, filename);
+      return NextResponse.json(status);
+    }
+
+    // Get existing item for other actions
     const item = getOutcomeItem(id, item_type, filename);
     if (!item) {
       return NextResponse.json(
@@ -168,8 +211,8 @@ export async function PATCH(
       );
     }
 
+    // Handle promote action (legacy - uses outcome's default repo)
     if (action === 'promote') {
-      // Validate target (only 'local' or 'repo' for promotion)
       if (target !== 'local' && target !== 'repo') {
         return NextResponse.json(
           { error: 'Invalid target. Must be: local or repo' },
@@ -184,6 +227,38 @@ export async function PATCH(
         repository: result.repository,
         error: result.error,
       });
+    }
+
+    // Handle sync action (multi-repo - sync to specific repos)
+    if (action === 'sync') {
+      if (!Array.isArray(repo_ids) || repo_ids.length === 0) {
+        return NextResponse.json(
+          { error: 'repo_ids array is required for sync action' },
+          { status: 400 }
+        );
+      }
+
+      const results = await syncItemToRepos(id, item_type, filename, repo_ids);
+      const allSucceeded = results.every(r => r.success);
+
+      return NextResponse.json({
+        success: allSucceeded,
+        results,
+        partial: !allSucceeded && results.some(r => r.success),
+      });
+    }
+
+    // Handle unsync action (remove from specific repo)
+    if (action === 'unsync') {
+      if (!repo_id || typeof repo_id !== 'string') {
+        return NextResponse.json(
+          { error: 'repo_id is required for unsync action' },
+          { status: 400 }
+        );
+      }
+
+      const result = await unsyncItemFromRepo(id, item_type, filename, repo_id);
+      return NextResponse.json(result);
     }
 
     // Generic update (target_override only)

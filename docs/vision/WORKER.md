@@ -35,6 +35,8 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Task complexity estimation | Complete |
 | Auto-decomposition for complex tasks | Complete |
 | Destructive command guard | Complete |
+| Capability dependency checking | Complete |
+| Dynamic capability task creation | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -147,6 +149,18 @@ Workers now have proactive command interception:
 3. **Context-Aware** - Understands workspace boundaries and git branch protection
 4. **Block & Log** - Dangerous commands are blocked and logged to `guard_blocks` table
 5. **Escalation** - Critical blocks create HOMЯ escalations for human review
+
+### Capability Dependency Checking
+
+Workers now check capability dependencies before claiming tasks:
+
+1. **Dependency Declaration** - Tasks can specify `required_capabilities` (e.g., `['skill:market-research', 'tool:scraper']`)
+2. **File Existence Check** - Worker verifies capability files exist in workspace before claiming
+3. **Blocking** - Tasks with missing capabilities are skipped
+4. **Dynamic Creation** - When all execution tasks are blocked, capability tasks are auto-created
+5. **Phase Ordering** - Capability tasks run before execution tasks (priority-based)
+
+This enables just-in-time capability building without requiring all capabilities upfront.
 
 ---
 

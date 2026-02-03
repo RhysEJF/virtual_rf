@@ -172,3 +172,91 @@ const task = db.prepare(`
   LIMIT 1
 `).get(outcomeId, phase);
 ```
+
+---
+
+## Dynamic Capability Planning
+
+### Overview
+
+Dynamic Capability Planning allows the system to detect and create capability tasks on-the-fly, rather than requiring all capabilities to be planned upfront.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `lib/agents/capability-planner.ts` | Pattern detection & task creation |
+| `lib/db/tasks.ts` | Capability dependency checking |
+| `app/components/CapabilitySuggestionBanner.tsx` | UI feedback component |
+| `app/api/outcomes/[id]/capabilities/replan/route.ts` | Manual replanning endpoint |
+
+### Capability Detection Patterns
+
+The system uses 6 strategies to detect capabilities from approach text:
+
+1. Explicit `skills/` and `tools/` path references
+2. Skill document structure references
+3. Architecture code blocks
+4. Natural language patterns (e.g., "**Market Intelligence Skill**")
+5. Section headers with capability keywords
+6. Claude-based extraction (fallback)
+
+### Task Capability Dependencies
+
+Tasks can specify required capabilities:
+
+```typescript
+interface Task {
+  required_capabilities?: string[];  // e.g., ['skill:market-research', 'tool:scraper']
+}
+```
+
+### Dependency Checking
+
+```typescript
+// In claimNextTask - checks if capabilities exist as files
+const result = checkTaskCapabilityDependencies(task, outcomeId);
+if (!result.satisfied) {
+  // Task is blocked, collect missing capabilities
+  missingCapabilities.add(...result.missing);
+}
+```
+
+### Dynamic Task Creation
+
+When all execution tasks are blocked by missing capabilities:
+
+```typescript
+// Creates capability task dynamically
+createDynamicCapabilityTask(outcomeId, 'skill:market-research');
+```
+
+### API: POST /api/outcomes/{id}/capabilities/replan
+
+Manually trigger capability replanning.
+
+**Request:**
+```json
+{
+  "detectOnlyNew": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "capabilities": [
+    { "type": "skill", "name": "market-research", "taskId": "123" }
+  ],
+  "tasksCreated": 1
+}
+```
+
+### UI Component
+
+`CapabilitySuggestionBanner` displays after approach optimization:
+- Shows count of detected skills/tools
+- Expandable list with details
+- Create/Dismiss actions
+- Loading and error states

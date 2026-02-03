@@ -19,6 +19,7 @@ import {
 } from '@/lib/db/outcomes';
 import { createTasksBatch } from '@/lib/db/tasks';
 import { markEscalationsByTriggerTypeAsIncorporated } from '@/lib/db/homr';
+import { logImprovementCreated } from '@/lib/db/activity';
 import type { HomrEscalation } from '@/lib/db/schema';
 
 // Constants
@@ -426,6 +427,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         task_count: taskCount,
         escalations_marked: markedCount,
       });
+
+      // Log improvement creation to activity feed
+      logImprovementCreated(
+        parentOutcomeId,
+        SELF_IMPROVEMENT_OUTCOME_NAME,
+        childOutcome.name,
+        taskCount,
+        markedCount
+      );
     }
 
     // Build response message

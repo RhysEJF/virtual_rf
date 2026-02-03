@@ -23,7 +23,9 @@ import { CollapsibleSection } from '@/app/components/CollapsibleSection';
 import { OutcomeChat } from '@/app/components/OutcomeChat';
 import { CommitSettingsSection } from '@/app/components/CommitSettingsSection';
 import { HomrDashboard } from '@/app/components/HomrDashboard';
+import { CapabilitySuggestionBanner } from '@/app/components/CapabilitySuggestionBanner';
 import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
+import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 
 // Types
 interface OutcomeDetail {
@@ -166,6 +168,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [replanningCapabilities, setReplanningCapabilities] = useState(false);
 
   // Hierarchy state
   const [parent, setParent] = useState<{ id: string; name: string } | null>(null);
@@ -195,6 +198,9 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [approachRamble, setApproachRamble] = useState('');
   const [optimizingIntent, setOptimizingIntent] = useState(false);
   const [optimizingApproach, setOptimizingApproach] = useState(false);
+
+  // Detected capabilities after approach optimization
+  const [detectedCapabilities, setDetectedCapabilities] = useState<CapabilityNeed[]>([]);
 
   // Review response state
   const [lastReviewResponse, setLastReviewResponse] = useState<string | null>(null);
@@ -393,6 +399,58 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
+  const handleReplanCapabilities = async () => {
+    setReplanningCapabilities(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/capabilities/replan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detectOnlyNew: true }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        if (data.totalNewCapabilities > 0) {
+          toast({ type: 'success', message: `Created ${data.totalNewCapabilities} new capability task(s)` });
+        } else {
+          toast({ type: 'info', message: 'No new capabilities detected' });
+        }
+        fetchOutcome();
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to replan capabilities' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to replan capabilities' });
+    } finally {
+      setReplanningCapabilities(false);
+    }
+  };
+
+  // Handler to create capabilities from the suggestion banner
+  const handleCreateCapabilitiesFromBanner = async (): Promise<void> => {
+    // Use the replan endpoint to create capability tasks
+    const response = await fetch(`/api/outcomes/${outcomeId}/capabilities/replan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ detectOnlyNew: true }),
+    });
+    const data = await response.json();
+    if (response.ok && data.success) {
+      if (data.totalNewCapabilities > 0) {
+        toast({ type: 'success', message: `Created ${data.totalNewCapabilities} capability task(s)` });
+      }
+      // Clear the detected capabilities since they've been created
+      setDetectedCapabilities([]);
+      fetchOutcome();
+    } else {
+      throw new Error(data.error || 'Failed to create capabilities');
+    }
+  };
+
+  // Handler to dismiss capability suggestions
+  const handleDismissCapabilities = (): void => {
+    setDetectedCapabilities([]);
+  };
+
   // Direct edit handlers
   const handleStartEditIntent = () => {
     if (outcome?.intent) {
@@ -519,8 +577,13 @@ export default function OutcomeDetailPage(): JSX.Element {
         body: JSON.stringify({ ramble: approachRamble }),
       });
       if (response.ok) {
+        const data = await response.json();
         toast({ type: 'success', message: 'Approach optimized' });
         setApproachRamble('');
+        // Set detected capabilities if any were found
+        if (data.detectedCapabilities && data.detectedCapabilities.length > 0) {
+          setDetectedCapabilities(data.detectedCapabilities);
+        }
         fetchOutcome();
       } else {
         const data = await response.json();
@@ -724,6 +787,17 @@ export default function OutcomeDetailPage(): JSX.Element {
               {!isParent && capabilityReady && outcome.capability_ready !== 0 && (
                 <Badge variant="success">Capabilities Ready</Badge>
               )}
+              {!isParent && outcome.design_doc?.approach && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReplanCapabilities}
+                  disabled={replanningCapabilities || capabilityInProgress}
+                  className="text-xs"
+                >
+                  {replanningCapabilities ? 'Re-planning...' : 'Re-plan Capabilities'}
+                </Button>
+              )}
             </div>
             {outcome.brief && (
               <div className="max-w-3xl">
@@ -796,6 +870,18 @@ export default function OutcomeDetailPage(): JSX.Element {
           initialInput={refinementInput}
           onInitialInputConsumed={handleRefinementConsumed}
         />
+
+        {/* Capability suggestion banner - shown after approach optimization */}
+        {detectedCapabilities.length > 0 && (
+          <div className="mt-4">
+            <CapabilitySuggestionBanner
+              capabilities={detectedCapabilities}
+              outcomeId={outcomeId}
+              onCreateCapabilities={handleCreateCapabilitiesFromBanner}
+              onDismiss={handleDismissCapabilities}
+            />
+          </div>
+        )}
 
         {/* Capability phase status indicator */}
         {capabilityInProgress && (
@@ -1006,6 +1092,45 @@ export default function OutcomeDetailPage(): JSX.Element {
                   )}
                 </CollapsibleSection>
 
+                {/* Git & Commit Settings - Important to configure early */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-git`}
+                  title="Git & Commit Settings"
+                  defaultExpanded={false}
+                >
+                  <div className="space-y-4">
+                    <GitConfigSection
+                      outcomeId={outcomeId}
+                      outcomeName={outcome.name}
+                      config={{
+                        working_directory: outcome.working_directory,
+                        git_mode: outcome.git_mode,
+                        base_branch: outcome.base_branch,
+                        work_branch: outcome.work_branch,
+                        auto_commit: outcome.auto_commit,
+                        create_pr_on_complete: outcome.create_pr_on_complete,
+                      }}
+                      onUpdate={fetchOutcome}
+                    />
+                    <div className="border-t border-border pt-4">
+                      <CommitSettingsSection
+                        outcomeId={outcomeId}
+                        config={{
+                          output_target: outcome.output_target,
+                          skill_target: outcome.skill_target,
+                          tool_target: outcome.tool_target,
+                          file_target: outcome.file_target,
+                          auto_save: outcome.auto_save,
+                          repository_id: outcome.repository_id ?? null,
+                          parent_id: outcome.parent_id ?? null,
+                        }}
+                        workingDirectory={outcome.working_directory}
+                        onUpdate={fetchOutcome}
+                      />
+                    </div>
+                  </div>
+                </CollapsibleSection>
+
                 {/* Tasks */}
                 <CollapsibleSection
                   id={`outcome-${outcomeId}-tasks`}
@@ -1098,44 +1223,6 @@ export default function OutcomeDetailPage(): JSX.Element {
                       ))}
                     </div>
                   )}
-                </CollapsibleSection>
-
-                {/* Git & Commit Settings */}
-                <CollapsibleSection
-                  id={`outcome-${outcomeId}-git`}
-                  title="Git & Commit Settings"
-                  defaultExpanded={false}
-                >
-                  <div className="space-y-4">
-                    <GitConfigSection
-                      outcomeId={outcomeId}
-                      outcomeName={outcome.name}
-                      config={{
-                        working_directory: outcome.working_directory,
-                        git_mode: outcome.git_mode,
-                        base_branch: outcome.base_branch,
-                        work_branch: outcome.work_branch,
-                        auto_commit: outcome.auto_commit,
-                        create_pr_on_complete: outcome.create_pr_on_complete,
-                      }}
-                      onUpdate={fetchOutcome}
-                    />
-                    <div className="border-t border-border pt-4">
-                      <CommitSettingsSection
-                        outcomeId={outcomeId}
-                        config={{
-                          output_target: outcome.output_target,
-                          skill_target: outcome.skill_target,
-                          tool_target: outcome.tool_target,
-                          file_target: outcome.file_target,
-                          auto_save: outcome.auto_save,
-                          repository_id: outcome.repository_id ?? null,
-                          parent_id: outcome.parent_id ?? null,
-                        }}
-                        onUpdate={fetchOutcome}
-                      />
-                    </div>
-                  </div>
                 </CollapsibleSection>
 
                 {/* Skills */}

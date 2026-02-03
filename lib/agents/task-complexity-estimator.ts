@@ -64,7 +64,7 @@ export async function estimateTaskComplexity(
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 3, // Increased from 1 - Claude may need extra turns
+      maxTurns: 5, // Increased from 1 - Claude may need several turns for complex analysis
       timeout: 45000,
       description: `Complexity estimation for task: ${task.title}`,
     });
@@ -484,7 +484,7 @@ Each subtask should:
   try {
     const result = await claudeComplete({
       prompt,
-      maxTurns: 3, // Increased from 1 - Claude may need extra turns
+      maxTurns: 5, // Increased from 1 - Claude may need several turns for complex analysis
       timeout: 45000,
       description: `Task split suggestion for: ${task.title}`,
     });

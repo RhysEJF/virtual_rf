@@ -12,6 +12,8 @@ import type {
   OutcomeItemType,
   SaveTarget,
   Outcome,
+  ItemRepoSync,
+  SyncStatus,
 } from './schema';
 import { generateId } from '../utils/id';
 
@@ -507,4 +509,285 @@ export function getEffectiveSaveTarget(
   }[item.item_type] as 'output_target' | 'skill_target' | 'tool_target' | 'file_target';
 
   return getEffectiveTarget(outcomeId, targetType);
+}
+
+// ============================================================================
+// Item-Repository Sync Junction Table CRUD
+// ============================================================================
+
+export interface CreateItemRepoSyncInput {
+  item_id: string;
+  repo_id: string;
+  synced_at?: number;
+  commit_hash?: string;
+  sync_status?: SyncStatus;
+  error_message?: string;
+}
+
+export interface UpdateItemRepoSyncInput {
+  synced_at?: number;
+  commit_hash?: string;
+  sync_status?: SyncStatus;
+  error_message?: string;
+}
+
+/**
+ * Create a new item-to-repo sync record
+ */
+export function createItemRepoSync(input: CreateItemRepoSyncInput): ItemRepoSync {
+  const db = getDb();
+  const id = generateId('irs');
+  const timestamp = now();
+
+  const stmt = db.prepare(`
+    INSERT INTO item_repo_syncs (
+      id, item_id, repo_id, synced_at, commit_hash, sync_status, error_message, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
+    id,
+    input.item_id,
+    input.repo_id,
+    input.synced_at ?? timestamp,
+    input.commit_hash ?? null,
+    input.sync_status ?? 'synced',
+    input.error_message ?? null,
+    timestamp,
+    timestamp
+  );
+
+  return getItemRepoSyncById(id)!;
+}
+
+/**
+ * Get an item-repo sync by ID
+ */
+export function getItemRepoSyncById(id: string): ItemRepoSync | null {
+  const db = getDb();
+  const stmt = db.prepare('SELECT * FROM item_repo_syncs WHERE id = ?');
+  const row = stmt.get(id) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return mapRowToItemRepoSync(row);
+}
+
+/**
+ * Get all syncs for an item (which repos is this item synced to?)
+ */
+export function getItemRepoSyncs(itemId: string): ItemRepoSync[] {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT * FROM item_repo_syncs
+    WHERE item_id = ?
+    ORDER BY synced_at DESC
+  `);
+  const rows = stmt.all(itemId) as Record<string, unknown>[];
+  return rows.map(mapRowToItemRepoSync);
+}
+
+/**
+ * Get all syncs for an item with repository details
+ */
+export function getItemRepoSyncsWithDetails(itemId: string): (ItemRepoSync & { repo_name: string })[] {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT irs.*, r.name as repo_name
+    FROM item_repo_syncs irs
+    JOIN repositories r ON irs.repo_id = r.id
+    WHERE irs.item_id = ?
+    ORDER BY irs.synced_at DESC
+  `);
+  const rows = stmt.all(itemId) as Record<string, unknown>[];
+  return rows.map(row => ({
+    ...mapRowToItemRepoSync(row),
+    repo_name: row.repo_name as string,
+  }));
+}
+
+/**
+ * Get all syncs for a repository (which items are synced to this repo?)
+ */
+export function getSyncsByRepo(repoId: string): ItemRepoSync[] {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT * FROM item_repo_syncs
+    WHERE repo_id = ?
+    ORDER BY synced_at DESC
+  `);
+  const rows = stmt.all(repoId) as Record<string, unknown>[];
+  return rows.map(mapRowToItemRepoSync);
+}
+
+/**
+ * Get a specific item-repo sync by composite key
+ */
+export function getItemRepoSyncByKey(itemId: string, repoId: string): ItemRepoSync | null {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT * FROM item_repo_syncs
+    WHERE item_id = ? AND repo_id = ?
+  `);
+  const row = stmt.get(itemId, repoId) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return mapRowToItemRepoSync(row);
+}
+
+/**
+ * Check if an item is synced to a specific repository
+ */
+export function isItemSyncedToRepo(itemId: string, repoId: string): boolean {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT 1 FROM item_repo_syncs
+    WHERE item_id = ? AND repo_id = ? AND sync_status = 'synced'
+    LIMIT 1
+  `);
+  const row = stmt.get(itemId, repoId);
+  return !!row;
+}
+
+/**
+ * Update an item-repo sync record
+ */
+export function updateItemRepoSync(id: string, input: UpdateItemRepoSyncInput): ItemRepoSync | null {
+  const db = getDb();
+  const existing = getItemRepoSyncById(id);
+  if (!existing) return null;
+
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (input.synced_at !== undefined) {
+    updates.push('synced_at = ?');
+    values.push(input.synced_at);
+  }
+  if (input.commit_hash !== undefined) {
+    updates.push('commit_hash = ?');
+    values.push(input.commit_hash);
+  }
+  if (input.sync_status !== undefined) {
+    updates.push('sync_status = ?');
+    values.push(input.sync_status);
+  }
+  if (input.error_message !== undefined) {
+    updates.push('error_message = ?');
+    values.push(input.error_message);
+  }
+
+  if (updates.length === 0) return existing;
+
+  updates.push('updated_at = ?');
+  values.push(now());
+  values.push(id);
+
+  const stmt = db.prepare(`UPDATE item_repo_syncs SET ${updates.join(', ')} WHERE id = ?`);
+  stmt.run(...values);
+
+  return getItemRepoSyncById(id);
+}
+
+/**
+ * Upsert an item-repo sync (create or update)
+ */
+export function upsertItemRepoSync(input: CreateItemRepoSyncInput): ItemRepoSync {
+  const existing = getItemRepoSyncByKey(input.item_id, input.repo_id);
+  if (existing) {
+    return updateItemRepoSync(existing.id, {
+      synced_at: input.synced_at,
+      commit_hash: input.commit_hash,
+      sync_status: input.sync_status,
+      error_message: input.error_message,
+    }) || existing;
+  }
+  return createItemRepoSync(input);
+}
+
+/**
+ * Delete an item-repo sync record
+ */
+export function deleteItemRepoSync(itemId: string, repoId: string): boolean {
+  const db = getDb();
+  const stmt = db.prepare('DELETE FROM item_repo_syncs WHERE item_id = ? AND repo_id = ?');
+  const result = stmt.run(itemId, repoId);
+  return result.changes > 0;
+}
+
+/**
+ * Delete all syncs for an item
+ */
+export function deleteAllItemSyncs(itemId: string): number {
+  const db = getDb();
+  const stmt = db.prepare('DELETE FROM item_repo_syncs WHERE item_id = ?');
+  const result = stmt.run(itemId);
+  return result.changes;
+}
+
+/**
+ * Mark an item as stale in a specific repo (file modified since sync)
+ */
+export function markItemStale(itemId: string, repoId: string): boolean {
+  const sync = getItemRepoSyncByKey(itemId, repoId);
+  if (!sync) return false;
+  updateItemRepoSync(sync.id, { sync_status: 'stale' });
+  return true;
+}
+
+/**
+ * Mark an item sync as failed
+ */
+export function markItemSyncFailed(itemId: string, repoId: string, errorMessage: string): boolean {
+  const sync = getItemRepoSyncByKey(itemId, repoId);
+  if (!sync) return false;
+  updateItemRepoSync(sync.id, {
+    sync_status: 'failed',
+    error_message: errorMessage,
+  });
+  return true;
+}
+
+/**
+ * Get all repos that an item is synced to (just IDs)
+ */
+export function getItemSyncedRepoIds(itemId: string): string[] {
+  const db = getDb();
+  const stmt = db.prepare(`
+    SELECT repo_id FROM item_repo_syncs
+    WHERE item_id = ? AND sync_status = 'synced'
+  `);
+  const rows = stmt.all(itemId) as { repo_id: string }[];
+  return rows.map(r => r.repo_id);
+}
+
+/**
+ * Get item sync status summary (for UI)
+ */
+export function getItemSyncStatus(itemId: string): {
+  syncs: (ItemRepoSync & { repo_name: string })[];
+  available_repos: Repository[];
+} {
+  const syncs = getItemRepoSyncsWithDetails(itemId);
+  const syncedRepoIds = new Set(syncs.map(s => s.repo_id));
+  const allRepos = getAllRepositories();
+  const available_repos = allRepos.filter(r => !syncedRepoIds.has(r.id));
+
+  return { syncs, available_repos };
+}
+
+// ============================================================================
+// Helper: Map row to ItemRepoSync
+// ============================================================================
+
+function mapRowToItemRepoSync(row: Record<string, unknown>): ItemRepoSync {
+  return {
+    id: row.id as string,
+    item_id: row.item_id as string,
+    repo_id: row.repo_id as string,
+    synced_at: row.synced_at as number,
+    commit_hash: row.commit_hash as string | null,
+    sync_status: row.sync_status as SyncStatus,
+    error_message: row.error_message as string | null,
+    created_at: row.created_at as number,
+    updated_at: row.updated_at as number,
+  };
 }

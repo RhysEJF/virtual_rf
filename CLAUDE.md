@@ -280,6 +280,15 @@ kill -9 <PID>
 - [x] Tool builder - creates TypeScript CLI tools in workspaces
 - [x] Automatic phase transition when capabilities ready
 
+### Dynamic Capability Planning (Complete)
+- [x] Capability detection from approach text (6 pattern strategies)
+- [x] `required_capabilities` field on tasks for dependency declaration
+- [x] Capability dependency checking at task claim time
+- [x] Dynamic capability task creation when execution blocked
+- [x] CapabilitySuggestionBanner UI after approach optimization
+- [x] Manual replanning endpoint (`/api/outcomes/[id]/capabilities/replan`)
+- [x] Deduplication to prevent duplicate capability tasks
+
 ### Skills System (Complete)
 - [x] Global skills library (`/skills` directory, DB-tracked)
 - [x] Outcome-specific skills (`workspaces/{outcomeId}/skills/`)
@@ -348,6 +357,10 @@ kill -9 <PID>
 - [x] Create individual or consolidated improvement outcomes
 - [x] Escalation incorporation tracking (prevents re-analyzing addressed escalations)
 - [x] Supervisor page shows "X unaddressed / Y addressed" badges
+- [x] Background analysis jobs (`lib/analysis/runner.ts`, `lib/db/analysis-jobs.ts`)
+- [x] Analysis activity logging (analysis_started, analysis_completed, analysis_failed, improvement_created)
+- [x] Actionable toast notifications with "View Results" buttons
+- [x] ImprovementPreviewModal supports background polling and close-while-running
 
 ### Worker Resilience (Complete)
 - [x] Circuit breaker pattern - auto-pause after consecutive failures (`lib/ralph/worker.ts`)
@@ -394,6 +407,8 @@ kill -9 <PID>
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues
 - `lib/agents/improvement-analyzer.ts` - Analyzes escalation patterns, proposes improvements
+- `lib/analysis/runner.ts` - Background job execution for improvement analysis
+- `lib/db/analysis-jobs.ts` - Analysis job CRUD operations
 - `lib/homr/index.ts` - HOMЯ Protocol main exports (observe, steer, escalate)
 - `lib/homr/observer.ts` - Task output analysis with Claude
 - `lib/homr/escalator.ts` - Ambiguity detection and human escalation

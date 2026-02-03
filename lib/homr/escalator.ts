@@ -110,6 +110,12 @@ export function markTasksForDecomposition(taskIds: string[]): number {
  * DEDUPLICATION: Before creating a new escalation, checks if a pending escalation
  * already exists for the same task with the same trigger type. If so, returns
  * the existing escalation ID to prevent duplicate blocking questions.
+ *
+ * DECOMPOSITION CHECK: Also verifies the task's decomposition_status is not
+ * 'in_progress' or 'completed'. If the task is mid-decomposition, returns a
+ * special value (e.g., 'skipped:decomposition_in_progress') to indicate the
+ * escalation was skipped. This provides defense-in-depth against duplicate
+ * escalations for tasks that are already being decomposed.
  */
 export async function createEscalation(
   outcomeId: string,
@@ -125,6 +131,12 @@ export async function createEscalation(
   if (existingEscalation) {
     console.log(`[HOMЯ Escalator] Found existing pending escalation ${existingEscalation.id} for task ${task.id} with type ${ambiguity.type}, skipping duplicate creation`);
     return existingEscalation.id;
+  }
+
+  // Check if task is already being decomposed - defense-in-depth against duplicate escalations
+  if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
+    console.log(`[HOMЯ Escalator] Task ${task.id} has decomposition_status='${task.decomposition_status}', skipping escalation creation`);
+    return `skipped:decomposition_${task.decomposition_status}`;
   }
 
   // Get outcome and intent for context

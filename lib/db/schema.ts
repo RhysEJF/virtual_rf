@@ -53,7 +53,7 @@ export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 // HOMЯ Protocol types
 export type HomrQuality = 'good' | 'needs_work' | 'off_rails';
 export type HomrEscalationStatus = 'pending' | 'answered' | 'dismissed';
-export type HomrActivityType = 'observation' | 'steering' | 'escalation' | 'resolution';
+export type HomrActivityType = 'observation' | 'steering' | 'escalation' | 'resolution' | 'auto_resolved' | 'auto_resolve_deferred';
 export type HomrDriftType = 'scope_creep' | 'wrong_direction' | 'missed_requirement' | 'contradicts_design';
 export type HomrDiscoveryType = 'constraint' | 'dependency' | 'pattern' | 'decision' | 'blocker';
 export type HomrAmbiguityType = 'unclear_requirement' | 'multiple_approaches' | 'blocking_decision' | 'contradicting_info';
@@ -108,6 +108,9 @@ export interface Outcome {
   tool_target: SaveTarget;
   file_target: SaveTarget;
   auto_save: boolean | 'inherit';   // Auto-save as workers build (or inherit from parent)
+  // HOMЯ Auto-resolve settings
+  auto_resolve_mode: 'manual' | 'semi-auto' | 'full-auto';  // How to handle escalations
+  auto_resolve_threshold: number;   // Confidence threshold for auto-resolution (0.0-1.0)
 }
 
 export interface DesignDoc {

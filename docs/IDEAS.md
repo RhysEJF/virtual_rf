@@ -220,6 +220,140 @@ Route tasks to appropriate models based on complexity:
 
 ---
 
+### 7. HOMЯ Auto-Resolve Mode
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-02-03 |
+| **Source** | User feedback - manual escalation resolution is poor UX |
+
+**Problem:**
+Currently, every HOMЯ escalation requires human intervention. User must:
+1. See the escalation in the UI
+2. Read the options and context
+3. Make a decision
+4. Wait for the action to complete (e.g., decomposition)
+5. Manually restart workers
+
+This creates friction and defeats the purpose of autonomous workers. The human becomes a bottleneck.
+
+**Proposed Solution:**
+Add an "auto-resolve" capability where Claude evaluates escalations and makes decisions autonomously, with human oversight.
+
+#### Core Components
+
+**1. Auto-Resolver Agent**
+```typescript
+async function autoResolveEscalation(escalation: Escalation): Promise<{
+  shouldAutoResolve: boolean;
+  selectedOption: string;
+  reasoning: string;
+  confidence: number;  // 0.0 - 1.0
+}> {
+  const context = {
+    escalation,
+    task: getTaskById(escalation.trigger_task_id),
+    pastDecisions: getDecisionPatterns(escalation.outcome_id),
+    outcomeContext: getHomrContext(escalation.outcome_id),
+  };
+
+  return await claudeComplete(AUTO_RESOLVER_PROMPT, context);
+}
+```
+
+**2. Configurable Confidence Threshold**
+- Setting: `auto_resolve_confidence_threshold` (default: 0.8)
+- If confidence >= threshold → auto-resolve
+- If confidence < threshold → escalate to human
+- User can adjust from 0.0 (always human) to 1.0 (always auto)
+
+**3. Escalation Type Heuristics**
+| Escalation Type | Default Behavior | Reasoning |
+|-----------------|------------------|-----------|
+| Complexity (turn limit) | Auto: break_into_subtasks | Safe, well-understood outcome |
+| Ambiguous requirements | Human | Needs domain knowledge |
+| Multiple failures | Auto: increase limit once, then human | First retry is safe |
+| Security/destructive | Always human | Too risky to auto-resolve |
+
+#### Timing: Handling Async Operations
+
+When auto-resolve triggers an async operation (like decomposition), the system needs to handle timing. Three options:
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **A. Synchronous decomposition** | Simple, no race conditions, immediate feedback | Blocks the resolution flow, slower perceived response |
+| **B. Worker orchestrator tracks pending ops** | Non-blocking, can parallelize, responsive UI | More complex state management, need to track operations |
+| **C. Worker polls for "ready" state** | Workers are self-managing, decentralized | Wastes worker turns polling, could miss edge cases |
+
+**Recommendation: Option B (Worker Orchestrator)**
+- Add `pending_operations` tracking to outcome or worker state
+- Before claiming tasks, worker checks for pending operations
+- Decomposition adds entry: `{ type: 'decomposition', taskId, startedAt }`
+- On completion, entry is removed
+- Worker waits if any pending operations affect its next task
+
+#### Human Stays "On The Loop"
+
+**Activity Feed Enhancements:**
+- Auto-resolved escalations appear with distinct styling (different color/icon)
+- Show: "🤖 Auto-resolved: [decision] (confidence: 85%)"
+- Clickable to expand reasoning
+
+**Override Capability:**
+- Human can undo auto-decisions within N minutes
+- "Undo" reverts the action if possible (mark task pending again, etc.)
+- Builds dataset of when auto-resolve was wrong
+
+**Configurable Modes:**
+| Mode | Behavior |
+|------|----------|
+| `manual` | All escalations go to human (current behavior) |
+| `semi-auto` | Auto-resolve with human review before applying |
+| `full-auto` | Auto-resolve and apply immediately |
+
+#### Future Enhancement: Pattern Learning
+
+**Deferred to v2** - Track decision outcomes to improve auto-resolve:
+
+1. **Store decision outcomes**
+   - When task completes after escalation → record "good outcome"
+   - When task fails after escalation → record "bad outcome"
+
+2. **Build pattern database**
+   ```typescript
+   interface DecisionPattern {
+     escalationType: string;
+     contextSignals: string[];  // e.g., "high_complexity", "bulk_task"
+     decision: string;
+     outcomeCount: number;
+     successRate: number;
+   }
+   ```
+
+3. **Use patterns in auto-resolve**
+   - If pattern has >80% success rate and >5 occurrences → boost confidence
+   - "We've seen this 12 times, chose 'decompose' 10 times, succeeded 9 times"
+
+This is more complex because it requires:
+- Tracking long-term outcomes (did the task eventually succeed?)
+- Correlating decisions to outcomes across sessions
+- Building a queryable pattern database
+
+**Value:**
+- 80% reduction in human interruptions
+- Workers can run truly autonomously for hours
+- Human time focused on genuinely ambiguous decisions
+- System learns from human decisions over time
+
+**Effort:** Medium (core auto-resolve) / Large (pattern learning)
+
+**References:**
+- [HOMЯ DESIGN.md](./homr/DESIGN.md) - Current escalation architecture
+- Existing `homr_context.decisions` table - Already stores some decision data
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

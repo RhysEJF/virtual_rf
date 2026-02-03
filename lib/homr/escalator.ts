@@ -79,10 +79,14 @@ export function markTasksForDecomposition(taskIds: string[]): number {
       continue;
     }
 
-    // Skip if already has a decomposition status (idempotency)
-    if (task.decomposition_status) {
+    // Skip if decomposition is in progress or already completed (idempotency)
+    // Allow retry if status is 'failed'
+    if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
       console.log(`[HOMЯ Escalator] Task ${taskId} already has decomposition_status='${task.decomposition_status}', skipping`);
       continue;
+    }
+    if (task.decomposition_status === 'failed') {
+      console.log(`[HOMЯ Escalator] Task ${taskId} had failed decomposition, allowing retry`);
     }
 
     // Skip already completed or failed tasks
@@ -220,6 +224,24 @@ export async function createEscalation(
   });
 
   console.log(`[HOMЯ Escalator] Created escalation ${escalation.id} with ${options.length} options`);
+
+  // Try auto-resolve if enabled for this outcome
+  if (outcome) {
+    const { tryAutoResolve, getAutoResolveConfig } = await import('./auto-resolver');
+    const config = getAutoResolveConfig(outcome);
+
+    if (config.mode !== 'manual') {
+      console.log(`[HOMЯ Escalator] Auto-resolve mode: ${config.mode}, attempting auto-resolution...`);
+      const autoResult = await tryAutoResolve(escalation.id, config);
+
+      if (autoResult.resolved) {
+        console.log(`[HOMЯ Escalator] Auto-resolved escalation ${escalation.id} with option: ${autoResult.result.selectedOption}`);
+        return `auto-resolved:${escalation.id}:${autoResult.result.selectedOption}`;
+      } else {
+        console.log(`[HOMЯ Escalator] Auto-resolve deferred to human: ${autoResult.result.reasoning}`);
+      }
+    }
+  }
 
   return escalation.id;
 }

@@ -202,7 +202,7 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
               onClick={() => setShowAutoResolveSettings(!showAutoResolveSettings)}
               className={`px-3 py-1 text-xs rounded-full transition-colors ${
                 autoResolveConfig.mode !== 'manual'
-                  ? 'bg-accent-primary text-white'
+                  ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
                   : 'bg-bg-tertiary text-text-secondary hover:bg-bg-secondary'
               }`}
             >
@@ -225,7 +225,7 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
                       disabled={savingAutoResolve}
                       className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
                         autoResolveConfig.mode === mode
-                          ? 'bg-accent-primary text-white'
+                          ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
                           : 'bg-bg-tertiary text-text-secondary hover:bg-bg-primary'
                       }`}
                     >

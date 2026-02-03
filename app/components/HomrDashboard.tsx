@@ -207,7 +207,7 @@ export function HomrDashboard({
               onClick={() => setShowAutoResolveSettings(!showAutoResolveSettings)}
               className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
                 autoResolveConfig.mode !== 'manual'
-                  ? 'bg-accent-primary text-white'
+                  ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
                   : 'bg-bg-tertiary text-text-tertiary hover:bg-bg-primary'
               }`}
             >
@@ -227,7 +227,7 @@ export function HomrDashboard({
                     disabled={savingAutoResolve}
                     className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
                       autoResolveConfig.mode === mode
-                        ? 'bg-accent-primary text-white'
+                        ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
                         : 'bg-bg-tertiary text-text-tertiary hover:bg-bg-primary'
                     }`}
                   >

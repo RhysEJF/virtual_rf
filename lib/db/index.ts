@@ -317,6 +317,50 @@ function runMigrations(database: Database.Database): void {
     database.exec(`UPDATE tasks SET required_capabilities = '[]' WHERE required_capabilities IS NULL`);
     console.log(`[DB Migration] Added required_capabilities column to tasks`);
   }
+
+  // Create item_repo_syncs junction table indexes if they don't exist
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_item ON item_repo_syncs(item_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_repo ON item_repo_syncs(repo_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_status ON item_repo_syncs(sync_status)`);
+
+  // Migrate existing synced_to data to item_repo_syncs junction table
+  // This is a one-time migration for existing data
+  const itemsWithSyncedTo = database.prepare(`
+    SELECT id, synced_to, last_synced_at FROM outcome_items
+    WHERE synced_to IS NOT NULL
+  `).all() as { id: string; synced_to: string; last_synced_at: number | null }[];
+
+  if (itemsWithSyncedTo.length > 0) {
+    // Check if we've already migrated (junction table has entries for these items)
+    const existingMigrated = database.prepare(`
+      SELECT COUNT(*) as count FROM item_repo_syncs
+      WHERE item_id IN (${itemsWithSyncedTo.map(() => '?').join(',')})
+    `).get(...itemsWithSyncedTo.map(i => i.id)) as { count: number };
+
+    if (existingMigrated.count === 0) {
+      // Migrate each item's synced_to to the junction table
+      const insertStmt = database.prepare(`
+        INSERT OR IGNORE INTO item_repo_syncs (id, item_id, repo_id, synced_at, sync_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'synced', ?, ?)
+      `);
+
+      let migratedCount = 0;
+      for (const item of itemsWithSyncedTo) {
+        const now = Date.now();
+        const syncedAt = item.last_synced_at || now;
+        const id = `irs_${item.id.slice(-8)}_${item.synced_to.slice(-8)}`;
+        try {
+          insertStmt.run(id, item.id, item.synced_to, syncedAt, now, now);
+          migratedCount++;
+        } catch {
+          // Ignore errors (repo might not exist anymore)
+        }
+      }
+      if (migratedCount > 0) {
+        console.log(`[DB Migration] Migrated ${migratedCount} items to item_repo_syncs junction table`);
+      }
+    }
+  }
 }
 
 /**

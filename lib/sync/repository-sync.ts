@@ -17,8 +17,14 @@ import {
   markItemUnsynced,
   getOutcomeItem,
   updateOutcomeItem,
+  getRepositoryById,
+  upsertItemRepoSync,
+  deleteItemRepoSync,
+  getItemRepoSyncsWithDetails,
+  getAllRepositories,
+  getItemRepoSyncByKey,
 } from '../db/repositories';
-import type { OutcomeItemType, Repository } from '../db/schema';
+import type { OutcomeItemType, Repository, ItemRepoSync, SyncStatus } from '../db/schema';
 
 // ============================================================================
 // Types
@@ -30,6 +36,15 @@ export interface SyncResult {
   repository?: string;
   repositoryId?: string;
   error?: string;
+  commitHash?: string;
+}
+
+export interface MultiRepoSyncResult {
+  repoId: string;
+  repoName: string;
+  success: boolean;
+  error?: string;
+  commitHash?: string;
 }
 
 export interface SyncOptions {
@@ -98,16 +113,30 @@ function gitAdd(repoPath: string, filePath: string): void {
 }
 
 /**
- * Commit staged changes
+ * Commit staged changes and return commit hash
  */
-function gitCommit(repoPath: string, message: string): boolean {
+function gitCommit(repoPath: string, message: string): { committed: boolean; hash?: string } {
   const cwd = expandPath(repoPath);
   try {
     execSync(`git commit -m "${message}"`, { cwd, stdio: 'pipe' });
-    return true;
+    // Get the commit hash
+    const hash = execSync('git rev-parse HEAD', { cwd, stdio: 'pipe' }).toString().trim();
+    return { committed: true, hash };
   } catch {
     // No changes to commit or other error
-    return false;
+    return { committed: false };
+  }
+}
+
+/**
+ * Get current HEAD commit hash
+ */
+function getHeadCommit(repoPath: string): string | null {
+  const cwd = expandPath(repoPath);
+  try {
+    return execSync('git rev-parse HEAD', { cwd, stdio: 'pipe' }).toString().trim();
+  } catch {
+    return null;
   }
 }
 
@@ -183,27 +212,39 @@ export async function syncItem(
     fs.copyFileSync(sourcePath, destPath);
 
     // Git operations if repo is a git repo
+    let commitHash: string | undefined;
     if (isGitRepo(repo.local_path)) {
       const relativePath = path.relative(expandPath(repo.local_path), destPath);
       gitAdd(repo.local_path, relativePath);
 
       const commitMsg = options.commitMessage || `Add ${itemType}: ${filename}`;
-      const committed = gitCommit(repo.local_path, commitMsg);
+      const commitResult = gitCommit(repo.local_path, commitMsg);
 
       // Push if auto-push is enabled and we committed
-      if (committed && (options.push ?? repo.auto_push)) {
+      if (commitResult.committed && (options.push ?? repo.auto_push)) {
         gitPush(repo.local_path);
       }
+      commitHash = commitResult.hash;
     }
 
-    // Mark as synced
+    // Mark as synced (legacy - for backwards compatibility)
     markItemSynced(item.id, repo.id);
+
+    // Also record in junction table for multi-repo support
+    upsertItemRepoSync({
+      item_id: item.id,
+      repo_id: repo.id,
+      synced_at: Date.now(),
+      commit_hash: commitHash,
+      sync_status: 'synced',
+    });
 
     return {
       success: true,
       target: 'repo',
       repository: repo.name,
       repositoryId: repo.id,
+      commitHash,
     };
   } catch (error) {
     console.error('[Sync] Error syncing item:', error);
@@ -353,4 +394,203 @@ export async function promoteItem(
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+// ============================================================================
+// Multi-Repository Sync Functions
+// ============================================================================
+
+/**
+ * Sync an item to multiple repositories
+ * Used for multi-destination syncing where an item needs to go to specific repos
+ */
+export async function syncItemToRepos(
+  outcomeId: string,
+  itemType: OutcomeItemType,
+  filename: string,
+  repoIds: string[]
+): Promise<MultiRepoSyncResult[]> {
+  const results: MultiRepoSyncResult[] = [];
+
+  // Get or create the item record
+  const item = getOutcomeItem(outcomeId, itemType, filename);
+  if (!item) {
+    // Return failure for all repos
+    for (const repoId of repoIds) {
+      const repo = getRepositoryById(repoId);
+      results.push({
+        repoId,
+        repoName: repo?.name || 'Unknown',
+        success: false,
+        error: 'Item not found',
+      });
+    }
+    return results;
+  }
+
+  // Check source file exists
+  if (!fs.existsSync(item.file_path)) {
+    for (const repoId of repoIds) {
+      const repo = getRepositoryById(repoId);
+      results.push({
+        repoId,
+        repoName: repo?.name || 'Unknown',
+        success: false,
+        error: 'Source file not found',
+      });
+    }
+    return results;
+  }
+
+  // Sync to each repository
+  for (const repoId of repoIds) {
+    const repo = getRepositoryById(repoId);
+    if (!repo) {
+      results.push({
+        repoId,
+        repoName: 'Unknown',
+        success: false,
+        error: 'Repository not found',
+      });
+      continue;
+    }
+
+    try {
+      // Get destination path and ensure directory exists
+      const destPath = getDestinationPath(repo, itemType, filename);
+      const destDir = path.dirname(destPath);
+
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
+      // Copy the file
+      fs.copyFileSync(item.file_path, destPath);
+
+      // Git operations if repo is a git repo
+      let commitHash: string | undefined;
+      if (isGitRepo(repo.local_path)) {
+        const relativePath = path.relative(expandPath(repo.local_path), destPath);
+        gitAdd(repo.local_path, relativePath);
+
+        const commitMsg = `Sync ${itemType}: ${filename}`;
+        const commitResult = gitCommit(repo.local_path, commitMsg);
+
+        if (commitResult.committed && repo.auto_push) {
+          gitPush(repo.local_path);
+        }
+        commitHash = commitResult.hash;
+      }
+
+      // Record in junction table
+      upsertItemRepoSync({
+        item_id: item.id,
+        repo_id: repo.id,
+        synced_at: Date.now(),
+        commit_hash: commitHash,
+        sync_status: 'synced',
+      });
+
+      results.push({
+        repoId: repo.id,
+        repoName: repo.name,
+        success: true,
+        commitHash,
+      });
+    } catch (error) {
+      // Record failure in junction table
+      upsertItemRepoSync({
+        item_id: item.id,
+        repo_id: repo.id,
+        synced_at: Date.now(),
+        sync_status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      results.push({
+        repoId: repo.id,
+        repoName: repo.name,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Remove an item's sync from a specific repository
+ * Does NOT delete the file from the repo - just removes the tracking
+ */
+export async function unsyncItemFromRepo(
+  outcomeId: string,
+  itemType: OutcomeItemType,
+  filename: string,
+  repoId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const item = getOutcomeItem(outcomeId, itemType, filename);
+    if (!item) {
+      return { success: false, error: 'Item not found' };
+    }
+
+    // Delete the junction table record
+    const deleted = deleteItemRepoSync(item.id, repoId);
+    if (!deleted) {
+      return { success: false, error: 'Sync record not found' };
+    }
+
+    // Also update legacy synced_to if it matches
+    if (item.synced_to === repoId) {
+      markItemUnsynced(item.id);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Sync] Error unsyncing item from repo:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get complete sync status for an item
+ * Returns all repos it's synced to plus available repos
+ */
+export function getItemSyncStatusFull(
+  outcomeId: string,
+  itemType: OutcomeItemType,
+  filename: string
+): {
+  item: { id: string; filename: string; file_path: string } | null;
+  syncs: { repo_id: string; repo_name: string; synced_at: number; sync_status: SyncStatus; commit_hash: string | null }[];
+  available_repos: { id: string; name: string; local_path: string }[];
+} {
+  const item = getOutcomeItem(outcomeId, itemType, filename);
+  if (!item) {
+    return { item: null, syncs: [], available_repos: getAllRepositories() };
+  }
+
+  const syncDetails = getItemRepoSyncsWithDetails(item.id);
+  const syncedRepoIds = new Set(syncDetails.map(s => s.repo_id));
+  const allRepos = getAllRepositories();
+
+  return {
+    item: { id: item.id, filename: item.filename, file_path: item.file_path },
+    syncs: syncDetails.map(s => ({
+      repo_id: s.repo_id,
+      repo_name: s.repo_name,
+      synced_at: s.synced_at,
+      sync_status: s.sync_status,
+      commit_hash: s.commit_hash,
+    })),
+    available_repos: allRepos.filter(r => !syncedRepoIds.has(r.id)).map(r => ({
+      id: r.id,
+      name: r.name,
+      local_path: r.local_path,
+    })),
+  };
 }

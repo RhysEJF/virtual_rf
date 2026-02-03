@@ -64,6 +64,9 @@ export type GitMode = 'none' | 'local' | 'branch' | 'worktree';
 // Repository configuration for skills/tools/files/outputs
 export type SaveTarget = 'local' | 'repo' | 'inherit';
 
+// Sync status for item-to-repo relationships
+export type SyncStatus = 'synced' | 'failed' | 'stale';
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -254,8 +257,24 @@ export interface OutcomeItem {
   filename: string;
   file_path: string;
   target_override: SaveTarget | null;  // null = use outcome default, 'local' | 'repo' | 'inherit'
-  synced_to: string | null;         // Repository ID it was synced to (null = local only)
-  last_synced_at: number | null;
+  synced_to: string | null;         // @deprecated - Use item_repo_syncs junction table instead
+  last_synced_at: number | null;    // @deprecated - Use item_repo_syncs junction table instead
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * Junction table for multi-destination repository syncing
+ * An item can be synced to multiple repositories independently
+ */
+export interface ItemRepoSync {
+  id: string;
+  item_id: string;                  // FK to outcome_items.id
+  repo_id: string;                  // FK to repositories.id
+  synced_at: number;                // Timestamp of last successful sync
+  commit_hash: string | null;       // Git commit hash if applicable
+  sync_status: SyncStatus;          // 'synced' | 'failed' | 'stale'
+  error_message: string | null;     // Error details if sync_status is 'failed'
   created_at: number;
   updated_at: number;
 }
@@ -837,6 +856,25 @@ CREATE TABLE IF NOT EXISTS outcome_items (
 CREATE INDEX IF NOT EXISTS idx_outcome_items_outcome ON outcome_items(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_type ON outcome_items(item_type);
 CREATE INDEX IF NOT EXISTS idx_outcome_items_synced ON outcome_items(synced_to);
+
+-- Item-Repository Sync: Junction table for multi-destination syncing
+-- An item can be synced to multiple repositories independently
+CREATE TABLE IF NOT EXISTS item_repo_syncs (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES outcome_items(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  synced_at INTEGER NOT NULL,
+  commit_hash TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'synced',  -- 'synced' | 'failed' | 'stale'
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(item_id, repo_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_item ON item_repo_syncs(item_id);
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_repo ON item_repo_syncs(repo_id);
+CREATE INDEX IF NOT EXISTS idx_item_repo_syncs_status ON item_repo_syncs(sync_status);
 
 -- Cost tracking
 CREATE TABLE IF NOT EXISTS cost_log (

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { useToast } from '@/app/hooks/useToast';
-import type { SaveTarget } from '@/lib/db/schema';
 
 interface OutcomeTool {
   id: string;
@@ -16,25 +15,34 @@ interface OutcomeTool {
   path: string;
 }
 
+interface ItemSync {
+  repo_id: string;
+  repo_name: string;
+  synced_at: number;
+  sync_status: 'synced' | 'failed' | 'stale';
+  commit_hash: string | null;
+}
+
 interface OutcomeItem {
   id: string;
   outcome_id: string;
   item_type: string;
   filename: string;
   file_path: string;
-  target_override: SaveTarget | null;
-  synced_to: string | null;  // Repository ID if synced, null if local only
+  synced_to: string | null;
   last_synced_at: number | null;
+  syncs?: ItemSync[];
+}
+
+interface Repository {
+  id: string;
+  name: string;
+  local_path: string;
 }
 
 interface ToolsSectionProps {
   outcomeId: string;
 }
-
-const TARGET_LABELS: Record<'local' | 'repo', string> = {
-  local: 'Local',
-  repo: 'Repository',
-};
 
 const TYPE_COLORS: Record<string, string> = {
   typescript: 'text-blue-500',
@@ -47,11 +55,12 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
   const { toast } = useToast();
   const [tools, setTools] = useState<OutcomeTool[]>([]);
   const [items, setItems] = useState<Map<string, OutcomeItem>>(new Map());
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedTool, setSelectedTool] = useState<OutcomeTool | null>(null);
   const [toolContent, setToolContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
-  const [promotingTool, setPromotingTool] = useState<string | null>(null);
+  const [syncingRepos, setSyncingRepos] = useState<Set<string>>(new Set());
 
   const fetchTools = useCallback(async () => {
     try {
@@ -67,22 +76,36 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
 
   const fetchItems = useCallback(async () => {
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/items?type=tool`);
+      const response = await fetch(`/api/outcomes/${outcomeId}/items?type=tool&include_syncs=true`);
       const data = await response.json();
       const itemMap = new Map<string, OutcomeItem>();
       (data.items || []).forEach((item: OutcomeItem) => {
         itemMap.set(item.filename, item);
       });
       setItems(itemMap);
+      if (data.available_repos) {
+        setRepositories(data.available_repos);
+      }
     } catch (error) {
       console.error('Failed to fetch tool items:', error);
     }
   }, [outcomeId]);
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      const response = await fetch('/api/repositories');
+      const data = await response.json();
+      setRepositories(data.repositories || []);
+    } catch (error) {
+      console.error('Failed to fetch repositories:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTools();
     fetchItems();
-  }, [fetchTools, fetchItems]);
+    fetchRepos();
+  }, [fetchTools, fetchItems, fetchRepos]);
 
   const handleSelectTool = async (tool: OutcomeTool) => {
     setSelectedTool(tool);
@@ -102,35 +125,59 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
     }
   };
 
-  const handlePromote = async (tool: OutcomeTool, target: SaveTarget) => {
-    // Extract filename from path (e.g., "workspaces/out_xxx/tools/my-tool.ts" -> "my-tool.ts")
+  const handleSyncToggle = async (tool: OutcomeTool, repoId: string, currentlySynced: boolean) => {
     const filename = tool.path.split('/').pop() || '';
-    setPromotingTool(tool.id);
+    setSyncingRepos(prev => new Set(prev).add(repoId));
 
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          item_type: 'tool',
-          filename,
-          action: 'promote',
-          target,
-        }),
-      });
+      if (currentlySynced) {
+        const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_type: 'tool',
+            filename,
+            action: 'unsync',
+            repo_id: repoId,
+          }),
+        });
 
-      const data = await response.json();
-      if (response.ok && data.success) {
-        toast({ type: 'success', message: `Tool ${target === 'local' ? 'unsynced' : `synced to ${target}`}` });
-        fetchItems();
+        const data = await response.json();
+        if (response.ok && data.success) {
+          toast({ type: 'success', message: 'Removed from repository' });
+          fetchItems();
+        } else {
+          toast({ type: 'error', message: data.error || 'Failed to unsync' });
+        }
       } else {
-        toast({ type: 'error', message: data.error || 'Failed to promote tool' });
+        const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_type: 'tool',
+            filename,
+            action: 'sync',
+            repo_ids: [repoId],
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          toast({ type: 'success', message: 'Synced to repository' });
+          fetchItems();
+        } else {
+          toast({ type: 'error', message: data.error || 'Failed to sync' });
+        }
       }
     } catch (error) {
-      console.error('Failed to promote tool:', error);
-      toast({ type: 'error', message: 'Failed to promote tool' });
+      console.error('Failed to toggle sync:', error);
+      toast({ type: 'error', message: 'Failed to update sync' });
     } finally {
-      setPromotingTool(null);
+      setSyncingRepos(prev => {
+        const next = new Set(prev);
+        next.delete(repoId);
+        return next;
+      });
     }
   };
 
@@ -139,12 +186,33 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
     return items.get(filename);
   };
 
-  const getSyncBadge = (item: OutcomeItem | undefined): JSX.Element | null => {
-    if (!item || !item.synced_to) {
-      return <Badge variant="default">Local</Badge>;
+  const getSyncBadges = (item: OutcomeItem | undefined): JSX.Element => {
+    if (item?.syncs && item.syncs.length > 0) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {item.syncs.map(sync => (
+            <Badge
+              key={sync.repo_id}
+              variant={sync.sync_status === 'synced' ? 'success' : sync.sync_status === 'stale' ? 'warning' : 'error'}
+              title={`${sync.repo_name} - ${sync.sync_status}`}
+            >
+              {sync.repo_name.length > 8 ? sync.repo_name.slice(0, 8) + '…' : sync.repo_name}
+            </Badge>
+          ))}
+        </div>
+      );
     }
-    // synced_to now contains a repository ID, meaning it's synced
-    return <Badge variant="success">Synced</Badge>;
+
+    if (item?.synced_to) {
+      return <Badge variant="success">Synced</Badge>;
+    }
+
+    return <Badge variant="default">Local</Badge>;
+  };
+
+  const isRepoSynced = (item: OutcomeItem | undefined, repoId: string): boolean => {
+    if (!item?.syncs) return false;
+    return item.syncs.some(s => s.repo_id === repoId && s.sync_status === 'synced');
   };
 
   if (loading) {
@@ -189,13 +257,13 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
         <div className="space-y-2">
           {tools.map((tool) => {
             const item = getItemForTool(tool);
-            const isPromoting = promotingTool === tool.id;
+            const isSelected = selectedTool?.id === tool.id;
 
             return (
               <div
                 key={tool.id}
                 className={`p-2 rounded cursor-pointer transition-colors border ${
-                  selectedTool?.id === tool.id
+                  isSelected
                     ? 'bg-accent/10 border-accent'
                     : 'bg-bg-secondary border-transparent hover:border-border'
                 }`}
@@ -211,7 +279,7 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
                     <span className="text-text-primary text-sm font-medium">{tool.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {getSyncBadge(item)}
+                    {getSyncBadges(item)}
                   </div>
                 </div>
                 {tool.description && (
@@ -220,29 +288,50 @@ export function ToolsSection({ outcomeId }: ToolsSectionProps): JSX.Element {
                   </p>
                 )}
 
-                {/* Promotion dropdown - shown when tool is selected */}
-                {selectedTool?.id === tool.id && (
+                {/* Repo sync checkboxes - shown when tool is selected */}
+                {isSelected && repositories.length > 0 && (
                   <div
                     className="mt-2 pt-2 border-t border-border/50"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-tertiary">Save to:</span>
-                      {(['local', 'repo'] as const).map((target) => (
-                        <button
-                          key={target}
-                          disabled={isPromoting}
-                          onClick={() => handlePromote(tool, target)}
-                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                            (item?.synced_to && target === 'repo') || (!item?.synced_to && target === 'local')
-                              ? 'bg-accent text-white'
-                              : 'bg-bg-primary text-text-secondary hover:bg-bg-tertiary'
-                          } ${isPromoting ? 'opacity-50' : ''}`}
-                        >
-                          {TARGET_LABELS[target]}
-                        </button>
-                      ))}
+                    <div className="text-[10px] text-text-tertiary mb-1.5">Sync to:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {repositories.map((repo) => {
+                        const synced = isRepoSynced(item, repo.id);
+                        const isSyncing = syncingRepos.has(repo.id);
+
+                        return (
+                          <label
+                            key={repo.id}
+                            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer transition-colors ${
+                              synced
+                                ? 'bg-accent/10 text-accent border border-accent/30'
+                                : 'bg-bg-primary text-text-secondary hover:bg-bg-tertiary border border-transparent'
+                            } ${isSyncing ? 'opacity-50' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={synced}
+                              disabled={isSyncing}
+                              onChange={() => handleSyncToggle(tool, repo.id, synced)}
+                              className="w-3 h-3 rounded border-border text-accent focus:ring-accent"
+                            />
+                            <span>{repo.name}</span>
+                          </label>
+                        );
+                      })}
                     </div>
+                  </div>
+                )}
+
+                {isSelected && repositories.length === 0 && (
+                  <div
+                    className="mt-2 pt-2 border-t border-border/50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-[10px] text-text-tertiary">
+                      No repositories configured. Add one in "Where Your Work Goes" above.
+                    </p>
                   </div>
                 )}
               </div>

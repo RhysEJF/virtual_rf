@@ -1092,6 +1092,45 @@ export default function OutcomeDetailPage(): JSX.Element {
                   )}
                 </CollapsibleSection>
 
+                {/* Git & Commit Settings - Important to configure early */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-git`}
+                  title="Git & Commit Settings"
+                  defaultExpanded={false}
+                >
+                  <div className="space-y-4">
+                    <GitConfigSection
+                      outcomeId={outcomeId}
+                      outcomeName={outcome.name}
+                      config={{
+                        working_directory: outcome.working_directory,
+                        git_mode: outcome.git_mode,
+                        base_branch: outcome.base_branch,
+                        work_branch: outcome.work_branch,
+                        auto_commit: outcome.auto_commit,
+                        create_pr_on_complete: outcome.create_pr_on_complete,
+                      }}
+                      onUpdate={fetchOutcome}
+                    />
+                    <div className="border-t border-border pt-4">
+                      <CommitSettingsSection
+                        outcomeId={outcomeId}
+                        config={{
+                          output_target: outcome.output_target,
+                          skill_target: outcome.skill_target,
+                          tool_target: outcome.tool_target,
+                          file_target: outcome.file_target,
+                          auto_save: outcome.auto_save,
+                          repository_id: outcome.repository_id ?? null,
+                          parent_id: outcome.parent_id ?? null,
+                        }}
+                        workingDirectory={outcome.working_directory}
+                        onUpdate={fetchOutcome}
+                      />
+                    </div>
+                  </div>
+                </CollapsibleSection>
+
                 {/* Tasks */}
                 <CollapsibleSection
                   id={`outcome-${outcomeId}-tasks`}
@@ -1184,44 +1223,6 @@ export default function OutcomeDetailPage(): JSX.Element {
                       ))}
                     </div>
                   )}
-                </CollapsibleSection>
-
-                {/* Git & Commit Settings */}
-                <CollapsibleSection
-                  id={`outcome-${outcomeId}-git`}
-                  title="Git & Commit Settings"
-                  defaultExpanded={false}
-                >
-                  <div className="space-y-4">
-                    <GitConfigSection
-                      outcomeId={outcomeId}
-                      outcomeName={outcome.name}
-                      config={{
-                        working_directory: outcome.working_directory,
-                        git_mode: outcome.git_mode,
-                        base_branch: outcome.base_branch,
-                        work_branch: outcome.work_branch,
-                        auto_commit: outcome.auto_commit,
-                        create_pr_on_complete: outcome.create_pr_on_complete,
-                      }}
-                      onUpdate={fetchOutcome}
-                    />
-                    <div className="border-t border-border pt-4">
-                      <CommitSettingsSection
-                        outcomeId={outcomeId}
-                        config={{
-                          output_target: outcome.output_target,
-                          skill_target: outcome.skill_target,
-                          tool_target: outcome.tool_target,
-                          file_target: outcome.file_target,
-                          auto_save: outcome.auto_save,
-                          repository_id: outcome.repository_id ?? null,
-                          parent_id: outcome.parent_id ?? null,
-                        }}
-                        onUpdate={fetchOutcome}
-                      />
-                    </div>
-                  </div>
                 </CollapsibleSection>
 
                 {/* Skills */}

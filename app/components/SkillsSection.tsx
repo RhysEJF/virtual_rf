@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { useToast } from '@/app/hooks/useToast';
-import type { SaveTarget } from '@/lib/db/schema';
 
 interface OutcomeSkill {
   id: string;
@@ -16,35 +15,45 @@ interface OutcomeSkill {
   path: string;
 }
 
+interface ItemSync {
+  repo_id: string;
+  repo_name: string;
+  synced_at: number;
+  sync_status: 'synced' | 'failed' | 'stale';
+  commit_hash: string | null;
+}
+
 interface OutcomeItem {
   id: string;
   outcome_id: string;
   item_type: string;
   filename: string;
   file_path: string;
-  target_override: SaveTarget | null;
-  synced_to: string | null;  // Repository ID if synced, null if local only
+  synced_to: string | null;
   last_synced_at: number | null;
+  syncs?: ItemSync[];
+}
+
+interface Repository {
+  id: string;
+  name: string;
+  local_path: string;
 }
 
 interface SkillsSectionProps {
   outcomeId: string;
 }
 
-const TARGET_LABELS: Record<'local' | 'repo', string> = {
-  local: 'Local',
-  repo: 'Repository',
-};
-
 export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
   const { toast } = useToast();
   const [skills, setSkills] = useState<OutcomeSkill[]>([]);
   const [items, setItems] = useState<Map<string, OutcomeItem>>(new Map());
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<OutcomeSkill | null>(null);
   const [skillContent, setSkillContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
-  const [promotingSkill, setPromotingSkill] = useState<string | null>(null);
+  const [syncingRepos, setSyncingRepos] = useState<Set<string>>(new Set());
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -60,22 +69,37 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
 
   const fetchItems = useCallback(async () => {
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/items?type=skill`);
+      const response = await fetch(`/api/outcomes/${outcomeId}/items?type=skill&include_syncs=true`);
       const data = await response.json();
       const itemMap = new Map<string, OutcomeItem>();
       (data.items || []).forEach((item: OutcomeItem) => {
         itemMap.set(item.filename, item);
       });
       setItems(itemMap);
+      // Also get available repos from the response
+      if (data.available_repos) {
+        setRepositories(data.available_repos);
+      }
     } catch (error) {
       console.error('Failed to fetch skill items:', error);
     }
   }, [outcomeId]);
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      const response = await fetch('/api/repositories');
+      const data = await response.json();
+      setRepositories(data.repositories || []);
+    } catch (error) {
+      console.error('Failed to fetch repositories:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSkills();
     fetchItems();
-  }, [fetchSkills, fetchItems]);
+    fetchRepos();
+  }, [fetchSkills, fetchItems, fetchRepos]);
 
   const handleSelectSkill = async (skill: OutcomeSkill) => {
     setSelectedSkill(skill);
@@ -94,34 +118,61 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
     }
   };
 
-  const handlePromote = async (skill: OutcomeSkill, target: SaveTarget) => {
+  const handleSyncToggle = async (skill: OutcomeSkill, repoId: string, currentlySynced: boolean) => {
     const filename = `${skill.name}.md`;
-    setPromotingSkill(skill.id);
+    setSyncingRepos(prev => new Set(prev).add(repoId));
 
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          item_type: 'skill',
-          filename,
-          action: 'promote',
-          target,
-        }),
-      });
+      if (currentlySynced) {
+        // Unsync from this repo
+        const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_type: 'skill',
+            filename,
+            action: 'unsync',
+            repo_id: repoId,
+          }),
+        });
 
-      const data = await response.json();
-      if (response.ok && data.success) {
-        toast({ type: 'success', message: `Skill ${target === 'local' ? 'unsynced' : `synced to ${target}`}` });
-        fetchItems(); // Refresh items
+        const data = await response.json();
+        if (response.ok && data.success) {
+          toast({ type: 'success', message: 'Removed from repository' });
+          fetchItems();
+        } else {
+          toast({ type: 'error', message: data.error || 'Failed to unsync' });
+        }
       } else {
-        toast({ type: 'error', message: data.error || 'Failed to promote skill' });
+        // Sync to this repo
+        const response = await fetch(`/api/outcomes/${outcomeId}/items`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item_type: 'skill',
+            filename,
+            action: 'sync',
+            repo_ids: [repoId],
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          toast({ type: 'success', message: 'Synced to repository' });
+          fetchItems();
+        } else {
+          toast({ type: 'error', message: data.error || 'Failed to sync' });
+        }
       }
     } catch (error) {
-      console.error('Failed to promote skill:', error);
-      toast({ type: 'error', message: 'Failed to promote skill' });
+      console.error('Failed to toggle sync:', error);
+      toast({ type: 'error', message: 'Failed to update sync' });
     } finally {
-      setPromotingSkill(null);
+      setSyncingRepos(prev => {
+        const next = new Set(prev);
+        next.delete(repoId);
+        return next;
+      });
     }
   };
 
@@ -130,12 +181,33 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
     return items.get(filename);
   };
 
-  const getSyncBadge = (item: OutcomeItem | undefined): JSX.Element | null => {
-    if (!item || !item.synced_to) {
-      return <Badge variant="default">Local</Badge>;
+  const getSyncBadges = (item: OutcomeItem | undefined): JSX.Element => {
+    if (item?.syncs && item.syncs.length > 0) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {item.syncs.map(sync => (
+            <Badge
+              key={sync.repo_id}
+              variant={sync.sync_status === 'synced' ? 'success' : sync.sync_status === 'stale' ? 'warning' : 'error'}
+              title={`${sync.repo_name} - ${sync.sync_status}`}
+            >
+              {sync.repo_name.length > 8 ? sync.repo_name.slice(0, 8) + '…' : sync.repo_name}
+            </Badge>
+          ))}
+        </div>
+      );
     }
-    // synced_to now contains a repository ID, meaning it's synced
-    return <Badge variant="success">Synced</Badge>;
+
+    if (item?.synced_to) {
+      return <Badge variant="success">Synced</Badge>;
+    }
+
+    return <Badge variant="default">Local</Badge>;
+  };
+
+  const isRepoSynced = (item: OutcomeItem | undefined, repoId: string): boolean => {
+    if (!item?.syncs) return false;
+    return item.syncs.some(s => s.repo_id === repoId && s.sync_status === 'synced');
   };
 
   if (loading) {
@@ -180,13 +252,13 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
         <div className="space-y-2">
           {skills.map((skill) => {
             const item = getItemForSkill(skill);
-            const isPromoting = promotingSkill === skill.id;
+            const isSelected = selectedSkill?.id === skill.id;
 
             return (
               <div
                 key={skill.id}
                 className={`p-2 rounded cursor-pointer transition-colors border ${
-                  selectedSkill?.id === skill.id
+                  isSelected
                     ? 'bg-accent/10 border-accent'
                     : 'bg-bg-secondary border-transparent hover:border-border'
                 }`}
@@ -195,7 +267,7 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
                 <div className="flex items-center justify-between">
                   <span className="text-text-primary text-sm font-medium">{skill.name}</span>
                   <div className="flex items-center gap-2">
-                    {getSyncBadge(item)}
+                    {getSyncBadges(item)}
                   </div>
                 </div>
                 {skill.triggers.length > 0 && (
@@ -211,29 +283,50 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
                   </div>
                 )}
 
-                {/* Promotion dropdown - shown when skill is selected */}
-                {selectedSkill?.id === skill.id && (
+                {/* Repo sync checkboxes - shown when skill is selected */}
+                {isSelected && repositories.length > 0 && (
                   <div
                     className="mt-2 pt-2 border-t border-border/50"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-tertiary">Save to:</span>
-                      {(['local', 'repo'] as const).map((target) => (
-                        <button
-                          key={target}
-                          disabled={isPromoting}
-                          onClick={() => handlePromote(skill, target)}
-                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                            (item?.synced_to && target === 'repo') || (!item?.synced_to && target === 'local')
-                              ? 'bg-accent text-white'
-                              : 'bg-bg-primary text-text-secondary hover:bg-bg-tertiary'
-                          } ${isPromoting ? 'opacity-50' : ''}`}
-                        >
-                          {TARGET_LABELS[target]}
-                        </button>
-                      ))}
+                    <div className="text-[10px] text-text-tertiary mb-1.5">Sync to:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {repositories.map((repo) => {
+                        const synced = isRepoSynced(item, repo.id);
+                        const isSyncing = syncingRepos.has(repo.id);
+
+                        return (
+                          <label
+                            key={repo.id}
+                            className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded cursor-pointer transition-colors ${
+                              synced
+                                ? 'bg-accent/10 text-accent border border-accent/30'
+                                : 'bg-bg-primary text-text-secondary hover:bg-bg-tertiary border border-transparent'
+                            } ${isSyncing ? 'opacity-50' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={synced}
+                              disabled={isSyncing}
+                              onChange={() => handleSyncToggle(skill, repo.id, synced)}
+                              className="w-3 h-3 rounded border-border text-accent focus:ring-accent"
+                            />
+                            <span>{repo.name}</span>
+                          </label>
+                        );
+                      })}
                     </div>
+                  </div>
+                )}
+
+                {isSelected && repositories.length === 0 && (
+                  <div
+                    className="mt-2 pt-2 border-t border-border/50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-[10px] text-text-tertiary">
+                      No repositories configured. Add one in "Where Your Work Goes" above.
+                    </p>
                   </div>
                 )}
               </div>

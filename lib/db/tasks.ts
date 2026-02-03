@@ -643,6 +643,25 @@ export function claimNextTask(
       };
     }
 
+    // Double-check pattern: Re-verify decomposition_status hasn't changed before claiming.
+    // This handles the race condition where another process starts decomposing the task
+    // between when we found it as a candidate and when we try to claim it.
+    const freshTask = db.prepare(
+      'SELECT id, decomposition_status FROM tasks WHERE id = ?'
+    ).get(task.id) as { id: string; decomposition_status: string | null } | undefined;
+
+    if (freshTask?.decomposition_status === 'in_progress' || freshTask?.decomposition_status === 'completed') {
+      db.exec('ROLLBACK');
+      console.log(
+        `[claimNextTask] Double-check failed: task ${task.id} decomposition_status changed to '${freshTask.decomposition_status}'`
+      );
+      return {
+        success: false,
+        task: null,
+        reason: `Task ${task.id} is being decomposed (status: ${freshTask.decomposition_status})`,
+      };
+    }
+
     // Claim it
     db.prepare(`
       UPDATE tasks

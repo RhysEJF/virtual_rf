@@ -106,6 +106,106 @@ export function createTasksBatch(inputs: CreateTaskInput[]): Task[] {
 }
 
 // ============================================================================
+// Bulk-Aware Task Creation
+// ============================================================================
+
+export interface BulkAwareCreateResult {
+  /** The original task created */
+  task: Task;
+  /** Whether bulk detection triggered decomposition */
+  wasDecomposed: boolean;
+  /** Subtasks created if decomposed, empty array otherwise */
+  subtasks: Task[];
+  /** Reasoning from bulk detection */
+  reasoning: string;
+}
+
+/**
+ * Create a task and automatically decompose if bulk patterns are detected.
+ * This is the preferred way to create execution tasks - it prevents workers
+ * from receiving tasks that are too large to complete.
+ *
+ * @param input - Task creation input
+ * @param outcomeIntent - Optional intent for context
+ * @param outcomeApproach - Optional approach for context
+ * @returns The created task and any subtasks from decomposition
+ */
+export async function createTaskWithBulkCheck(
+  input: CreateTaskInput,
+  outcomeIntent?: unknown,
+  outcomeApproach?: unknown
+): Promise<BulkAwareCreateResult> {
+  // Create the task first
+  const task = createTask(input);
+
+  // Skip bulk check for capability-phase tasks or subtasks
+  if (input.phase === 'capability' || input.decomposed_from_task_id) {
+    return {
+      task,
+      wasDecomposed: false,
+      subtasks: [],
+      reasoning: 'Skipped bulk check (capability task or already a subtask)',
+    };
+  }
+
+  // Dynamically import to avoid circular dependency
+  const { proactiveDecomposeIfBulk } = await import('../agents/task-decomposer');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type IntentType = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ApproachType = any;
+
+  // Run proactive bulk detection
+  const result = await proactiveDecomposeIfBulk(
+    task,
+    outcomeIntent as IntentType | null,
+    outcomeApproach as ApproachType | null
+  );
+
+  if (result.shouldDecompose && result.decompositionResult?.success) {
+    // Get the created subtasks
+    const subtasks = result.decompositionResult.createdTaskIds
+      .map(id => getTaskById(id))
+      .filter((t): t is Task => t !== null);
+
+    console.log(`[Tasks] Proactively decomposed bulk task ${task.id} into ${subtasks.length} subtasks`);
+
+    return {
+      task,
+      wasDecomposed: true,
+      subtasks,
+      reasoning: result.reasoning,
+    };
+  }
+
+  return {
+    task,
+    wasDecomposed: false,
+    subtasks: [],
+    reasoning: result.reasoning,
+  };
+}
+
+/**
+ * Create multiple tasks with bulk detection on each.
+ * Tasks that are decomposed will have their subtasks included in the result.
+ */
+export async function createTasksBatchWithBulkCheck(
+  inputs: CreateTaskInput[],
+  outcomeIntent?: unknown,
+  outcomeApproach?: unknown
+): Promise<BulkAwareCreateResult[]> {
+  const results: BulkAwareCreateResult[] = [];
+
+  for (const input of inputs) {
+    const result = await createTaskWithBulkCheck(input, outcomeIntent, outcomeApproach);
+    results.push(result);
+  }
+
+  return results;
+}
+
+// ============================================================================
 // Read
 // ============================================================================
 

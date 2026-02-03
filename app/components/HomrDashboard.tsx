@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { EscalationAlert } from './homr/EscalationAlert';
 import { OutcomeRetro } from './OutcomeRetro';
+import { useToast } from '../hooks/useToast';
 
 type AutoResolveMode = 'manual' | 'semi-auto' | 'full-auto';
 
@@ -98,6 +99,10 @@ export function HomrDashboard({
 }: HomrDashboardProps): JSX.Element {
   const [stats, setStats] = useState<HomrStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Track seen activity IDs to detect new auto-resolve events
+  const seenActivityIds = useRef<Set<string>>(new Set());
 
   // Auto-resolve state
   const [showAutoResolveSettings, setShowAutoResolveSettings] = useState(false);
@@ -125,6 +130,29 @@ export function HomrDashboard({
         const res = await fetch(`/api/outcomes/${outcomeId}/homr`);
         if (res.ok) {
           const data = await res.json();
+
+          // Check for new auto_resolved activities and show toast
+          if (data.recentActivity) {
+            for (const activity of data.recentActivity) {
+              if (
+                activity.type === 'auto_resolved' &&
+                !seenActivityIds.current.has(activity.id)
+              ) {
+                seenActivityIds.current.add(activity.id);
+                // Only show toast if not initial load
+                if (stats !== null) {
+                  toast({
+                    type: 'success',
+                    message: activity.summary,
+                    duration: 5000,
+                  });
+                }
+              }
+              // Track all activity IDs
+              seenActivityIds.current.add(activity.id);
+            }
+          }
+
           setStats(data);
         }
       } catch (err) {
@@ -138,7 +166,7 @@ export function HomrDashboard({
     fetchAutoResolveConfig();
     const interval = setInterval(fetchStats, 15000);
     return () => clearInterval(interval);
-  }, [outcomeId, fetchAutoResolveConfig]);
+  }, [outcomeId, fetchAutoResolveConfig, toast, stats]);
 
   const handleAutoResolveModeChange = async (mode: AutoResolveMode) => {
     setSavingAutoResolve(true);

@@ -524,7 +524,54 @@ async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<
     }
   }
 
+  // Third pass: Create verification task that depends on all subtasks
+  // This ensures we verify completion of the entire decomposed work unit
+  const verificationTask = createTask({
+    outcome_id: originalTask.outcome_id,
+    title: `Verify: ${originalTask.title}`,
+    description: buildVerificationTaskDescription(originalTask, createdIds, subtasks.length),
+    prd_context: originalTask.prd_context || undefined,
+    design_context: originalTask.design_context || undefined,
+    priority: (originalTask.priority || 100) + subtasks.length + 1, // Lowest priority (runs last)
+    phase: originalTask.phase,
+    complexity_score: 2, // Verification is typically simple
+    estimated_turns: 4,
+    decomposed_from_task_id: originalTask.id,
+    depends_on: createdIds, // Depends on ALL subtasks completing
+  });
+
+  console.log(`[TaskDecomposer] Created verification task ${verificationTask.id} for decomposed task ${originalTask.id}`);
+  createdIds.push(verificationTask.id);
+
   return createdIds;
+}
+
+/**
+ * Build a description for the verification task.
+ */
+function buildVerificationTaskDescription(
+  originalTask: Task,
+  subtaskIds: string[],
+  subtaskCount: number
+): string {
+  return `**Verification Task**
+
+This task verifies that all ${subtaskCount} subtasks from "${originalTask.title}" completed successfully.
+
+## Checklist
+- [ ] Confirm all ${subtaskCount} subtasks are marked as completed
+- [ ] Verify the original task's intent has been fulfilled
+- [ ] Check that any outputs/deliverables were created correctly
+- [ ] Run any relevant tests if applicable
+
+## Subtasks to Verify
+${subtaskIds.map((id, i) => `- Subtask ${i + 1}: ${id}`).join('\n')}
+
+## Original Task
+${originalTask.description || 'No description'}
+
+---
+This is an auto-generated verification task. Mark as complete once all items are verified.`;
 }
 
 function buildSubtaskDescription(
@@ -550,6 +597,65 @@ function buildSubtaskDescription(
 // ============================================================================
 // Utility Functions
 // ============================================================================
+
+/**
+ * Result of bulk item count detection.
+ */
+export interface BulkItemCountResult {
+  count: number | null;
+  pattern: string | null;
+}
+
+/**
+ * Detect bulk item count from a task description.
+ * Parses task descriptions for quantity indicators like "50 files", "200 records",
+ * "process 1000 entries", etc.
+ *
+ * @param description - The task description text to parse
+ * @returns Object containing detected count and matched pattern, or nulls if none found
+ */
+export function detectBulkItemCount(description: string): BulkItemCountResult {
+  if (!description || description.trim() === '') {
+    return { count: null, pattern: null };
+  }
+
+  // Patterns to detect numeric quantities with item-related nouns
+  // Order matters - more specific patterns should come first
+  const patterns: RegExp[] = [
+    // "process/handle/create/update/delete N items/files/records/entries"
+    /\b(?:process|handle|create|update|delete|import|export|migrate|convert|transform|analyze|parse|validate|check|scan|review|fix)\s+(\d+)\s+(items?|files?|records?|entries?|rows?|documents?|pages?|users?|accounts?|objects?|elements?|components?|endpoints?|apis?|tests?|images?|videos?|tasks?)\b/gi,
+    // "N items/files/records/entries" - standalone quantity
+    /\b(\d+)\s+(items?|files?|records?|entries?|rows?|documents?|pages?|users?|accounts?|objects?|elements?|components?|endpoints?|apis?|tests?|images?|videos?|tasks?)\b/gi,
+    // "over/more than/at least/approximately N items"
+    /\b(?:over|more\s+than|at\s+least|approximately|around|about|roughly|nearly|almost)\s+(\d+)\s+(items?|files?|records?|entries?|rows?|documents?|pages?|users?|accounts?|objects?|elements?|components?|endpoints?|apis?|tests?|images?|videos?|tasks?)\b/gi,
+    // "N+" or "N or more" patterns
+    /\b(\d+)\s*\+\s*(items?|files?|records?|entries?|rows?|documents?|pages?|users?|accounts?|objects?|elements?|components?|endpoints?|apis?|tests?|images?|videos?|tasks?)\b/gi,
+    /\b(\d+)\s+or\s+more\s+(items?|files?|records?|entries?|rows?|documents?|pages?|users?|accounts?|objects?|elements?|components?|endpoints?|apis?|tests?|images?|videos?|tasks?)\b/gi,
+  ];
+
+  // Try each pattern in order, return first match with count >= 2
+  // We skip single-item matches as those aren't "bulk" operations
+  for (const pattern of patterns) {
+    // Reset regex state
+    pattern.lastIndex = 0;
+
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(description)) !== null) {
+      // Extract the number - it should be in capture group 1
+      const numStr = match[1];
+      const count = parseInt(numStr, 10);
+
+      if (!isNaN(count) && count >= 2) {
+        return {
+          count,
+          pattern: match[0].trim(),
+        };
+      }
+    }
+  }
+
+  return { count: null, pattern: null };
+}
 
 /**
  * Check if a task should be decomposed based on its complexity.

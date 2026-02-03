@@ -198,6 +198,10 @@ export interface EscalationActionResult {
     subtaskCount?: number;
     createdTaskIds?: string[];
     error?: string;
+    /** True if the action was skipped due to idempotency checks */
+    skipped?: boolean;
+    /** Reason the action was skipped (if skipped=true) */
+    reason?: string;
   };
 }
 

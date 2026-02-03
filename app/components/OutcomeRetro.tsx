@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
+import { useToast } from '@/app/hooks/useToast';
 
 interface ClusterSummary {
   id: string;
@@ -47,6 +48,14 @@ interface AnalyzeResponse {
   message: string;
 }
 
+interface JobStatus {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progressMessage: string | null;
+  result?: AnalyzeResponse | null;
+  error?: string | null;
+}
+
 type TimeRange = 'today' | 'last7' | 'last14' | 'last30' | 'alltime';
 
 const TIME_RANGES: { value: TimeRange; label: string; days: number }[] = [
@@ -57,44 +66,134 @@ const TIME_RANGES: { value: TimeRange; label: string; days: number }[] = [
   { value: 'alltime', label: 'All Time', days: 365 }, // Use 365 as "all time"
 ];
 
+const POLL_INTERVAL = 2000; // 2 seconds
+
 interface OutcomeRetroProps {
   outcomeId: string;
   onOutcomeCreated?: (outcome: { id: string; name: string }) => void;
 }
 
 export function OutcomeRetro({ outcomeId, onOutcomeCreated }: OutcomeRetroProps): JSX.Element {
+  const { toast } = useToast();
   const [timeRange, setTimeRange] = useState<TimeRange>('alltime');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creatingOutcome, setCreatingOutcome] = useState<string | null>(null);
 
+  // Background job state
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const selectedRange = TIME_RANGES.find(r => r.value === timeRange)!;
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Poll for job status
+  const pollJobStatus = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`/api/improvements/jobs/${id}`);
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to get job status');
+      }
+
+      const job = data.job as JobStatus;
+      setProgressMessage(job.progressMessage);
+
+      if (job.status === 'completed' && job.result) {
+        // Job finished successfully
+        setResult(job.result);
+        setLoading(false);
+        setJobId(null);
+        setProgressMessage(null);
+
+        // Stop polling
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+
+        toast({
+          type: 'success',
+          message: `Analysis complete: ${job.result.clusters.length} pattern(s) found`,
+        });
+      } else if (job.status === 'failed') {
+        // Job failed
+        setError(job.error || 'Analysis failed');
+        setLoading(false);
+        setJobId(null);
+        setProgressMessage(null);
+
+        // Stop polling
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+
+        toast({
+          type: 'error',
+          message: 'Analysis failed. Please try again.',
+        });
+      }
+    } catch (err) {
+      console.error('Error polling job status:', err);
+    }
+  }, [toast]);
 
   async function runAnalysis(): Promise<void> {
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgressMessage('Starting analysis...');
 
     try {
-      const params = new URLSearchParams({
-        outcomeId,
-        lookbackDays: String(selectedRange.days),
-        maxProposals: '3',
+      // Use POST endpoint to start background job
+      const response = await fetch('/api/improvements/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outcomeId,
+          lookbackDays: selectedRange.days,
+          maxProposals: 3,
+        }),
       });
 
-      const res = await fetch(`/api/improvements/analyze?${params}`);
-      const data = await res.json();
+      const data = await response.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Analysis failed');
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to start analysis');
       }
 
-      setResult(data);
+      setJobId(data.jobId);
+      setProgressMessage('Queued for analysis...');
+
+      // Start polling
+      pollIntervalRef.current = setInterval(() => {
+        pollJobStatus(data.jobId);
+      }, POLL_INTERVAL);
+
+      // Initial poll after short delay
+      setTimeout(() => pollJobStatus(data.jobId), 500);
+
+      toast({
+        type: 'info',
+        message: 'Analysis started. You can navigate away - results will appear when ready.',
+        duration: 5000,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
-    } finally {
       setLoading(false);
+      setProgressMessage(null);
     }
   }
 
@@ -184,9 +283,34 @@ export function OutcomeRetro({ outcomeId, onOutcomeCreated }: OutcomeRetroProps)
           disabled={loading}
           size="sm"
         >
-          {loading ? 'Analyzing...' : 'Analyze'}
+          {loading ? 'Running...' : 'Analyze'}
         </Button>
       </div>
+
+      {/* Progress indicator */}
+      {loading && progressMessage && (
+        <div className="mb-4 p-3 bg-bg-secondary rounded-md border border-border">
+          <div className="flex items-center gap-2">
+            <svg
+              className="animate-spin h-4 w-4 text-accent"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span className="text-sm text-text-secondary">{progressMessage}</span>
+          </div>
+          <p className="text-xs text-text-tertiary mt-1">
+            You can navigate away. Results will appear when ready.
+          </p>
+        </div>
+      )}
 
       {/* Error */}
       {error && (

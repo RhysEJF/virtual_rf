@@ -45,13 +45,28 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
 // ============================================================================
 
 /**
- * Create an escalation from detected ambiguity
+ * Create an escalation from detected ambiguity.
+ *
+ * DEDUPLICATION: Before creating a new escalation, checks if a pending escalation
+ * already exists for the same task with the same trigger type. If so, returns
+ * the existing escalation ID to prevent duplicate blocking questions.
  */
 export async function createEscalation(
   outcomeId: string,
   ambiguity: HomrAmbiguitySignal,
   task: Task
 ): Promise<string> {
+  // Check for existing pending escalation on the same task with the same trigger type
+  const pendingEscalations = getPendingEscalations(outcomeId);
+  const existingEscalation = pendingEscalations.find(
+    esc => esc.trigger_task_id === task.id && esc.trigger_type === ambiguity.type
+  );
+
+  if (existingEscalation) {
+    console.log(`[HOMЯ Escalator] Found existing pending escalation ${existingEscalation.id} for task ${task.id} with type ${ambiguity.type}, skipping duplicate creation`);
+    return existingEscalation.id;
+  }
+
   // Get outcome and intent for context
   const outcome = getOutcomeById(outcomeId);
   let intent: Intent | null = null;

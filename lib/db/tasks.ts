@@ -544,11 +544,12 @@ export function claimNextTask(
     // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
-      // Skip tasks that are currently being decomposed (prevents race condition
-      // where worker claims a task that's mid-decomposition into subtasks)
-      if (candidate.decomposition_status === 'in_progress') {
+      // Skip tasks that are being decomposed or already decomposed
+      // - 'in_progress': prevents race condition where worker claims a task mid-decomposition
+      // - 'completed': parent task should not be claimed, subtasks should run instead
+      if (candidate.decomposition_status === 'in_progress' || candidate.decomposition_status === 'completed') {
         console.log(
-          `[claimNextTask] Skipping task ${candidate.id} - decomposition in progress`
+          `[claimNextTask] Skipping task ${candidate.id} - decomposition_status='${candidate.decomposition_status}'`
         );
         continue;
       }

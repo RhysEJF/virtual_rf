@@ -6,12 +6,14 @@
  */
 
 import { complete } from '../claude/client';
-import { getTaskById } from '../db/tasks';
+import { getTaskById, getTasksByOutcome } from '../db/tasks';
 import { getOutcomeById } from '../db/outcomes';
 import { getHomrContext, getPendingEscalations, getEscalationById } from '../db/homr';
+import { getWorkersByOutcome } from '../db/workers';
 import type { HomrEscalation, HomrQuestionOption, Task, Outcome } from '../db/schema';
 import { resolveEscalation } from './escalator';
 import { logHomrActivity } from '../db/homr';
+import { startRalphWorker } from '../ralph/worker';
 
 // ============================================================================
 // Types
@@ -268,6 +270,7 @@ export async function tryAutoResolve(
   resolved: boolean;
   result: AutoResolveResult;
   resolution?: Awaited<ReturnType<typeof resolveEscalation>>;
+  workerSpawned?: boolean;
 }> {
   // Manual mode = never auto-resolve
   if (config.mode === 'manual') {
@@ -365,10 +368,50 @@ export async function tryAutoResolve(
       },
     });
 
+    // Auto-spawn a worker if none are running and there are pending tasks
+    let workerSpawned = false;
+    try {
+      const workers = getWorkersByOutcome(escalation.outcome_id);
+      const runningWorkers = workers.filter(w => w.status === 'running');
+
+      if (runningWorkers.length === 0) {
+        // Check if there are pending tasks
+        const tasks = getTasksByOutcome(escalation.outcome_id);
+        const pendingTasks = tasks.filter(t => t.status === 'pending');
+
+        if (pendingTasks.length > 0) {
+          console.log(`[Auto-Resolver] No running workers, spawning one to continue work on ${pendingTasks.length} pending task(s)`);
+
+          const workerResult = await startRalphWorker({
+            outcomeId: escalation.outcome_id,
+            maxTurns: 20,
+            enableComplexityCheck: true,
+            autoDecompose: false,
+          });
+
+          if (workerResult.started) {
+            workerSpawned = true;
+            logHomrActivity({
+              outcome_id: escalation.outcome_id,
+              type: 'auto_resolved',
+              summary: `Auto-spawned worker ${workerResult.workerId} to continue work`,
+              details: { workerId: workerResult.workerId, pendingTasks: pendingTasks.length },
+            });
+            console.log(`[Auto-Resolver] Spawned worker ${workerResult.workerId}`);
+          } else {
+            console.warn(`[Auto-Resolver] Failed to spawn worker: ${workerResult.error}`);
+          }
+        }
+      }
+    } catch (workerError) {
+      console.error('[Auto-Resolver] Error checking/spawning worker:', workerError);
+    }
+
     return {
       resolved: true,
       result,
       resolution,
+      workerSpawned,
     };
   } catch (error) {
     console.error('[Auto-Resolver] Failed to resolve escalation:', error);

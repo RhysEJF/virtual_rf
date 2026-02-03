@@ -7,11 +7,13 @@
  * - Enabled/disabled status
  * - Stats: tasks observed, discoveries, escalations
  * - Recent activity summary
+ * - Auto-resolve settings toggle
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
 
 interface HomrStatus {
   enabled: boolean;
@@ -35,6 +37,13 @@ interface HomrStatus {
   }>;
 }
 
+type AutoResolveMode = 'manual' | 'semi-auto' | 'full-auto';
+
+interface AutoResolveConfig {
+  mode: AutoResolveMode;
+  confidenceThreshold: number;
+}
+
 interface Props {
   outcomeId: string;
   onEscalationClick?: () => void;
@@ -45,6 +54,27 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
   const [status, setStatus] = useState<HomrStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-resolve settings state
+  const [showAutoResolveSettings, setShowAutoResolveSettings] = useState(false);
+  const [autoResolveConfig, setAutoResolveConfig] = useState<AutoResolveConfig>({
+    mode: 'manual',
+    confidenceThreshold: 0.8,
+  });
+  const [savingAutoResolve, setSavingAutoResolve] = useState(false);
+
+  // Fetch auto-resolve config
+  const fetchAutoResolveConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/outcomes/${outcomeId}/auto-resolve`);
+      if (res.ok) {
+        const data = await res.json();
+        setAutoResolveConfig(data.config);
+      }
+    } catch {
+      // Ignore errors, use defaults
+    }
+  }, [outcomeId]);
 
   useEffect(() => {
     async function fetchStatus(): Promise<void> {
@@ -64,10 +94,49 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
     }
 
     fetchStatus();
+    fetchAutoResolveConfig();
     // Refresh every 30 seconds
     const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
-  }, [outcomeId]);
+  }, [outcomeId, fetchAutoResolveConfig]);
+
+  const handleAutoResolveModeChange = async (mode: AutoResolveMode) => {
+    setSavingAutoResolve(true);
+    try {
+      const res = await fetch(`/api/outcomes/${outcomeId}/auto-resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoResolveConfig(data.config);
+      }
+    } finally {
+      setSavingAutoResolve(false);
+    }
+  };
+
+  const handleThresholdChange = async (threshold: number) => {
+    setAutoResolveConfig(prev => ({ ...prev, confidenceThreshold: threshold }));
+  };
+
+  const handleThresholdSave = async () => {
+    setSavingAutoResolve(true);
+    try {
+      const res = await fetch(`/api/outcomes/${outcomeId}/auto-resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold: autoResolveConfig.confidenceThreshold }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoResolveConfig(data.config);
+      }
+    } finally {
+      setSavingAutoResolve(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -123,6 +192,86 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
           <StatBox label="Discoveries" value={status.stats.discoveriesExtracted} />
           <StatBox label="Steered" value={status.stats.steeringActions} />
           <StatBox label="Escalated" value={status.stats.escalationsCreated} />
+        </div>
+
+        {/* Auto-Resolve Toggle */}
+        <div className="border-t border-border pt-3 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-text-primary">Auto-Resolve</span>
+            <button
+              onClick={() => setShowAutoResolveSettings(!showAutoResolveSettings)}
+              className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                autoResolveConfig.mode !== 'manual'
+                  ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
+                  : 'bg-bg-tertiary text-text-secondary hover:bg-bg-secondary'
+              }`}
+            >
+              {autoResolveConfig.mode === 'manual' ? 'Off' :
+               autoResolveConfig.mode === 'semi-auto' ? 'Semi' : 'Auto'}
+            </button>
+          </div>
+
+          {/* Expanded Settings */}
+          {showAutoResolveSettings && (
+            <div className="bg-bg-secondary rounded-lg p-3 space-y-3">
+              {/* Mode Selection */}
+              <div>
+                <label className="text-xs text-text-muted block mb-1">Mode</label>
+                <div className="flex gap-1">
+                  {(['manual', 'semi-auto', 'full-auto'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => handleAutoResolveModeChange(mode)}
+                      disabled={savingAutoResolve}
+                      className={`flex-1 px-2 py-1 text-xs rounded transition-colors ${
+                        autoResolveConfig.mode === mode
+                          ? 'bg-accent-primary text-gray-900 dark:text-white font-medium'
+                          : 'bg-bg-tertiary text-text-secondary hover:bg-bg-primary'
+                      }`}
+                    >
+                      {mode === 'manual' ? 'Manual' : mode === 'semi-auto' ? 'Semi-Auto' : 'Full Auto'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-text-muted mt-1">
+                  {autoResolveConfig.mode === 'manual' && 'All escalations require human decision'}
+                  {autoResolveConfig.mode === 'semi-auto' && 'AI suggests, you approve before applying'}
+                  {autoResolveConfig.mode === 'full-auto' && 'AI decides and applies automatically'}
+                </p>
+              </div>
+
+              {/* Confidence Threshold */}
+              {autoResolveConfig.mode !== 'manual' && (
+                <div>
+                  <label className="text-xs text-text-muted block mb-1">
+                    Confidence Threshold: {Math.round(autoResolveConfig.confidenceThreshold * 100)}%
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="1"
+                      step="0.05"
+                      value={autoResolveConfig.confidenceThreshold}
+                      onChange={(e) => handleThresholdChange(parseFloat(e.target.value))}
+                      className="flex-1 h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-primary"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleThresholdSave}
+                      disabled={savingAutoResolve}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                  <p className="text-xs text-text-muted mt-1">
+                    Below this threshold, escalations go to human
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Context Summary */}

@@ -352,6 +352,19 @@ async function runPreClaimComplexityCheck(
   config: ComplexityCheckConfig,
   appendLog: (msg: string) => void
 ): Promise<ComplexityCheckResult> {
+  // Guard: Skip tasks that are being decomposed or have already been decomposed.
+  // This prevents workers from creating duplicate escalations for tasks that are
+  // mid-decomposition or have already been broken into subtasks.
+  if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
+    appendLog(`[Complexity] Skipping task ${task.id} - decomposition_status is '${task.decomposition_status}'`);
+    return {
+      shouldProceed: false,
+      estimate: null,
+      action: 'skipped',
+      reason: `Task is ${task.decomposition_status === 'in_progress' ? 'currently being decomposed' : 'already decomposed into subtasks'}. Skipping to prevent duplicate escalations.`,
+    };
+  }
+
   // Skip re-estimation if task already has complexity score below threshold
   if (task.complexity_score !== null && task.complexity_score !== undefined) {
     const existingScore = task.complexity_score;
@@ -447,16 +460,38 @@ async function runPreClaimComplexityCheck(
 
     // Option 2: Create escalation for human decision
     if (config.escalateOnHighComplexity) {
+      // First check if there's already a pending escalation for this task with the same trigger type
+      // This prevents duplicate blocking questions for the same issue
+      const pendingEscalations = homr.getPendingEscalations(outcomeId);
+      const existingEscalation = pendingEscalations.find(
+        esc => esc.trigger_task_id === task.id && esc.trigger_type === 'blocking_decision'
+      );
+
+      if (existingEscalation) {
+        appendLog(`[Complexity] Found existing pending escalation ${existingEscalation.id} for task ${task.id}, skipping duplicate creation`);
+        return {
+          shouldProceed: false,
+          estimate,
+          action: 'escalated',
+          escalationId: existingEscalation.id,
+          reason: `Task already has pending complexity escalation ${existingEscalation.id}. Waiting for human decision.`,
+        };
+      }
+
       appendLog(`[Complexity] Creating escalation for human decision...`);
+
+      // Use task's max_attempts if it's been increased, otherwise use config default
+      const effectiveMaxTurns = Math.max(task.max_attempts || config.maxTurns, config.maxTurns);
+      const increasedMaxTurns = Math.max(effectiveMaxTurns * 2, effectiveMaxTurns + 5);
 
       const ambiguity: homr.HomrAmbiguitySignal = {
         detected: true,
         type: 'blocking_decision',
-        description: `Task "${task.title}" has high complexity (${estimate.complexity_score}/10) and is estimated to require ${estimate.estimated_turns} turns, which exceeds the worker's ${config.maxTurns} turn limit.`,
+        description: `Task "${task.title}" has high complexity (${estimate.complexity_score}/10) and is estimated to require ${estimate.estimated_turns} turns, which exceeds the worker's ${effectiveMaxTurns} turn limit.`,
         evidence: [
           `Complexity score: ${estimate.complexity_score}/10`,
           `Estimated turns: ${estimate.estimated_turns}`,
-          `Worker max turns: ${config.maxTurns}`,
+          `Worker max turns: ${effectiveMaxTurns}`,
           `Risk level: ${riskAssessment.riskLevel}`,
           ...estimate.risk_factors.map(f => `Risk factor: ${f}`),
         ],
@@ -473,7 +508,7 @@ async function runPreClaimComplexityCheck(
             id: 'increase_turn_limit',
             label: 'Increase Turn Limit',
             description: 'Double the turn limit and attempt this task as-is',
-            implications: `Worker will have ${config.maxTurns * 2} turns instead of ${config.maxTurns}. Task may still fail if complexity is underestimated.`,
+            implications: `Worker will have ${increasedMaxTurns} turns instead of ${effectiveMaxTurns}. Task may still fail if complexity is underestimated.`,
           },
           {
             id: 'proceed_anyway',
@@ -1109,13 +1144,16 @@ export async function startRalphWorker(
         const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
 Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
 
+        // Use task's max_attempts if it's been increased (e.g., via HOMЯ escalation), otherwise use config default
+        const taskMaxTurns = Math.max(task.max_attempts || maxTurns, maxTurns);
+
         const args = [
           '-p', ralphPrompt,
           '--dangerously-skip-permissions',
-          '--max-turns', String(maxTurns),
+          '--max-turns', String(taskMaxTurns),
         ];
 
-        appendLog(`Spawning Claude for task: claude ${args.join(' ')}`);
+        appendLog(`Spawning Claude for task (max turns: ${taskMaxTurns})`);
 
         // Build guard context for command validation
         const taskGuardContext: TaskGuardContext = {
@@ -1961,13 +1999,16 @@ export async function runWorkerLoop(
     const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
 Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
 
+    // Use task's max_attempts if it's been increased (e.g., via HOMЯ escalation), otherwise use config default
+    const taskMaxTurns = Math.max(task.max_attempts || maxTurns, maxTurns);
+
     const args = [
       '-p', ralphPrompt,
       '--dangerously-skip-permissions',
-      '--max-turns', String(maxTurns),
+      '--max-turns', String(taskMaxTurns),
     ];
 
-    appendLog(`Spawning Claude for task`);
+    appendLog(`Spawning Claude for task (max turns: ${taskMaxTurns})`);
 
     // Build guard context for command validation
     const taskGuardContext: TaskGuardContext = {

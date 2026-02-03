@@ -20,7 +20,7 @@ import {
   updateHomrContext,
 } from '../db/homr';
 import type { HomrDiscovery } from '../db/schema';
-import { getTaskById, updateTask, getPendingTasks } from '../db/tasks';
+import { getTaskById, updateTask, getPendingTasks, getSubtasksByParentTaskId } from '../db/tasks';
 import { getOutcomeById } from '../db/outcomes';
 import type { Task, Intent, Approach, HomrAmbiguitySignal, HomrQuestionOption, HomrDecision } from '../db/schema';
 import type { EscalationAnswer, EscalationResolution, EscalationActionType, EscalationActionResult } from './types';
@@ -41,17 +41,108 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
 }
 
 // ============================================================================
+// Helper Functions for Decomposition Protection
+// ============================================================================
+
+/**
+ * Check if an option ID represents a "break into subtasks" action.
+ * This is used to determine if tasks should be marked for decomposition
+ * before resolution begins.
+ */
+export function isBreakIntoSubtasksOption(optionId: string): boolean {
+  const optionIdLower = optionId.toLowerCase();
+  return (
+    optionIdLower.includes('break_into') ||
+    optionIdLower.includes('subtask') ||
+    optionIdLower.includes('decompose') ||
+    optionIdLower.includes('split') ||
+    optionIdLower === 'break_into_subtasks'
+  );
+}
+
+/**
+ * Mark tasks for decomposition by setting decomposition_status='in_progress'.
+ * This prevents workers from claiming these tasks while decomposition is pending.
+ *
+ * Skips tasks that already have decomposition_status set (for idempotency).
+ *
+ * @param taskIds - Array of task IDs to mark for decomposition
+ * @returns Number of tasks actually marked (excludes already-marked tasks)
+ */
+export function markTasksForDecomposition(taskIds: string[]): number {
+  let markedCount = 0;
+
+  for (const taskId of taskIds) {
+    const task = getTaskById(taskId);
+    if (!task) {
+      console.log(`[HOMЯ Escalator] Task ${taskId} not found, skipping decomposition marking`);
+      continue;
+    }
+
+    // Skip if decomposition is in progress or already completed (idempotency)
+    // Allow retry if status is 'failed'
+    if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
+      console.log(`[HOMЯ Escalator] Task ${taskId} already has decomposition_status='${task.decomposition_status}', skipping`);
+      continue;
+    }
+    if (task.decomposition_status === 'failed') {
+      console.log(`[HOMЯ Escalator] Task ${taskId} had failed decomposition, allowing retry`);
+    }
+
+    // Skip already completed or failed tasks
+    if (task.status === 'completed' || task.status === 'failed') {
+      console.log(`[HOMЯ Escalator] Task ${taskId} is ${task.status}, skipping decomposition marking`);
+      continue;
+    }
+
+    // Mark the task for decomposition
+    updateTask(taskId, { decomposition_status: 'in_progress' });
+    markedCount++;
+    console.log(`[HOMЯ Escalator] Marked task ${taskId} with decomposition_status='in_progress'`);
+  }
+
+  return markedCount;
+}
+
+// ============================================================================
 // Escalation Creation
 // ============================================================================
 
 /**
- * Create an escalation from detected ambiguity
+ * Create an escalation from detected ambiguity.
+ *
+ * DEDUPLICATION: Before creating a new escalation, checks if a pending escalation
+ * already exists for the same task with the same trigger type. If so, returns
+ * the existing escalation ID to prevent duplicate blocking questions.
+ *
+ * DECOMPOSITION CHECK: Also verifies the task's decomposition_status is not
+ * 'in_progress' or 'completed'. If the task is mid-decomposition, returns a
+ * special value (e.g., 'skipped:decomposition_in_progress') to indicate the
+ * escalation was skipped. This provides defense-in-depth against duplicate
+ * escalations for tasks that are already being decomposed.
  */
 export async function createEscalation(
   outcomeId: string,
   ambiguity: HomrAmbiguitySignal,
   task: Task
 ): Promise<string> {
+  // Check for existing pending escalation on the same task with the same trigger type
+  const pendingEscalations = getPendingEscalations(outcomeId);
+  const existingEscalation = pendingEscalations.find(
+    esc => esc.trigger_task_id === task.id && esc.trigger_type === ambiguity.type
+  );
+
+  if (existingEscalation) {
+    console.log(`[HOMЯ Escalator] Found existing pending escalation ${existingEscalation.id} for task ${task.id} with type ${ambiguity.type}, skipping duplicate creation`);
+    return existingEscalation.id;
+  }
+
+  // Check if task is already being decomposed - defense-in-depth against duplicate escalations
+  if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
+    console.log(`[HOMЯ Escalator] Task ${task.id} has decomposition_status='${task.decomposition_status}', skipping escalation creation`);
+    return `skipped:decomposition_${task.decomposition_status}`;
+  }
+
   // Get outcome and intent for context
   const outcome = getOutcomeById(outcomeId);
   let intent: Intent | null = null;
@@ -133,6 +224,24 @@ export async function createEscalation(
   });
 
   console.log(`[HOMЯ Escalator] Created escalation ${escalation.id} with ${options.length} options`);
+
+  // Try auto-resolve if enabled for this outcome
+  if (outcome) {
+    const { tryAutoResolve, getAutoResolveConfig } = await import('./auto-resolver');
+    const config = getAutoResolveConfig(outcome);
+
+    if (config.mode !== 'manual') {
+      console.log(`[HOMЯ Escalator] Auto-resolve mode: ${config.mode}, attempting auto-resolution...`);
+      const autoResult = await tryAutoResolve(escalation.id, config);
+
+      if (autoResult.resolved) {
+        console.log(`[HOMЯ Escalator] Auto-resolved escalation ${escalation.id} with option: ${autoResult.result.selectedOption}`);
+        return `auto-resolved:${escalation.id}:${autoResult.result.selectedOption}`;
+      } else {
+        console.log(`[HOMЯ Escalator] Auto-resolve deferred to human: ${autoResult.result.reasoning}`);
+      }
+    }
+  }
 
   return escalation.id;
 }
@@ -329,10 +438,11 @@ function storeAnswerPattern(
  */
 const TURN_LIMIT_INCREASE_MULTIPLIER = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_WORKER_MAX_TURNS = 20; // Must match worker.ts config default
 
 /**
  * Apply the 'increase_turn_limit' action to affected tasks.
- * Doubles the max_attempts for each task.
+ * Doubles the effective turn limit (max of task.max_attempts and worker default).
  */
 async function applyIncreaseTurnLimit(
   affectedTasks: string[],
@@ -360,22 +470,24 @@ async function applyIncreaseTurnLimit(
       continue;
     }
 
-    const previousValue = task.max_attempts;
-    const newValue = Math.max(previousValue * multiplier, previousValue + 5); // At least +5 more attempts
+    // Use the effective turn limit (max of task.max_attempts and worker default)
+    // This ensures we're increasing from the actual limit being used, not a stale default
+    const effectivePreviousValue = Math.max(task.max_attempts, DEFAULT_WORKER_MAX_TURNS);
+    const newValue = Math.max(effectivePreviousValue * multiplier, effectivePreviousValue + 5); // At least +5 more attempts
 
     try {
       updateTask(taskId, { max_attempts: newValue });
       results.push({
         action: 'increase_turn_limit',
         success: true,
-        details: { taskId, previousValue, newValue },
+        details: { taskId, previousValue: effectivePreviousValue, newValue },
       });
-      console.log(`[HOMЯ Escalator] Increased turn limit for task ${taskId}: ${previousValue} -> ${newValue}`);
+      console.log(`[HOMЯ Escalator] Increased turn limit for task ${taskId}: ${effectivePreviousValue} -> ${newValue}`);
     } catch (error) {
       results.push({
         action: 'increase_turn_limit',
         success: false,
-        details: { taskId, previousValue, error: error instanceof Error ? error.message : 'Unknown error' },
+        details: { taskId, previousValue: effectivePreviousValue, error: error instanceof Error ? error.message : 'Unknown error' },
       });
     }
   }
@@ -386,6 +498,10 @@ async function applyIncreaseTurnLimit(
 /**
  * Apply the 'break_into_subtasks' action to affected tasks.
  * Calls the task decomposer to split complex tasks.
+ *
+ * IDEMPOTENCY: If a task already has decomposition_status='completed' or has existing
+ * subtasks (checked via getSubtasksByParentTaskId), we skip it and report success
+ * with the existing subtask information. This makes the function safe to call multiple times.
  */
 async function applyBreakIntoSubtasks(
   outcomeId: string,
@@ -427,6 +543,44 @@ async function applyBreakIntoSubtasks(
       continue;
     }
 
+    // IDEMPOTENCY CHECK: If decomposition is already completed, skip but report success
+    if (task.decomposition_status === 'completed') {
+      const existingSubtasks = getSubtasksByParentTaskId(taskId);
+      console.log(`[HOMЯ Escalator] Task ${taskId} already decomposed (status='completed'), found ${existingSubtasks.length} existing subtask(s)`);
+      results.push({
+        action: 'break_into_subtasks',
+        success: true,
+        details: {
+          taskId,
+          subtaskCount: existingSubtasks.length,
+          createdTaskIds: existingSubtasks.map(st => st.id),
+          skipped: true,
+          reason: 'Already decomposed',
+        },
+      });
+      continue;
+    }
+
+    // Check if subtasks already exist (another idempotency check)
+    const existingSubtasks = getSubtasksByParentTaskId(taskId);
+    if (existingSubtasks.length > 0) {
+      console.log(`[HOMЯ Escalator] Task ${taskId} already has ${existingSubtasks.length} subtask(s), skipping decomposition`);
+      // Mark decomposition as complete since subtasks exist
+      updateTask(taskId, { decomposition_status: 'completed', status: 'completed' });
+      results.push({
+        action: 'break_into_subtasks',
+        success: true,
+        details: {
+          taskId,
+          subtaskCount: existingSubtasks.length,
+          createdTaskIds: existingSubtasks.map(st => st.id),
+          skipped: true,
+          reason: 'Subtasks already exist',
+        },
+      });
+      continue;
+    }
+
     try {
       const decompositionContext: DecompositionContext = {
         task,
@@ -449,6 +603,8 @@ async function applyBreakIntoSubtasks(
         });
         console.log(`[HOMЯ Escalator] Decomposed task ${taskId} into ${decompositionResult.createdTaskIds.length} subtasks`);
       } else {
+        // Mark decomposition as failed if it didn't succeed
+        updateTask(taskId, { decomposition_status: 'failed' });
         results.push({
           action: 'break_into_subtasks',
           success: false,
@@ -456,6 +612,8 @@ async function applyBreakIntoSubtasks(
         });
       }
     } catch (error) {
+      // Mark decomposition as failed on exception
+      updateTask(taskId, { decomposition_status: 'failed' });
       results.push({
         action: 'break_into_subtasks',
         success: false,

@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { getEscalationById, parseEscalation } from '@/lib/db/homr';
-import { resolveEscalation } from '@/lib/homr/escalator';
+import { resolveEscalation, markTasksForDecomposition } from '@/lib/homr/escalator';
+import { isBreakIntoSubtasksOption } from '@/lib/homr/escalator';
 
 interface Params {
   params: Promise<{ id: string; escId: string }>;
@@ -44,6 +45,27 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
   if (!body.selectedOption) {
     return NextResponse.json({ error: 'selectedOption is required' }, { status: 400 });
+  }
+
+  // If the selected option is "break_into_subtasks", immediately mark the affected tasks
+  // as decomposition_status='in_progress' BEFORE calling resolveEscalation.
+  // This protects the tasks from being claimed by workers while decomposition is pending.
+  if (isBreakIntoSubtasksOption(body.selectedOption)) {
+    // Parse affected tasks from the escalation
+    let affectedTasks: string[] = [];
+    try {
+      affectedTasks = escalation.affected_tasks
+        ? JSON.parse(escalation.affected_tasks)
+        : [];
+    } catch {
+      affectedTasks = [];
+    }
+
+    // Mark tasks for decomposition immediately
+    if (affectedTasks.length > 0) {
+      const markedCount = markTasksForDecomposition(affectedTasks);
+      console.log(`[HOMЯ API] Marked ${markedCount} task(s) for decomposition before resolution`);
+    }
   }
 
   // Resolve the escalation

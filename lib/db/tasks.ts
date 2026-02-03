@@ -39,6 +39,8 @@ export interface CreateTaskInput {
   // Complexity estimation
   complexity_score?: number;
   estimated_turns?: number;
+  // Decomposition tracking - set when this task is a subtask from decomposition
+  decomposed_from_task_id?: string;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -61,10 +63,10 @@ export function createTask(input: CreateTaskInput): Task {
       status, priority, score, attempts, max_attempts,
       from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, depends_on, required_capabilities,
-      complexity_score, estimated_turns,
+      complexity_score, estimated_turns, decomposed_from_task_id,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -86,6 +88,7 @@ export function createTask(input: CreateTaskInput): Task {
     requiredCapabilitiesJson,
     input.complexity_score ?? null,
     input.estimated_turns ?? null,
+    input.decomposed_from_task_id || null,
     timestamp,
     timestamp
   );
@@ -100,6 +103,106 @@ export function createTasksBatch(inputs: CreateTaskInput[]): Task[] {
   return transaction(() => {
     return inputs.map(input => createTask(input));
   });
+}
+
+// ============================================================================
+// Bulk-Aware Task Creation
+// ============================================================================
+
+export interface BulkAwareCreateResult {
+  /** The original task created */
+  task: Task;
+  /** Whether bulk detection triggered decomposition */
+  wasDecomposed: boolean;
+  /** Subtasks created if decomposed, empty array otherwise */
+  subtasks: Task[];
+  /** Reasoning from bulk detection */
+  reasoning: string;
+}
+
+/**
+ * Create a task and automatically decompose if bulk patterns are detected.
+ * This is the preferred way to create execution tasks - it prevents workers
+ * from receiving tasks that are too large to complete.
+ *
+ * @param input - Task creation input
+ * @param outcomeIntent - Optional intent for context
+ * @param outcomeApproach - Optional approach for context
+ * @returns The created task and any subtasks from decomposition
+ */
+export async function createTaskWithBulkCheck(
+  input: CreateTaskInput,
+  outcomeIntent?: unknown,
+  outcomeApproach?: unknown
+): Promise<BulkAwareCreateResult> {
+  // Create the task first
+  const task = createTask(input);
+
+  // Skip bulk check for capability-phase tasks or subtasks
+  if (input.phase === 'capability' || input.decomposed_from_task_id) {
+    return {
+      task,
+      wasDecomposed: false,
+      subtasks: [],
+      reasoning: 'Skipped bulk check (capability task or already a subtask)',
+    };
+  }
+
+  // Dynamically import to avoid circular dependency
+  const { proactiveDecomposeIfBulk } = await import('../agents/task-decomposer');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type IntentType = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ApproachType = any;
+
+  // Run proactive bulk detection
+  const result = await proactiveDecomposeIfBulk(
+    task,
+    outcomeIntent as IntentType | null,
+    outcomeApproach as ApproachType | null
+  );
+
+  if (result.shouldDecompose && result.decompositionResult?.success) {
+    // Get the created subtasks
+    const subtasks = result.decompositionResult.createdTaskIds
+      .map(id => getTaskById(id))
+      .filter((t): t is Task => t !== null);
+
+    console.log(`[Tasks] Proactively decomposed bulk task ${task.id} into ${subtasks.length} subtasks`);
+
+    return {
+      task,
+      wasDecomposed: true,
+      subtasks,
+      reasoning: result.reasoning,
+    };
+  }
+
+  return {
+    task,
+    wasDecomposed: false,
+    subtasks: [],
+    reasoning: result.reasoning,
+  };
+}
+
+/**
+ * Create multiple tasks with bulk detection on each.
+ * Tasks that are decomposed will have their subtasks included in the result.
+ */
+export async function createTasksBatchWithBulkCheck(
+  inputs: CreateTaskInput[],
+  outcomeIntent?: unknown,
+  outcomeApproach?: unknown
+): Promise<BulkAwareCreateResult[]> {
+  const results: BulkAwareCreateResult[] = [];
+
+  for (const input of inputs) {
+    const result = await createTaskWithBulkCheck(input, outcomeIntent, outcomeApproach);
+    results.push(result);
+  }
+
+  return results;
 }
 
 // ============================================================================
@@ -541,6 +644,16 @@ export function claimNextTask(
     // Find first task with satisfied skill AND task dependencies
     let task: Task | undefined;
     for (const candidate of candidates) {
+      // Skip tasks that are being decomposed or already decomposed
+      // - 'in_progress': prevents race condition where worker claims a task mid-decomposition
+      // - 'completed': parent task should not be claimed, subtasks should run instead
+      if (candidate.decomposition_status === 'in_progress' || candidate.decomposition_status === 'completed') {
+        console.log(
+          `[claimNextTask] Skipping task ${candidate.id} - decomposition_status='${candidate.decomposition_status}'`
+        );
+        continue;
+      }
+
       // Check task dependencies first
       const dependencyIds = parseDependsOnInternal(candidate.depends_on);
       const hasBlockingDependencies = dependencyIds.some(depId => {
@@ -628,6 +741,25 @@ export function claimNextTask(
         success: false,
         task: null,
         reason: 'No tasks with satisfied dependencies available',
+      };
+    }
+
+    // Double-check pattern: Re-verify decomposition_status hasn't changed before claiming.
+    // This handles the race condition where another process starts decomposing the task
+    // between when we found it as a candidate and when we try to claim it.
+    const freshTask = db.prepare(
+      'SELECT id, decomposition_status FROM tasks WHERE id = ?'
+    ).get(task.id) as { id: string; decomposition_status: string | null } | undefined;
+
+    if (freshTask?.decomposition_status === 'in_progress' || freshTask?.decomposition_status === 'completed') {
+      db.exec('ROLLBACK');
+      console.log(
+        `[claimNextTask] Double-check failed: task ${task.id} decomposition_status changed to '${freshTask.decomposition_status}'`
+      );
+      return {
+        success: false,
+        task: null,
+        reason: `Task ${task.id} is being decomposed (status: ${freshTask.decomposition_status})`,
       };
     }
 
@@ -820,6 +952,9 @@ export interface UpdateTaskInput {
   estimated_turns?: number | null;
   // Status override (use with caution - mainly for decomposition)
   status?: 'pending' | 'completed' | 'failed';
+  // Decomposition tracking
+  decomposition_status?: 'in_progress' | 'completed' | 'failed' | null;
+  decomposed_from_task_id?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -907,6 +1042,14 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
       updates.push('completed_at = ?');
       values.push(timestamp);
     }
+  }
+  if (input.decomposition_status !== undefined) {
+    updates.push('decomposition_status = ?');
+    values.push(input.decomposition_status);
+  }
+  if (input.decomposed_from_task_id !== undefined) {
+    updates.push('decomposed_from_task_id = ?');
+    values.push(input.decomposed_from_task_id);
   }
 
   values.push(id);
@@ -1248,6 +1391,27 @@ export function createDynamicCapabilityTask(
   console.log(`[createDynamicCapabilityTask] Created capability task ${task.id} for ${capabilityString}`);
 
   return task;
+}
+
+/**
+ * Get all subtasks that were decomposed from a parent task.
+ * Used for idempotency checking during decomposition.
+ *
+ * @param parentTaskId - The ID of the parent task that was decomposed
+ * @returns Array of Task objects that have decomposed_from_task_id matching the parent
+ */
+export function getSubtasksByParentTaskId(parentTaskId: string): Task[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT * FROM tasks
+    WHERE decomposed_from_task_id = ?
+    ORDER BY priority ASC, created_at ASC
+  `).all(parentTaskId) as Task[];
+
+  return rows.map(row => ({
+    ...row,
+    from_review: Boolean(row.from_review),
+  }));
 }
 
 /**

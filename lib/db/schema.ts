@@ -134,6 +134,9 @@ export type CapabilityType = 'skill' | 'tool' | 'config';
 /** @deprecated Use CapabilityType instead */
 export type InfraType = CapabilityType;
 
+// Decomposition tracking status for worker resilience
+export type DecompositionStatus = 'in_progress' | 'completed' | 'failed';
+
 export interface Task {
   id: string;
   outcome_id: string;
@@ -169,6 +172,9 @@ export interface Task {
   // Complexity estimation (for worker resilience feedback loop)
   complexity_score: number | null;  // AI-estimated complexity (1-10 scale)
   estimated_turns: number | null;   // AI-estimated turns/iterations to complete
+  // Decomposition tracking (for preventing race conditions and idempotency)
+  decomposition_status: DecompositionStatus | null;  // null = not decomposed, 'in_progress' | 'completed' | 'failed'
+  decomposed_from_task_id: string | null;            // FK to parent task if this is a subtask
 }
 
 export interface Worker {
@@ -732,8 +738,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Complexity estimation (for worker resilience feedback loop)
   complexity_score INTEGER,
   estimated_turns INTEGER,
+  -- Decomposition tracking (for preventing race conditions and idempotency)
+  decomposition_status TEXT,         -- null | 'in_progress' | 'completed' | 'failed'
+  decomposed_from_task_id TEXT,      -- FK to tasks.id (parent task if this is a subtask)
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
-  FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL
+  FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL,
+  FOREIGN KEY (decomposed_from_task_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
 
 -- Workers: Ralph instances
@@ -992,6 +1002,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority, score DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_claimed_by ON tasks(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_tasks_pending ON tasks(outcome_id, status, priority) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_tasks_depends ON tasks(depends_on);
+CREATE INDEX IF NOT EXISTS idx_tasks_decomposition_status ON tasks(decomposition_status);
+CREATE INDEX IF NOT EXISTS idx_tasks_decomposed_from ON tasks(decomposed_from_task_id);
 
 -- Workers
 CREATE INDEX IF NOT EXISTS idx_workers_outcome ON workers(outcome_id);
@@ -1382,4 +1394,17 @@ ALTER TABLE tasks ADD COLUMN required_capabilities TEXT DEFAULT '[]';
 
 -- Update any existing tasks to have empty capabilities array
 UPDATE tasks SET required_capabilities = '[]' WHERE required_capabilities IS NULL;
+`;
+
+export const DECOMPOSITION_TRACKING_MIGRATION_SQL = `
+-- Migration: Add decomposition tracking columns to tasks table
+-- These columns enable tracking of decomposition state to prevent race conditions
+-- and link subtasks to their parent task for idempotency checks
+
+ALTER TABLE tasks ADD COLUMN decomposition_status TEXT;
+ALTER TABLE tasks ADD COLUMN decomposed_from_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;
+
+-- Add indexes for efficient querying
+CREATE INDEX IF NOT EXISTS idx_tasks_decomposition_status ON tasks(decomposition_status);
+CREATE INDEX IF NOT EXISTS idx_tasks_decomposed_from ON tasks(decomposed_from_task_id);
 `;

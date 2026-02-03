@@ -9,10 +9,11 @@
  */
 
 import { claudeComplete } from '../claude/client';
-import { createTask, updateTask, getTaskById, CreateTaskInput } from '../db/tasks';
+import { createTask, updateTask, getTaskById, getSubtasksByParentTaskId, CreateTaskInput } from '../db/tasks';
 import { detectCircularDependencies, validateDependencies } from '../db/dependencies';
-import type { Task, Intent, Approach } from '../db/schema';
+import type { Task, Intent, Approach, DecompositionStatus } from '../db/schema';
 import { ComplexityEstimate, ComplexityThresholds, estimateTaskComplexity } from './task-complexity-estimator';
+import { detectBulkDataTask, BulkDetectionResult, DecompositionSuggestion } from './bulk-detector';
 
 // ============================================================================
 // Types
@@ -66,6 +67,14 @@ const DEFAULT_THRESHOLDS: DecompositionThresholds = {
 /**
  * Decompose a high-complexity task into smaller subtasks.
  * Returns the created subtask IDs with proper dependencies between them.
+ *
+ * Uses atomic state transitions to prevent race conditions:
+ * 1. Sets decomposition_status = 'in_progress' BEFORE calling Claude
+ * 2. Sets decomposition_status = 'completed' and status = 'completed' AFTER subtasks created
+ * 3. Sets decomposition_status = 'failed' if decomposition fails
+ *
+ * Includes idempotency check: if subtasks already exist for this task,
+ * returns existing subtask IDs instead of creating duplicates.
  */
 export async function decomposeTask(
   context: DecompositionContext,
@@ -73,6 +82,43 @@ export async function decomposeTask(
 ): Promise<DecompositionResult> {
   const { task, complexityEstimate, outcomeIntent, outcomeApproach, maxTurnsPerSubtask, forceDecompose } = context;
   const effectiveMaxTurns = maxTurnsPerSubtask ?? thresholds.maxTurnsPerSubtask;
+
+  // ============================================================================
+  // Idempotency Check: Return existing subtasks if they already exist
+  // ============================================================================
+  const existingSubtasks = getSubtasksByParentTaskId(task.id);
+  if (existingSubtasks.length > 0) {
+    console.log(`[TaskDecomposer] Found ${existingSubtasks.length} existing subtasks for task ${task.id}, returning them (idempotency)`);
+    return {
+      success: true,
+      originalTaskId: task.id,
+      subtasks: existingSubtasks.map(st => ({
+        title: st.title,
+        description: st.description || '',
+        estimatedComplexity: st.complexity_score || 3,
+        estimatedTurns: st.estimated_turns || 5,
+        dependsOnIndices: [], // We don't reconstruct indices for existing subtasks
+        phase: st.phase as 'capability' | 'execution' | undefined,
+      })),
+      createdTaskIds: existingSubtasks.map(st => st.id),
+      reasoning: 'Returning existing subtasks (idempotency check)',
+    };
+  }
+
+  // ============================================================================
+  // Check if decomposition is already in progress (another worker may be handling it)
+  // ============================================================================
+  const currentTask = getTaskById(task.id);
+  if (currentTask?.decomposition_status === 'in_progress') {
+    console.log(`[TaskDecomposer] Task ${task.id} decomposition already in progress, skipping`);
+    return {
+      success: false,
+      originalTaskId: task.id,
+      subtasks: [],
+      createdTaskIds: [],
+      reasoning: 'Decomposition already in progress by another worker',
+    };
+  }
 
   // Get or estimate complexity
   let estimate = complexityEstimate;
@@ -94,6 +140,12 @@ export async function decomposeTask(
     };
   }
 
+  // ============================================================================
+  // Atomic State Transition: Set decomposition_status = 'in_progress'
+  // ============================================================================
+  console.log(`[TaskDecomposer] Setting decomposition_status='in_progress' for task ${task.id}`);
+  await updateTask(task.id, { decomposition_status: 'in_progress' });
+
   // Use Claude to decompose the task
   const prompt = buildDecompositionPrompt(task, estimate, outcomeIntent, outcomeApproach, thresholds, effectiveMaxTurns);
 
@@ -106,6 +158,12 @@ export async function decomposeTask(
     });
 
     if (!result.success || !result.text) {
+      // ============================================================================
+      // Atomic State Transition: Set decomposition_status = 'failed'
+      // ============================================================================
+      console.log(`[TaskDecomposer] Claude decomposition failed for task ${task.id}, setting decomposition_status='failed'`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+
       return {
         success: false,
         originalTaskId: task.id,
@@ -119,6 +177,12 @@ export async function decomposeTask(
     // Parse the decomposition response
     const parseResult = parseDecompositionResponse(result.text, thresholds);
     if (!parseResult.success || parseResult.subtasks.length === 0) {
+      // ============================================================================
+      // Atomic State Transition: Set decomposition_status = 'failed'
+      // ============================================================================
+      console.log(`[TaskDecomposer] Failed to parse decomposition response for task ${task.id}, setting decomposition_status='failed'`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+
       return {
         success: false,
         originalTaskId: task.id,
@@ -129,13 +193,17 @@ export async function decomposeTask(
       };
     }
 
-    // Create the subtasks in the database
+    // Create the subtasks in the database (with decomposed_from_task_id set)
     const createdIds = await createSubtasks(task, parseResult.subtasks);
 
-    // Mark original task as decomposed and completed so workers claim subtasks instead
+    // ============================================================================
+    // Atomic State Transition: Set decomposition_status = 'completed' and status = 'completed'
+    // ============================================================================
+    console.log(`[TaskDecomposer] Subtasks created successfully for task ${task.id}, setting decomposition_status='completed' and status='completed'`);
     await updateTask(task.id, {
       description: `${task.description || ''}\n\n[DECOMPOSED into ${createdIds.length} subtasks: ${createdIds.join(', ')}]`,
       status: 'completed', // Critical: prevents workers from re-claiming the decomposed task
+      decomposition_status: 'completed',
     });
 
     return {
@@ -146,7 +214,13 @@ export async function decomposeTask(
       reasoning: parseResult.reasoning,
     };
   } catch (error) {
+    // ============================================================================
+    // Atomic State Transition: Set decomposition_status = 'failed'
+    // ============================================================================
     console.error('[TaskDecomposer] Decomposition failed:', error);
+    console.log(`[TaskDecomposer] Exception during decomposition for task ${task.id}, setting decomposition_status='failed'`);
+    await updateTask(task.id, { decomposition_status: 'failed' });
+
     return {
       success: false,
       originalTaskId: task.id,
@@ -393,12 +467,13 @@ function validateSubtaskDependencies(subtasks: Subtask[]): { valid: boolean; err
 
 /**
  * Create subtasks in the database with proper dependencies.
+ * Sets decomposed_from_task_id on each created subtask to enable idempotency checks.
  * Returns array of created task IDs.
  */
 async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<string[]> {
   const createdIds: string[] = [];
 
-  // First pass: create all subtasks without dependencies
+  // First pass: create all subtasks without dependencies (but with decomposed_from_task_id)
   for (let i = 0; i < subtasks.length; i++) {
     const subtask = subtasks[i];
 
@@ -412,6 +487,8 @@ async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<
       phase: subtask.phase || originalTask.phase,
       complexity_score: subtask.estimatedComplexity,
       estimated_turns: subtask.estimatedTurns,
+      // Link this subtask to its parent task for idempotency tracking
+      decomposed_from_task_id: originalTask.id,
       // Dependencies will be set in second pass
     };
 
@@ -556,4 +633,163 @@ export async function decomposeMultipleTasks(
   }
 
   return results;
+}
+
+// ============================================================================
+// Proactive Decomposition (Bulk Data Detection)
+// ============================================================================
+
+/**
+ * Result of proactive bulk data decomposition check.
+ */
+export interface ProactiveDecompositionResult {
+  shouldDecompose: boolean;
+  bulkDetection: BulkDetectionResult | null;
+  decompositionResult: DecompositionResult | null;
+  reasoning: string;
+}
+
+/**
+ * Proactively check if a task should be decomposed based on bulk data patterns.
+ * This should be called at task CREATION time (during planning phase) to prevent
+ * workers from claiming tasks that are too large.
+ *
+ * Unlike autoDecomposeIfNeeded (which uses complexity estimation), this function
+ * uses pattern-based detection to identify bulk operations before any work begins.
+ *
+ * @param task - The task to check for bulk patterns
+ * @param outcomeIntent - Optional outcome intent for context
+ * @param outcomeApproach - Optional outcome approach for context
+ * @param thresholds - Decomposition thresholds
+ * @returns Result indicating whether decomposition occurred
+ */
+export async function proactiveDecomposeIfBulk(
+  task: Task,
+  outcomeIntent?: Intent | null,
+  outcomeApproach?: Approach | null,
+  thresholds: DecompositionThresholds = DEFAULT_THRESHOLDS
+): Promise<ProactiveDecompositionResult> {
+  // Run bulk data detection
+  const bulkDetection = detectBulkDataTask({
+    task,
+    outcomeIntent,
+    outcomeApproach,
+  });
+
+  // If not a bulk task or low confidence, skip decomposition
+  if (!bulkDetection.isBulkTask) {
+    return {
+      shouldDecompose: false,
+      bulkDetection,
+      decompositionResult: null,
+      reasoning: bulkDetection.reasoning,
+    };
+  }
+
+  // Low confidence bulk detection - skip unless we have explicit counts
+  if (bulkDetection.confidence === 'low' && bulkDetection.estimatedItemCount === null) {
+    return {
+      shouldDecompose: false,
+      bulkDetection,
+      decompositionResult: null,
+      reasoning: `Bulk patterns detected with low confidence and no explicit count. ${bulkDetection.reasoning}`,
+    };
+  }
+
+  console.log(`[TaskDecomposer] Proactive bulk detection triggered for task ${task.id}: ${bulkDetection.reasoning}`);
+
+  // Adjust decomposition thresholds based on bulk detection suggestion
+  const adjustedThresholds = adjustThresholdsForBulk(thresholds, bulkDetection.suggestedDecomposition);
+
+  // Force decomposition since bulk patterns were detected
+  const decompositionResult = await decomposeTask(
+    {
+      task,
+      outcomeIntent,
+      outcomeApproach,
+      forceDecompose: true, // Skip complexity threshold check - bulk detection already confirmed need
+    },
+    adjustedThresholds
+  );
+
+  return {
+    shouldDecompose: true,
+    bulkDetection,
+    decompositionResult,
+    reasoning: `Proactive decomposition triggered by bulk data patterns. ${bulkDetection.reasoning}`,
+  };
+}
+
+/**
+ * Adjust decomposition thresholds based on bulk detection suggestions.
+ */
+function adjustThresholdsForBulk(
+  baseThresholds: DecompositionThresholds,
+  suggestion: DecompositionSuggestion | null
+): DecompositionThresholds {
+  if (!suggestion) {
+    return baseThresholds;
+  }
+
+  // Adjust max subtasks based on suggestion
+  const maxSubtasks = Math.min(
+    Math.max(suggestion.estimatedSubtaskCount, baseThresholds.maxSubtasks),
+    8 // Hard cap at 8 subtasks for bulk operations
+  );
+
+  return {
+    ...baseThresholds,
+    maxSubtasks,
+    // Lower the complexity threshold since bulk detection already identified the need
+    minComplexityToDecompose: 1,
+  };
+}
+
+/**
+ * Proactively decompose multiple tasks based on bulk data detection.
+ * Useful for scanning all newly created tasks during the planning phase.
+ *
+ * @param tasks - Array of tasks to check
+ * @param outcomeIntent - Optional outcome intent for context
+ * @param outcomeApproach - Optional outcome approach for context
+ * @param thresholds - Decomposition thresholds
+ * @returns Map of task ID to proactive decomposition results
+ */
+export async function proactiveDecomposeMultipleTasks(
+  tasks: Task[],
+  outcomeIntent?: Intent | null,
+  outcomeApproach?: Approach | null,
+  thresholds: DecompositionThresholds = DEFAULT_THRESHOLDS
+): Promise<Map<string, ProactiveDecompositionResult>> {
+  const results = new Map<string, ProactiveDecompositionResult>();
+
+  // Process tasks sequentially to avoid overwhelming Claude
+  for (const task of tasks) {
+    const result = await proactiveDecomposeIfBulk(task, outcomeIntent, outcomeApproach, thresholds);
+    results.set(task.id, result);
+  }
+
+  return results;
+}
+
+/**
+ * Check if a task description indicates bulk operations without running full detection.
+ * Quick pre-filter for deciding whether to run full bulk detection.
+ *
+ * @param taskDescription - The task description text
+ * @returns True if bulk indicators are present
+ */
+export function hasProactiveBulkIndicators(taskDescription: string): boolean {
+  // Quick check patterns - faster than full detection
+  const quickPatterns = [
+    /\b(?:all|every|each)\s+\w+s\b/i,       // "all items", "every record"
+    /\b\d{2,}\s*\w+s?\b/i,                  // "50 files", "100 records"
+    /\b(?:bulk|batch|mass)\b/i,             // "bulk update", "batch process"
+    /\bfor\s+each\b/i,                      // "for each item"
+    /\b(?:multiple|many|several)\s+\w+/i,   // "multiple files", "many users"
+    /\bprocess(?:ing)?\s+(?:all|every)\b/i, // "process all", "processing every"
+    /\b(?:import|export|migrate)\s+\w+/i,   // "import data", "migrate records"
+  ];
+
+  return quickPatterns.some(pattern => pattern.test(taskDescription));
 }

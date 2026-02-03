@@ -248,7 +248,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-02-01)
+## Current Progress (Updated 2026-02-03)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -313,8 +313,17 @@ kill -9 <PID>
 - [x] Observer - AI analysis of task outputs (`lib/homr/observer.ts`)
 - [x] Steerer - Task modification and context injection (`lib/homr/steerer.ts`)
 - [x] Escalator - Ambiguity detection and human questions (`lib/homr/escalator.ts`)
+- [x] Auto-Resolver - Automatic escalation resolution (`lib/homr/auto-resolver.ts`)
+  - Manual, Semi-Auto, and Full-Auto modes with configurable confidence threshold
+  - Worker auto-spawn after resolution for truly hands-off operation
+- [x] Proactive bulk task decomposition (`lib/agents/bulk-detector.ts`)
+  - Detects bulk data patterns at task creation time (50+ items threshold)
+  - Auto-decomposes large tasks before workers see them
+- [x] Verification task generation after decomposition
 - [x] API endpoints for HOMЯ status, context, escalations (`app/api/outcomes/[id]/homr/`)
+- [x] Auto-resolve config API (`app/api/outcomes/[id]/auto-resolve/`)
 - [x] UI components: HomrStatusCard, EscalationAlert, ActivityLogDrawer (`app/components/homr/`)
+- [x] HomrDashboard with auto-resolve settings and toast notifications
 - [x] Integration with Ralph worker (observation after task completion)
 
 ### Repository Sync (Complete)
@@ -407,11 +416,14 @@ kill -9 <PID>
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues
 - `lib/agents/improvement-analyzer.ts` - Analyzes escalation patterns, proposes improvements
+- `lib/agents/task-decomposer.ts` - Task decomposition with verification task generation
+- `lib/agents/bulk-detector.ts` - Proactive bulk data pattern detection
 - `lib/analysis/runner.ts` - Background job execution for improvement analysis
 - `lib/db/analysis-jobs.ts` - Analysis job CRUD operations
 - `lib/homr/index.ts` - HOMЯ Protocol main exports (observe, steer, escalate)
 - `lib/homr/observer.ts` - Task output analysis with Claude
 - `lib/homr/escalator.ts` - Ambiguity detection and human escalation
+- `lib/homr/auto-resolver.ts` - Automatic escalation resolution with worker auto-spawn
 - `lib/db/repositories.ts` - Repository and item sync database operations
 - `lib/db/dependencies.ts` - Task dependency validation and cycle detection
 - `lib/sync/repository-sync.ts` - Core sync logic (copy, git add/commit/push)

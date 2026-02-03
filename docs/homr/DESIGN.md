@@ -1216,11 +1216,18 @@ lib/
 │   ├── observer.ts           # Observation logic
 │   ├── steerer.ts            # Steering actions
 │   ├── escalator.ts          # Escalation management
+│   ├── auto-resolver.ts      # Auto-resolve escalations
 │   ├── context-store.ts      # Context CRUD
 │   ├── prompts.ts            # Claude prompts for analysis
 │   └── types.ts              # Type definitions
 │
+├── agents/
+│   ├── bulk-detector.ts      # Bulk pattern detection
+│   ├── task-decomposer.ts    # Task decomposition with verification
+│   └── ...
+│
 ├── db/
+│   ├── homr.ts               # Unified HOMЯ DB operations
 │   ├── homr-context.ts       # Context store DB operations
 │   ├── homr-observations.ts  # Observations DB operations
 │   ├── homr-escalations.ts   # Escalations DB operations
@@ -1230,6 +1237,8 @@ app/
 ├── api/
 │   └── outcomes/
 │       └── [id]/
+│           ├── auto-resolve/
+│           │   └── route.ts          # GET/PATCH auto-resolve config
 │           └── homr/
 │               ├── route.ts              # GET status
 │               ├── enable/route.ts       # POST enable
@@ -1245,11 +1254,15 @@ app/
 │                       └── dismiss/route.ts  # POST dismiss
 │
 ├── components/
+│   ├── HomrDashboard.tsx         # Main HOMЯ tab with auto-resolve UI
 │   └── homr/
 │       ├── HomrStatusCard.tsx
 │       ├── EscalationAlert.tsx
 │       ├── ActivityLogDrawer.tsx
 │       └── HomrConfigModal.tsx
+│
+├── hooks/
+│   └── useToast.ts               # Toast notifications hook
 ```
 
 ---
@@ -1268,6 +1281,9 @@ All core components of the HOMЯ Protocol have been implemented and integrated.
 | Observer | `lib/homr/observer.ts` | Complete |
 | Steerer | `lib/homr/steerer.ts` | Complete |
 | Escalator | `lib/homr/escalator.ts` | Complete |
+| Auto-Resolver | `lib/homr/auto-resolver.ts` | Complete |
+| Bulk Detector | `lib/agents/bulk-detector.ts` | Complete |
+| Task Decomposer | `lib/agents/task-decomposer.ts` | Complete |
 | Type Definitions | `lib/homr/types.ts` | Complete |
 | Claude Prompts | `lib/homr/prompts.ts` | Complete |
 | Main Module | `lib/homr/index.ts` | Complete |
@@ -1282,6 +1298,9 @@ All core components of the HOMЯ Protocol have been implemented and integrated.
 | `GET /api/outcomes/[id]/homr/activity` | Complete |
 | `GET /api/outcomes/[id]/homr/escalations` | Complete |
 | `POST /api/outcomes/[id]/homr/escalations/[escId]/answer` | Complete |
+| `POST /api/outcomes/[id]/homr/escalations/[escId]/dismiss` | Complete |
+| `GET /api/outcomes/[id]/auto-resolve` | Complete |
+| `PATCH /api/outcomes/[id]/auto-resolve` | Complete |
 
 ### UI Components
 
@@ -1301,6 +1320,11 @@ All core components of the HOMЯ Protocol have been implemented and integrated.
 | Outcome detail page integration | Complete |
 | Failure pattern detection | Complete |
 | Automatic worker pausing on failure patterns | Complete |
+| Auto-resolve escalation handling | Complete |
+| Worker auto-spawn after resolution | Complete |
+| Proactive bulk task decomposition | Complete |
+| Verification task generation | Complete |
+| Toast notifications for auto-resolve | Complete |
 
 ### Failure Pattern Detection
 
@@ -1325,6 +1349,123 @@ interface FailurePatternConfig {
 }
 ```
 
+### Auto-Resolver (`lib/homr/auto-resolver.ts`)
+
+**Purpose:** Automatically resolve escalations without human intervention based on configurable modes.
+
+**Modes:**
+
+| Mode | Description |
+|------|-------------|
+| `manual` | All escalations require human decision (default) |
+| `semi-auto` | AI suggests resolution, human approves |
+| `full-auto` | AI decides automatically above confidence threshold |
+
+**Configuration:**
+
+```typescript
+interface AutoResolveConfig {
+  mode: 'manual' | 'semi-auto' | 'full-auto';
+  confidenceThreshold: number;  // 0.5-1.0, default 0.8
+}
+```
+
+**Resolution Strategies:**
+
+1. **Heuristic Resolution** - For known patterns like complexity escalations:
+   - If escalation type is `complexity_warning` → auto-select "break_into_subtasks"
+   - If escalation type is `ambiguity` with clear winner → auto-select highest-confidence option
+
+2. **Claude-Based Resolution** - For complex cases:
+   - Analyzes escalation context, options, and implications
+   - Generates a confidence score and reasoning
+   - Only applies if confidence ≥ threshold
+
+**Worker Auto-Spawn:**
+
+After successful auto-resolution, the system automatically:
+1. Checks if any workers are running for the outcome
+2. If no workers running and pending tasks exist, spawns a new worker
+3. Logs the worker spawn in activity log
+
+**API:**
+
+```
+GET  /api/outcomes/:id/auto-resolve    # Get current config
+PATCH /api/outcomes/:id/auto-resolve   # Update mode or threshold
+```
+
+### Bulk-Aware Task Creation
+
+**Purpose:** Proactively detect and decompose bulk data tasks at creation time, before workers attempt them.
+
+**Files:**
+- `lib/agents/bulk-detector.ts` - Bulk pattern detection logic
+- `lib/db/tasks.ts` - `createTaskWithBulkCheck()` function
+
+**Detection Patterns:**
+
+```typescript
+const BULK_PATTERNS = [
+  /(\d+)\s*(files?|records?|items?|entries?|rows?|documents?)/i,
+  /process(ing)?\s+(\d+)/i,
+  /batch\s+of\s+(\d+)/i,
+  /(\d+)\s+to\s+(process|handle|update|migrate)/i,
+];
+```
+
+**Threshold:** Tasks with ≥50 items trigger automatic decomposition.
+
+**API:**
+
+```typescript
+interface BulkAwareCreateResult {
+  task: Task;
+  wasDecomposed: boolean;
+  subtasks: Task[];
+  reasoning: string;
+}
+
+async function createTaskWithBulkCheck(
+  input: CreateTaskInput,
+  outcomeIntent?: unknown,
+  outcomeApproach?: unknown
+): Promise<BulkAwareCreateResult>;
+```
+
+**Behavior:**
+- Skips bulk check for capability-phase tasks
+- Skips bulk check for tasks already decomposed from parent
+- Returns decomposed subtasks if bulk pattern detected
+
+### Verification Task Generation
+
+**Purpose:** Ensure decomposed work units are properly validated by auto-generating a verification task.
+
+**Trigger:** Automatically created when a task is decomposed into subtasks.
+
+**Structure:**
+
+```typescript
+const verificationTask = createTask({
+  outcome_id: originalTask.outcome_id,
+  title: `Verify: ${originalTask.title}`,
+  description: buildVerificationTaskDescription(originalTask, subtaskIds, subtaskCount),
+  priority: originalTask.priority + subtaskCount + 1,  // Runs last
+  phase: originalTask.phase,
+  complexity_score: 2,  // Low complexity
+  estimated_turns: 4,
+  decomposed_from_task_id: originalTask.id,
+  depends_on: subtaskIds,  // Depends on ALL subtasks
+});
+```
+
+**Verification Checklist:**
+- Confirms all subtasks completed successfully
+- Reviews outputs match original task requirements
+- Tests integration between decomposed components
+- Documents any issues found
+
 ### Not Yet Implemented
 
 - `HomrConfigModal` - Per-outcome HOMЯ settings UI
@@ -1341,6 +1482,7 @@ interface FailurePatternConfig {
 | 2026-01-31 | Initial design document | Capture HOMЯ Protocol architecture |
 | 2026-01-31 | Full implementation complete | Phases 1-4 implemented |
 | 2026-01-31 | Failure pattern detection | Make HOMЯ detect stuck/failing loops and auto-pause workers |
+| 2026-02-03 | Phase 4.6: Auto-Resolve & Proactive Decomposition | Enable truly hands-off operation with auto-resolve modes, worker auto-spawn, bulk detection, and verification tasks |
 
 ---
 

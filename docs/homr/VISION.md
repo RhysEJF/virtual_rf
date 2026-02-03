@@ -364,6 +364,27 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
 - [x] Escalation incorporation tracking (prevents re-analysis)
 - [x] Supervisor page with "Analyze & Improve" workflow
 
+### Phase 4.6: Auto-Resolve & Proactive Decomposition - COMPLETE
+- [x] Auto-resolve mode for escalations (`lib/homr/auto-resolver.ts`)
+  - Manual, Semi-Auto, and Full-Auto modes
+  - Configurable confidence threshold (default 80%)
+  - Heuristic-based resolution for complexity escalations
+  - Claude-based resolution for complex cases
+- [x] Auto-spawn worker after resolution
+  - Automatically starts a worker when auto-resolve makes a decision
+  - Enables truly hands-off operation
+- [x] Proactive bulk task decomposition (`lib/agents/bulk-detector.ts`)
+  - Detects bulk data patterns at task creation time
+  - Auto-decomposes large tasks before workers see them
+  - `createTaskWithBulkCheck()` wrapper in `lib/db/tasks.ts`
+- [x] Verification task generation
+  - Every decomposed task gets an auto-generated verification subtask
+  - Verification depends on all other subtasks
+  - Ensures decomposed work units are properly validated
+- [x] UI notifications for auto-resolved decisions
+  - Toast notifications when auto-resolve applies a decision
+  - Real-time feedback on autonomous decisions
+
 ### Phase 5: Intelligence - FUTURE
 - [ ] Pattern learning across outcomes
 - [ ] Proactive suggestions

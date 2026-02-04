@@ -412,6 +412,21 @@ export interface HomrAggregateResponse {
   escalations: HomrAggregateEscalation[];
 }
 
+export interface AutoResolveResult {
+  escalationId: string;
+  resolved: boolean;
+  reasoning: string;
+  selectedOption?: string;
+  confidence?: number;
+}
+
+export interface AutoResolveResponse {
+  total: number;
+  resolved: number;
+  deferred: number;
+  results: AutoResolveResult[];
+}
+
 // Create/Update input types
 export interface CreateOutcomeInput {
   name: string;
@@ -728,6 +743,11 @@ export const api = {
     // Dismiss an escalation
     dismissEscalation(outcomeId: string, escalationId: string): Promise<{ success: boolean }> {
       return api.post<{ success: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/dismiss`);
+    },
+
+    // Auto-resolve pending escalations (YOLO mode)
+    autoResolve(outcomeId: string): Promise<AutoResolveResponse> {
+      return api.post<AutoResolveResponse>(`/outcomes/${outcomeId}/auto-resolve`, { mode: 'full-auto' });
     },
   },
 };

@@ -5,6 +5,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { SCHEMA_SQL } from './schema';
+import { loadVSSExtension, type VSSLoadResult } from './vss-loader';
 
 /**
  * Check if a process with the given PID is still running
@@ -26,6 +27,9 @@ const DB_PATH = path.join(process.cwd(), 'data', 'twin.db');
 // Singleton database instance
 let db: Database.Database | null = null;
 
+// Track VSS extension status for the session
+let vssLoadResult: VSSLoadResult | null = null;
+
 /**
  * Get the database instance, initializing if needed
  */
@@ -45,16 +49,38 @@ export function getDb(): Database.Database {
   // Enable foreign keys
   db.pragma('foreign_keys = ON');
 
+  // Load VSS extension early, before schema initialization
+  // This makes VSS functions available for creating virtual tables
+  // VSS is optional - the system falls back to brute-force search if unavailable
+  vssLoadResult = loadVSSExtension(db);
+  if (vssLoadResult.available) {
+    console.log(`[DB] VSS extension loaded from: ${vssLoadResult.loadedFrom}`);
+  } else {
+    // Only log debug info if it's not a simple "not found" case
+    const errorMsg = vssLoadResult.error || '';
+    if (!errorMsg.includes('not found') && errorMsg.length > 0) {
+      console.log(`[DB] VSS extension unavailable: ${errorMsg}`);
+    }
+  }
+
   // Initialize schema
   db.exec(SCHEMA_SQL);
 
-  // Run migrations for existing tables
+  // Run migrations for existing tables (will create VSS virtual table if extension loaded)
   runMigrations(db);
 
   // Clean up orphaned tasks/workers from crashed processes
   cleanupOrphanedState(db);
 
   return db;
+}
+
+/**
+ * Get the VSS extension load status
+ * Returns null if database hasn't been initialized yet
+ */
+export function getVSSStatus(): VSSLoadResult | null {
+  return vssLoadResult;
 }
 
 /**
@@ -444,6 +470,51 @@ function runMigrations(database: Database.Database): void {
   } catch (err) {
     // FTS5 might not be available in all SQLite builds
     console.warn(`[DB Migration] FTS5 setup skipped:`, err instanceof Error ? err.message : err);
+  }
+
+  // Initialize VSS (Vector Similarity Search) for memory embeddings
+  // VSS extension is loaded early in getDb() - here we just create the virtual table
+  // This is optional - falls back to brute-force search if unavailable
+  if (vssLoadResult?.available) {
+    try {
+      const { createMemoryVSSSchema, getMemoryVSSStats, populateMemoryVSSIndex } = require('./memory-vss');
+
+      // Check if VSS table already exists and is in sync
+      const stats = getMemoryVSSStats(database);
+
+      if (!stats.available) {
+        // Create the VSS virtual table (extension is already loaded)
+        const schemaResult = createMemoryVSSSchema(database, { recreate: false });
+
+        if (schemaResult.created) {
+          console.log(
+            `[DB Migration] Memory VSS table created: ${schemaResult.dimensions}-dimensional vectors`
+          );
+
+          // Populate with existing embeddings if any
+          if (stats.memoriesWithEmbeddings > 0) {
+            const popResult = populateMemoryVSSIndex(database, { clear: false });
+            if (popResult.inserted > 0) {
+              console.log(
+                `[DB Migration] Populated VSS index with ${popResult.inserted} vectors`
+              );
+            }
+          }
+        } else if (schemaResult.notes) {
+          console.log(`[DB Migration] Memory VSS: ${schemaResult.notes}`);
+        }
+      } else if (!stats.inSync) {
+        // VSS exists but is out of sync - repopulate
+        const popResult = populateMemoryVSSIndex(database, { clear: true });
+        console.log(
+          `[DB Migration] Re-synced VSS index: ${popResult.inserted} vectors (${popResult.skipped} skipped)`
+        );
+      }
+    } catch (err) {
+      // VSS table creation failed - log but don't fail initialization
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[DB Migration] VSS table setup failed:`, errorMsg);
+    }
   }
 }
 

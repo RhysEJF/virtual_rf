@@ -279,6 +279,9 @@ export interface UpdateOutcomeInput {
   tool_target?: SaveTarget;
   file_target?: SaveTarget;
   auto_save?: boolean;
+  // Auto-resolve settings
+  auto_resolve_mode?: 'manual' | 'semi-auto' | 'full-auto';
+  auto_resolve_threshold?: number;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {
@@ -376,6 +379,15 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.auto_save !== undefined) {
     updates.push('auto_save = ?');
     values.push(input.auto_save ? 1 : 0);
+  }
+  // Auto-resolve settings
+  if (input.auto_resolve_mode !== undefined) {
+    updates.push('auto_resolve_mode = ?');
+    values.push(input.auto_resolve_mode);
+  }
+  if (input.auto_resolve_threshold !== undefined) {
+    updates.push('auto_resolve_threshold = ?');
+    values.push(input.auto_resolve_threshold);
   }
 
   values.push(id);

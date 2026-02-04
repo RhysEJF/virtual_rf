@@ -9,8 +9,9 @@ import { Command } from 'commander';
 import { input, editor, confirm, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, DispatchResponse, MatchedOutcome } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
-interface NewCommandOptions {
+interface NewCommandOptions extends OutputOptions {
   quick?: boolean;
   skipMatching?: boolean;
   interactive?: boolean;
@@ -186,12 +187,16 @@ async function handleDispatchResponse(response: DispatchResponse, originalInput:
   }
 }
 
-export const newCommand = new Command('new')
+const command = new Command('new')
   .description('Create a new outcome via the dispatch API')
   .argument('[description...]', 'Description of what you want to achieve')
   .option('-q, --quick', 'Request quick mode (immediate response, no outcome)')
   .option('-s, --skip-matching', 'Skip matching against existing outcomes')
-  .option('-i, --interactive', 'Force interactive mode to enter description')
+  .option('-i, --interactive', 'Force interactive mode to enter description');
+
+addOutputFlags(command);
+
+export const newCommand = command
   .action(async (descriptionParts: string[], options: NewCommandOptions) => {
     try {
       let description = descriptionParts.join(' ').trim();
@@ -236,13 +241,22 @@ export const newCommand = new Command('new')
       }
 
       // Send to dispatch API
-      console.log();
-      console.log(chalk.gray('Processing request...'));
+      if (!options.json && !options.quiet) {
+        console.log();
+        console.log(chalk.gray('Processing request...'));
+      }
 
       const response = await api.dispatch.send(description, {
         modeHint: options.quick ? 'quick' : 'smart',
         skipMatching: options.skipMatching,
       });
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        if (handleOutput(response, options, response.outcomeId)) {
+          return;
+        }
+      }
 
       // Handle the response based on type
       await handleDispatchResponse(response, description);

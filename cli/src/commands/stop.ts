@@ -7,6 +7,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Worker } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 // Response type for stopping a worker
 interface StopWorkerResponse {
@@ -14,13 +15,19 @@ interface StopWorkerResponse {
   message: string;
 }
 
-export const stopCommand = new Command('stop')
+const command = new Command('stop')
   .description('Stop a running worker')
-  .argument('<worker-id>', 'The worker ID to stop')
-  .action(async (workerId: string) => {
+  .argument('<worker-id>', 'The worker ID to stop');
+
+addOutputFlags(command);
+
+export const stopCommand = command
+  .action(async (workerId: string, options: OutputOptions) => {
     try {
-      console.log();
-      console.log(chalk.gray(`Stopping worker ${workerId}...`));
+      if (!options.json && !options.quiet) {
+        console.log();
+        console.log(chalk.gray(`Stopping worker ${workerId}...`));
+      }
 
       // First fetch the worker to verify it exists and get its outcome_id
       const { worker } = await api.workers.get(workerId);
@@ -60,9 +67,17 @@ export const stopCommand = new Command('stop')
       }
 
       // Stop the worker using DELETE endpoint
-      await api.delete<StopWorkerResponse>(
+      const response = await api.delete<StopWorkerResponse>(
         `/outcomes/${worker.outcome_id}/workers?workerId=${workerId}`
       );
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        const data = { ...response, workerId: worker.id, outcomeId: worker.outcome_id };
+        if (handleOutput(data, options, worker.id)) {
+          return;
+        }
+      }
 
       console.log();
       console.log(chalk.green('✓'), chalk.bold('Worker stopped successfully'));

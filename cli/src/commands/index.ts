@@ -6,3 +6,4 @@ export { newCommand } from './new.js';
 export { startCommand } from './start.js';
 export { stopCommand } from './stop.js';
 export { updateCommand } from './update.js';
+export { archiveCommand } from './archive.js';

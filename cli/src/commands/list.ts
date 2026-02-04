@@ -7,6 +7,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, OutcomeStatus, OutcomeWithCounts } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 /**
  * Pads a string to a specified length
@@ -53,11 +54,20 @@ function formatTaskCounts(outcome: OutcomeWithCounts): string {
   return `${completed}/${total}${pending}`;
 }
 
-export const listCommand = new Command('list')
+interface ListOptions extends OutputOptions {
+  status?: OutcomeStatus;
+  all?: boolean;
+}
+
+const command = new Command('list')
   .description('List outcomes with optional status filter')
   .option('-s, --status <status>', 'Filter by status (active, dormant, achieved, archived)')
-  .option('--all', 'Show all outcomes including archived', false)
-  .action(async (options) => {
+  .option('--all', 'Show all outcomes including archived', false);
+
+addOutputFlags(command);
+
+export const listCommand = command
+  .action(async (options: ListOptions) => {
     try {
       // Build API params
       const params: {
@@ -86,6 +96,19 @@ export const listCommand = new Command('list')
       const filteredOutcomes = options.all || options.status === 'archived'
         ? outcomes
         : outcomes.filter(o => o.status !== 'archived');
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        if (options.quiet) {
+          // Output just IDs, one per line
+          for (const outcome of filteredOutcomes) {
+            console.log(outcome.id);
+          }
+        } else {
+          handleOutput(filteredOutcomes, options);
+        }
+        return;
+      }
 
       if (filteredOutcomes.length === 0) {
         console.log();

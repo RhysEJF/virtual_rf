@@ -21,22 +21,47 @@
 
 ```
 cli/
-├── package.json           # ESM package, bin entry for 'rf'
+├── package.json           # ESM package, bin entry for 'flow'
 ├── tsconfig.json          # TypeScript strict ES2022
 ├── README.md              # User documentation
 ├── src/
-│   ├── index.ts           # Entry point, Commander setup
-│   ├── api.ts             # Typed API client (~500 lines)
+│   ├── index.ts           # Entry point, Commander setup (30 commands)
+│   ├── api.ts             # Typed API client (~800 lines)
 │   ├── utils/
-│   │   └── index.ts       # Re-exports
+│   │   ├── index.ts       # Re-exports
+│   │   └── flags.ts       # Shared output flags (--json, --quiet)
 │   └── commands/
 │       ├── index.ts       # Command barrel export
-│       ├── status.ts      # rf status
-│       ├── list.ts        # rf list
-│       ├── show.ts        # rf show
-│       ├── new.ts         # rf new
-│       ├── start.ts       # rf start
-│       └── stop.ts        # rf stop
+│       ├── status.ts      # flow status
+│       ├── list.ts        # flow list
+│       ├── show.ts        # flow show
+│       ├── new.ts         # flow new (with matched outcome support)
+│       ├── start.ts       # flow start
+│       ├── stop.ts        # flow stop
+│       ├── update.ts      # flow update
+│       ├── archive.ts     # flow archive
+│       ├── tasks.ts       # flow tasks
+│       ├── task.ts        # flow task (add/update)
+│       ├── workers.ts     # flow workers
+│       ├── worker.ts      # flow worker
+│       ├── intervene.ts   # flow intervene
+│       ├── flow-pause.ts  # flow pause
+│       ├── flow-resume.ts # flow resume
+│       ├── flow-logs.ts   # flow logs
+│       ├── homr.ts        # flow homr (--supervise, --yolo)
+│       ├── escalations.ts # flow escalations
+│       ├── answer.ts      # flow answer
+│       ├── dismiss.ts     # flow dismiss
+│       ├── chat.ts        # flow chat
+│       ├── skills.ts      # flow skills
+│       ├── skill.ts       # flow skill
+│       ├── tools.ts       # flow tools
+│       ├── tool.ts        # flow tool
+│       ├── outputs.ts     # flow outputs
+│       ├── files.ts       # flow files
+│       ├── config.ts      # flow config
+│       ├── sync.ts        # flow sync
+│       └── retro.ts       # flow retro
 └── dist/                  # Compiled JavaScript
 ```
 
@@ -201,6 +226,21 @@ chalk.green('✓')            // Success checkmark
 chalk.green(' ⟳')           // Converging
 ```
 
+### Progress Indicators (Supervise Mode)
+
+```typescript
+// Progress bar
+const bar = chalk.green('█'.repeat(filledWidth)) + chalk.gray('░'.repeat(barWidth - filledWidth));
+console.log(`  ${bar} ${percent}% (${completed}/${total})`);
+
+// Task completion celebration
+chalk.bold.green(`🎉 Just Completed:`)
+chalk.green('✓') + ` ${taskTitle}`
+
+// YOLO mode results
+chalk.bold.yellow('🎲 YOLO Auto-Resolve:')
+```
+
 ### Layout Patterns
 
 ```typescript
@@ -270,6 +310,40 @@ Future: Could read from environment variable or config file.
 
 **External:**
 - Digital Twin server must be running on localhost:3000
+
+---
+
+## Special Command Modes
+
+### HOMЯ Supervise Mode
+
+The `flow homr` command supports two special flags:
+
+```bash
+flow homr <outcome-id> --supervise    # Live watch mode
+flow homr <outcome-id> --yolo         # Auto-resolve + live watch
+```
+
+**Supervise Mode (`--supervise`):**
+- Clears screen and refreshes every 5 seconds
+- Shows task progress with visual progress bar
+- Displays active workers and their current tasks
+- Celebrates newly completed tasks with "🎉 Just Completed"
+- Shows pending escalations prominently
+- Exit with Ctrl+C
+
+**YOLO Mode (`--yolo`):**
+- Implies `--supervise` (live watch automatically enabled)
+- Automatically resolves escalations using AI confidence scoring
+- Shows "🎲 YOLO Auto-Resolve" status with resolved/deferred counts
+- Displays last decision made with confidence percentage
+
+### Flow New with Matched Outcomes
+
+When `flow new` finds matching outcomes, it offers choices:
+- Add to existing outcome → calls iterate API to create tasks
+- Create new outcome instead
+- Cancel
 
 ---
 

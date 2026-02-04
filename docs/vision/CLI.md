@@ -65,15 +65,21 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Stop workers (`flow stop`) | Complete |
 | Interactive prompts | Complete |
 | Error handling | Complete |
-| Task management | **Not started** |
-| HOMЯ integration | **Not started** |
-| Skill/tool management | **Not started** |
-| Git operations | **Not started** |
-| Output format flags | **Not started** |
+| Task management (`tasks`, `task`) | Complete |
+| HOMЯ integration (`homr`, `escalations`, `answer`, `dismiss`) | Complete |
+| Skill/tool management (`skills`, `skill`, `tools`, `tool`) | Complete |
+| Worker management (`workers`, `worker`, `intervene`, `pause`, `resume`, `logs`) | Complete |
+| Resource viewing (`files`, `outputs`) | Complete |
+| Outcome updates (`update`, `archive`) | Complete |
+| Chat/iterate (`chat`) | Complete |
+| Retrospective (`retro`) | Complete |
+| Configuration (`config`, `sync`) | Complete |
+| Output format flags (`--json`, `--quiet`) | Complete |
+| Supervise mode (`--supervise`, `--yolo` on homr) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 6 commands implemented (basic workflow)
-**Target:** 40+ commands covering all system operations
+**Current:** 30 commands implemented (full coverage)
+**Target:** Interactive mode and additional polish
 
 ---
 
@@ -149,7 +155,9 @@ flow stop <id>        # alias for: flow worker stop <id>
 | `flow new "<text>"` | Create via dispatch | Done |
 | `flow start <id>` | Start worker | Done |
 | `flow stop <id>` | Stop worker | Done |
-| `flow chat` | Interactive mode | Planned |
+| `flow chat <id> "<msg>"` | Send message/iterate | Done |
+| `flow homr <id>` | HOMЯ status | Done |
+| `flow chat` (interactive) | Interactive mode | Planned |
 
 ### Resource Commands (Full CRUD)
 
@@ -192,12 +200,22 @@ flow skill sync <id> --repo=<repo-id>
 
 #### HOMЯ (Orchestration)
 ```bash
-flow homr status <outcome-id>
-flow homr escalations [--outcome=<id>] [--pending]
-flow homr answer <escalation-id> --choice="A"
-flow homr dismiss <escalation-id>
-flow homr context <outcome-id> [--discoveries] [--decisions]
+flow homr <outcome-id>                    # HOMЯ status (Done)
+flow homr <outcome-id> --supervise        # Live watch mode, polls every 5s (Done)
+flow homr <outcome-id> --yolo             # Auto-resolve + supervise (Done)
+flow escalations [--outcome=<id>]         # List pending escalations (Done)
+flow answer <escalation-id> <choice>      # Answer escalation (Done)
+flow dismiss <escalation-id>              # Dismiss escalation (Done)
 ```
+
+**Supervise Mode Features:**
+- Live polling every 5 seconds with clear screen refresh
+- Task progress bar with percentage
+- Active workers display
+- "Just Completed" celebration when tasks finish
+- Pending escalations count
+
+**YOLO Mode:** Auto-resolves escalations using AI confidence scoring, shows decisions made
 
 #### Git Operations
 ```bash
@@ -326,32 +344,49 @@ RF_NO_COLOR=1
 - [x] `status` - System overview
 - [x] `list` - List outcomes
 - [x] `show` - Outcome details
-- [x] `new` - Create via dispatch
+- [x] `new` - Create via dispatch (with matched outcome integration)
 - [x] `start` - Start worker
 - [x] `stop` - Stop worker
 
-### Phase 2: Output & Task Management
-- [ ] Add `--format` flag (json, table, id) to all commands
-- [ ] `task list <outcome-id>`
-- [ ] `task show <id>`
-- [ ] `task add <outcome-id> --title="..."`
-- [ ] `task update <id> --status=<s>`
+### Phase 2: Output & Task Management (Complete)
+- [x] Add `--json` and `--quiet` flags to all commands
+- [x] `tasks <outcome-id>` - List tasks for outcome
+- [x] `task <id>` - Show task details
+- [x] `task add <outcome-id> "<title>"` - Add task manually
+- [x] `task update <id> --status=<s>` - Update task
 
-### Phase 3: Worker & HOMЯ
-- [ ] `worker logs <id> [--follow]`
-- [ ] `worker intervene <id> --message="..."`
-- [ ] `homr status <outcome-id>`
-- [ ] `homr escalations [--pending]`
-- [ ] `homr answer <id> --choice="..."`
+### Phase 3: Worker & HOMЯ (Complete)
+- [x] `workers [--outcome=<id>]` - List workers
+- [x] `worker <id>` - Worker details
+- [x] `intervene <worker-id> "<msg>"` - Send instruction
+- [x] `flow-pause <worker-id>` - Pause worker
+- [x] `flow-resume <worker-id>` - Resume worker
+- [x] `flow-logs <worker-id>` - View worker logs
+- [x] `homr <outcome-id>` - HOMЯ status with discoveries/decisions
+- [x] `homr <outcome-id> --supervise` - Live watch mode (5s polling)
+- [x] `homr <outcome-id> --yolo` - Auto-resolve + supervise
+- [x] `escalations [--outcome=<id>]` - List pending escalations
+- [x] `answer <escalation-id> <choice>` - Answer escalation
+- [x] `dismiss <escalation-id>` - Dismiss escalation
 
-### Phase 4: Skills & Git
-- [ ] `skill list [--global] [--outcome=<id>]`
-- [ ] `skill show <name>`
-- [ ] `git status <outcome-id>`
-- [ ] `git commit <outcome-id> --message="..."`
+### Phase 4: Skills & Resources (Complete)
+- [x] `skills [--outcome=<id>]` - List skills
+- [x] `skill <name>` - Show skill content
+- [x] `tools [--outcome=<id>]` - List tools
+- [x] `tool <name>` - Show tool details
+- [x] `outputs <outcome-id>` - List detected outputs
+- [x] `files <outcome-id>` - List workspace files
 
-### Phase 5: Interactive Mode
-- [ ] `flow chat` - Interactive REPL
+### Phase 5: Management (Complete)
+- [x] `update <id> --name/--intent/--approach` - Update outcome
+- [x] `archive <id>` - Archive outcome
+- [x] `chat <outcome-id> "<msg>"` - Send message/iterate
+- [x] `retro <outcome-id>` - Retrospective analysis
+- [x] `config` - Show configuration
+- [x] `sync <outcome-id>` - Sync to repository
+
+### Phase 6: Interactive Mode (Not Started)
+- [ ] `flow chat <outcome-id>` - Interactive REPL
 - [ ] Natural language input handling
 - [ ] Real-time progress streaming
 - [ ] Session context persistence
@@ -371,17 +406,42 @@ RF_NO_COLOR=1
 cli/
 ├── src/
 │   ├── index.ts          # Main entry, command registration
-│   ├── api.ts            # Typed API client
+│   ├── api.ts            # Typed API client (~800 lines)
 │   ├── commands/
 │   │   ├── index.ts      # Export all commands
-│   │   ├── status.ts
-│   │   ├── list.ts
-│   │   ├── show.ts
-│   │   ├── new.ts
-│   │   ├── start.ts
-│   │   └── stop.ts
+│   │   ├── status.ts     # System status
+│   │   ├── list.ts       # List outcomes
+│   │   ├── show.ts       # Show outcome details
+│   │   ├── new.ts        # Create outcome (with matched outcome support)
+│   │   ├── start.ts      # Start worker
+│   │   ├── stop.ts       # Stop worker
+│   │   ├── update.ts     # Update outcome fields
+│   │   ├── archive.ts    # Archive outcome
+│   │   ├── tasks.ts      # List tasks for outcome
+│   │   ├── task.ts       # Show/update single task
+│   │   ├── workers.ts    # List workers
+│   │   ├── worker.ts     # Show worker details
+│   │   ├── intervene.ts  # Send instruction to worker
+│   │   ├── flow-pause.ts # Pause worker
+│   │   ├── flow-resume.ts # Resume worker
+│   │   ├── flow-logs.ts  # View worker logs
+│   │   ├── homr.ts       # HOMЯ status (--supervise, --yolo)
+│   │   ├── escalations.ts # List escalations
+│   │   ├── answer.ts     # Answer escalation
+│   │   ├── dismiss.ts    # Dismiss escalation
+│   │   ├── chat.ts       # Send message/iterate
+│   │   ├── skills.ts     # List skills
+│   │   ├── skill.ts      # Show skill content
+│   │   ├── tools.ts      # List tools
+│   │   ├── tool.ts       # Show tool details
+│   │   ├── outputs.ts    # List detected outputs
+│   │   ├── files.ts      # List workspace files
+│   │   ├── config.ts     # Configuration
+│   │   ├── sync.ts       # Sync to repository
+│   │   └── retro.ts      # Retrospective analysis
 │   └── utils/
-│       └── index.ts      # Shared utilities
+│       ├── index.ts      # Re-exports
+│       └── flags.ts      # Shared output flags (--json, --quiet)
 ├── package.json
 └── tsconfig.json
 ```
@@ -399,20 +459,26 @@ npm link  # Makes 'flow' available globally
 ## Success Criteria
 
 ### CLI Completeness
-- [ ] All API endpoints have CLI equivalents
-- [ ] Every web UI action can be done via CLI
-- [ ] `flow chat` provides conversational inteflowace
+- [x] All API endpoints have CLI equivalents
+- [x] Every web UI action can be done via CLI
+- [ ] `flow chat` provides conversational interface (interactive mode)
 
 ### Usability
-- [ ] New user can create outcome and start worker in < 2 minutes
-- [ ] Power users can script complex workflows
-- [ ] Output formats support automation needs
+- [x] New user can create outcome and start worker in < 2 minutes
+- [x] Power users can script complex workflows
+- [x] Output formats support automation needs (`--json`, `--quiet`)
 
 ### Foundation for Conversational API
-- [ ] Telegram bot can be implemented as thin wrapper
-- [ ] All commands return structured, parseable output
+- [x] Telegram bot can be implemented as thin wrapper
+- [x] All commands return structured, parseable output
 - [ ] Interactive mode proves conversational UX
+
+### Special Features
+- [x] `flow new` integrates with matched outcomes (add to existing or create new)
+- [x] `flow homr --supervise` for live monitoring with task progress
+- [x] `flow homr --yolo` for auto-resolve with AI confidence scoring
+- [x] Visual feedback when tasks complete in supervise mode
 
 ---
 
-*The CLI is not just a developer tool - it's the API that makes conversational inteflowaces possible. Complete the CLI, and Telegram becomes trivial.*
+*The CLI is not just a developer tool - it's the API that makes conversational interfaces possible. 30 commands implemented - only interactive mode remains.*

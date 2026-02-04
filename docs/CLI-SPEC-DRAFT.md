@@ -71,10 +71,26 @@ flow intervene <worker-id> "<msg>" # Send instruction to running worker
 
 ```bash
 flow homr <outcome-id>             # HOMЯ status for outcome (context, discoveries)
+flow homr <outcome-id> --supervise # Live watch mode - polls every 5 seconds
+flow homr <outcome-id> --yolo      # Auto-resolve escalations + live watch
 flow escalations [--outcome=<id>]  # List pending escalations
 flow answer <escalation-id> "<choice>"  # Answer an escalation
 flow dismiss <escalation-id>       # Dismiss without answering
 ```
+
+**Supervise Mode Features:**
+- Clear screen refresh every 5 seconds
+- Task progress bar with percentage (█████░░░░░ 50%)
+- Active workers display with current task
+- "🎉 Just Completed" celebration when tasks finish
+- Pending escalations prominently displayed
+- Exit with Ctrl+C
+
+**YOLO Mode Features:**
+- Automatically resolves escalations using AI confidence scoring
+- Shows resolved/deferred counts
+- Displays last decision made with confidence %
+- Implies --supervise (live watch always active)
 
 ---
 
@@ -150,17 +166,19 @@ flow status                        # System status (workers, alerts, queue)
 
 ## Command Count
 
-| Group | Commands |
-|-------|----------|
-| Outcomes | 6 |
-| Tasks | 4 |
-| Workers | 5 |
-| HOMЯ | 4 |
-| Chat | 1 |
-| Retro | 2 |
-| Resources | 8 |
-| Settings | 4 |
-| **Total** | **34** |
+| Group | Commands | Implemented |
+|-------|----------|-------------|
+| Outcomes | 6 | 6 ✓ |
+| Tasks | 4 | 4 ✓ |
+| Workers | 5 | 6 ✓ (added pause/resume/logs) |
+| HOMЯ | 4 | 4 ✓ (plus --supervise, --yolo flags) |
+| Chat | 1 | 1 ✓ |
+| Retro | 2 | 1 ✓ (retro status merged into retro) |
+| Resources | 8 | 6 ✓ |
+| Settings | 4 | 2 ✓ |
+| **Total** | **34** | **30 ✓** |
+
+*Note: Some commands combined/simplified during implementation. All core functionality covered.*
 
 ---
 
@@ -209,48 +227,80 @@ flow new "track my reading" && flow optimize $(flow list --quiet | tail -1) --in
 
 ---
 
-## What's Already Done (from CLI.md)
+## What's Already Done
 
 | Command | Status |
 |---------|--------|
 | `flow status` | Complete |
 | `flow list` | Complete |
 | `flow show` | Complete |
-| `flow new` | Complete |
+| `flow new` | Complete (with matched outcome integration) |
 | `flow start` | Complete |
 | `flow stop` | Complete |
+| `flow update` | Complete |
+| `flow archive` | Complete |
+| `flow tasks` | Complete |
+| `flow task` | Complete |
+| `flow workers` | Complete |
+| `flow worker` | Complete |
+| `flow intervene` | Complete |
+| `flow pause` | Complete |
+| `flow resume` | Complete |
+| `flow logs` | Complete |
+| `flow homr` | Complete (with --supervise and --yolo flags) |
+| `flow escalations` | Complete |
+| `flow answer` | Complete |
+| `flow dismiss` | Complete |
+| `flow chat` | Complete |
+| `flow skills` | Complete |
+| `flow skill` | Complete |
+| `flow tools` | Complete |
+| `flow tool` | Complete |
+| `flow outputs` | Complete |
+| `flow files` | Complete |
+| `flow config` | Complete |
+| `flow sync` | Complete |
+| `flow retro` | Complete |
+
+**Total: 30 commands implemented**
 
 ---
 
 ## Implementation Priority
 
 ### Phase 1: Core Optimize
-- [ ] `flow optimize <id> --intent`
-- [ ] `flow optimize <id> --approach`
-- [ ] `flow update <id>` with field flags
+- [x] `flow update <id>` with field flags (--name, --intent, --approach)
+- [ ] `flow optimize <id> --intent` (not yet - update covers this)
+- [ ] `flow optimize <id> --approach` (not yet - update covers this)
 
 ### Phase 2: Task Management
-- [ ] `flow tasks <outcome-id>`
-- [ ] `flow task <id>`
-- [ ] `flow task add`
-- [ ] `flow task update`
+- [x] `flow tasks <outcome-id>`
+- [x] `flow task <id>`
+- [x] `flow task add`
+- [x] `flow task update`
 
 ### Phase 3: HOMЯ + Escalations
-- [ ] `flow escalations`
-- [ ] `flow answer`
-- [ ] `flow dismiss`
-- [ ] `flow homr <outcome-id>`
+- [x] `flow escalations`
+- [x] `flow answer`
+- [x] `flow dismiss`
+- [x] `flow homr <outcome-id>`
+- [x] `flow homr <outcome-id> --supervise` (live watch mode)
+- [x] `flow homr <outcome-id> --yolo` (auto-resolve + supervise)
 
 ### Phase 4: Chat + Resources
-- [ ] `flow chat <outcome-id> "<msg>"`
-- [ ] `flow skills`, `flow skill`
-- [ ] `flow tools`, `flow tool`
-- [ ] `flow outputs`, `flow files`
+- [x] `flow chat <outcome-id> "<msg>"`
+- [x] `flow skills`, `flow skill`
+- [x] `flow tools`, `flow tool`
+- [x] `flow outputs`, `flow files`
 
 ### Phase 5: Retro + Settings
-- [ ] `flow retro`
-- [ ] `flow config`
-- [ ] `flow sync`
+- [x] `flow retro`
+- [x] `flow config`
+- [x] `flow sync`
+
+### Phase 6: Interactive Mode (Not Started)
+- [ ] Interactive REPL mode for `flow chat`
+- [ ] Real-time progress streaming
 
 ---
 

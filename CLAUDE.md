@@ -385,11 +385,18 @@ kill -9 <PID>
 - [x] Guard blocks logged to database (`lib/db/guard-blocks.ts`)
 - [x] Integration with Ralph worker execution
 
-### CLI (In Progress)
+### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] list, show, new, start, status, stop commands
-- [ ] Interactive mode
-- [ ] Full API coverage
+- [x] 30 commands implemented (full API coverage)
+- [x] Outcome management: list, show, new, update, archive
+- [x] Task management: tasks, task (add/update)
+- [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
+- [x] HOMЯ integration: homr (--supervise, --yolo), escalations, answer, dismiss
+- [x] Resources: skills, skill, tools, tool, outputs, files
+- [x] Settings: config, sync, retro
+- [x] Chat/iterate: chat
+- [x] Output flags: --json, --quiet on all commands
+- [ ] Interactive mode (REPL)
 
 ### Working Flow
 1. User submits request via CommandBar

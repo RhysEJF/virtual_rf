@@ -7,6 +7,7 @@
  * - Task modification based on discoveries
  * - Priority adjustments
  * - Corrective task creation
+ * - Memory injection at task claim time
  */
 
 import { generateId } from '../utils/id';
@@ -30,6 +31,7 @@ import type {
   HomrDriftItem,
   HomrEscalation,
   HomrQuestionOption,
+  ParsedMemory,
 } from '../db/schema';
 import type {
   ObservationResult,
@@ -40,7 +42,8 @@ import type {
   TaskContext,
   EscalationAnswer,
 } from './types';
-import { buildTaskContextSection } from './prompts';
+import { buildTaskContextSection, buildMemoryContextSection } from './prompts';
+import { memoryService, type SearchResponse } from '../memory';
 
 // ============================================================================
 // Context Building
@@ -52,28 +55,270 @@ import { buildTaskContextSection } from './prompts';
  */
 export function buildTaskContext(taskId: string, outcomeId: string): string {
   const context = getHomrContext(outcomeId);
-  if (!context) {
-    return '';
-  }
 
   // Get discoveries relevant to this task
-  const discoveries = getDiscoveriesForTask(outcomeId, taskId);
+  const discoveries = context ? getDiscoveriesForTask(outcomeId, taskId) : [];
 
   // Get injections for this task
-  const injections = getContextInjectionsForTask(outcomeId, taskId);
+  const injections = context ? getContextInjectionsForTask(outcomeId, taskId) : [];
 
   // Parse decisions and constraints
-  const decisions: HomrDecision[] = JSON.parse(context.decisions);
-  const constraints: HomrConstraint[] = JSON.parse(context.constraints);
+  const decisions: HomrDecision[] = context ? JSON.parse(context.decisions) : [];
+  const constraints: HomrConstraint[] = context ? JSON.parse(context.constraints) : [];
 
-  // If no context to inject, return empty
-  if (discoveries.length === 0 && injections.length === 0 &&
-      decisions.length === 0 && constraints.length === 0) {
+  // Build the HOMЯ context section using the prompt builder
+  const homrSection = buildTaskContextSection(discoveries, decisions, constraints);
+
+  // Get relevant memories for context injection
+  const memories = getRelevantMemoriesForTask(taskId, outcomeId);
+  const memorySection = memories.length > 0 ? buildMemoryContextSection(memories) : '';
+
+  // Combine sections
+  if (!homrSection && !memorySection) {
     return '';
   }
 
-  // Build the context section using the prompt builder
-  return buildTaskContextSection(discoveries, decisions, constraints);
+  const sections: string[] = [];
+  if (homrSection) sections.push(homrSection);
+  if (memorySection) sections.push(memorySection);
+
+  return sections.join('\n');
+}
+
+/**
+ * Build the HOMЯ context section for a task's CLAUDE.md (async version)
+ * This version uses the full async memory retrieval for better results.
+ * Use this when you can await the result.
+ */
+export async function buildTaskContextAsync(taskId: string, outcomeId: string): Promise<string> {
+  const context = getHomrContext(outcomeId);
+
+  // Get discoveries relevant to this task
+  const discoveries = context ? getDiscoveriesForTask(outcomeId, taskId) : [];
+
+  // Get injections for this task
+  const injections = context ? getContextInjectionsForTask(outcomeId, taskId) : [];
+
+  // Parse decisions and constraints
+  const decisions: HomrDecision[] = context ? JSON.parse(context.decisions) : [];
+  const constraints: HomrConstraint[] = context ? JSON.parse(context.constraints) : [];
+
+  // Build the HOMЯ context section using the prompt builder
+  const homrSection = buildTaskContextSection(discoveries, decisions, constraints);
+
+  // Get relevant memories for context injection (async)
+  const memories = await getRelevantMemoriesForTaskAsync(taskId, outcomeId);
+  const memorySection = memories.length > 0 ? buildMemoryContextSection(memories) : '';
+
+  // Combine sections
+  if (!homrSection && !memorySection) {
+    return '';
+  }
+
+  const sections: string[] = [];
+  if (homrSection) sections.push(homrSection);
+  if (memorySection) sections.push(memorySection);
+
+  return sections.join('\n');
+}
+
+/**
+ * Get relevant memories for a task (synchronous version).
+ * Uses BM25 search which is synchronous. For association-based retrieval,
+ * use getRelevantMemoriesForTaskAsync.
+ */
+export function getRelevantMemoriesForTask(taskId: string, outcomeId: string): ParsedMemory[] {
+  const task = getTaskById(taskId);
+  if (!task) {
+    return [];
+  }
+
+  const allMemories: ParsedMemory[] = [];
+  const seenIds = new Set<string>();
+
+  // Build a search query from the task title and description
+  const searchQuery = buildMemorySearchQuery(task);
+  if (searchQuery) {
+    try {
+      // Use synchronous BM25 search (doesn't require async embedding)
+      const { searchMemoriesBM25, parseMemory } = require('../db/memory');
+      const searchResults = searchMemoriesBM25(searchQuery, 10);
+
+      for (const result of searchResults) {
+        if (!seenIds.has(result.memory.id)) {
+          seenIds.add(result.memory.id);
+          allMemories.push(parseMemory(result.memory));
+        }
+      }
+    } catch (error) {
+      console.log('[HOMЯ Steerer] Memory search failed:', error);
+    }
+  }
+
+  // Sort by importance and return top results
+  return sortMemoriesByRelevance(allMemories).slice(0, 5);
+}
+
+/**
+ * Get relevant memories for a task (async version).
+ * Retrieves memories from multiple sources:
+ * 1. Memories explicitly associated with this task
+ * 2. Memories associated with this outcome
+ * 3. Semantic search based on task content (hybrid search with vector + BM25)
+ *
+ * @param taskId - The task to retrieve memories for
+ * @param outcomeId - The outcome this task belongs to
+ * @param limit - Maximum number of memories to return (default: 5)
+ * @returns Promise resolving to array of relevant memories, sorted by relevance
+ */
+export async function getRelevantMemoriesForTaskAsync(
+  taskId: string,
+  outcomeId: string,
+  limit: number = 5
+): Promise<ParsedMemory[]> {
+  const task = getTaskById(taskId);
+  if (!task) {
+    console.log('[HOMЯ Steerer] Task not found for memory retrieval:', taskId);
+    return [];
+  }
+
+  const allMemories: ParsedMemory[] = [];
+  const seenIds = new Set<string>();
+
+  // Helper to add memories while avoiding duplicates
+  const addMemories = (memories: ParsedMemory[]) => {
+    for (const memory of memories) {
+      if (!seenIds.has(memory.id)) {
+        seenIds.add(memory.id);
+        allMemories.push(memory);
+      }
+    }
+  };
+
+  // 1. Get memories explicitly associated with this task
+  try {
+    const taskMemories = await memoryService.getForTask(taskId, limit);
+    addMemories(taskMemories);
+    if (taskMemories.length > 0) {
+      console.log(`[HOMЯ Steerer] Found ${taskMemories.length} task-associated memories`);
+    }
+  } catch (error) {
+    console.log('[HOMЯ Steerer] Could not get task-associated memories:', error);
+  }
+
+  // 2. Get memories associated with this outcome
+  try {
+    const outcomeMemories = await memoryService.getForOutcome(outcomeId, limit);
+    addMemories(outcomeMemories);
+    if (outcomeMemories.length > 0) {
+      console.log(`[HOMЯ Steerer] Found ${outcomeMemories.length} outcome-associated memories`);
+    }
+  } catch (error) {
+    console.log('[HOMЯ Steerer] Could not get outcome-associated memories:', error);
+  }
+
+  // 3. Search for relevant memories based on task content
+  const searchQuery = buildMemorySearchQuery(task);
+  if (searchQuery) {
+    try {
+      // Use the memory service's search which handles hybrid search
+      const searchResponse = await memoryService.search({
+        query: searchQuery,
+        limit: limit * 2, // Get more results to filter from
+        outcomeId,
+        taskId,
+      });
+
+      addMemories(searchResponse.memories);
+      if (searchResponse.memories.length > 0) {
+        console.log(`[HOMЯ Steerer] Found ${searchResponse.memories.length} memories via search (${searchResponse.strategy})`);
+      }
+    } catch (error) {
+      console.log('[HOMЯ Steerer] Memory search failed:', error);
+      // Fall back to synchronous BM25 search
+      try {
+        const { searchMemoriesBM25, parseMemory } = require('../db/memory');
+        const fallbackResults = searchMemoriesBM25(searchQuery, limit * 2);
+        addMemories(fallbackResults.map((r: { memory: any }) => parseMemory(r.memory)));
+      } catch (fallbackError) {
+        console.log('[HOMЯ Steerer] Fallback BM25 search also failed:', fallbackError);
+      }
+    }
+  }
+
+  // Handle case where no memories are found
+  if (allMemories.length === 0) {
+    console.log('[HOMЯ Steerer] No relevant memories found for task:', taskId);
+    return [];
+  }
+
+  // Sort by importance and return top results
+  const sortedMemories = sortMemoriesByRelevance(allMemories);
+  const result = sortedMemories.slice(0, limit);
+
+  console.log(`[HOMЯ Steerer] Returning ${result.length} memories for task ${taskId}`);
+  return result;
+}
+
+/**
+ * Build a search query from task information
+ */
+function buildMemorySearchQuery(task: Task): string {
+  const parts: string[] = [];
+
+  // Use task title (most important)
+  if (task.title) {
+    parts.push(task.title);
+  }
+
+  // Extract key terms from description (if available)
+  if (task.description) {
+    // Take first 200 chars of description to avoid very long queries
+    const descSnippet = task.description.substring(0, 200);
+    // Extract words that might be technical terms (capitalized or long)
+    const technicalTerms = descSnippet
+      .split(/\s+/)
+      .filter(word => word.length > 4 || /^[A-Z]/.test(word))
+      .slice(0, 10)
+      .join(' ');
+    if (technicalTerms) {
+      parts.push(technicalTerms);
+    }
+  }
+
+  // Include PRD context keywords if available
+  if (task.prd_context) {
+    const prdSnippet = task.prd_context.substring(0, 100);
+    parts.push(prdSnippet);
+  }
+
+  return parts.join(' ').trim();
+}
+
+/**
+ * Sort memories by relevance (importance, then recency)
+ */
+function sortMemoriesByRelevance(memories: ParsedMemory[]): ParsedMemory[] {
+  const importancePriority: Record<string, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+
+  return [...memories].sort((a, b) => {
+    // First by importance
+    const importanceA = importancePriority[a.importance] ?? 4;
+    const importanceB = importancePriority[b.importance] ?? 4;
+    if (importanceA !== importanceB) {
+      return importanceA - importanceB;
+    }
+
+    // Then by recency (last accessed or created)
+    const timeA = a.last_accessed_at || a.created_at;
+    const timeB = b.last_accessed_at || b.created_at;
+    return timeB - timeA;
+  });
 }
 
 /**

@@ -518,6 +518,112 @@ export interface HomrActivityLogEntry {
 }
 
 // ============================================================================
+// Cross-Outcome Memory System Types
+// ============================================================================
+
+/**
+ * Memory types for categorization and retrieval
+ */
+export type MemoryType =
+  | 'fact'          // Factual information (e.g., "API uses OAuth 2.0")
+  | 'pattern'       // Reusable patterns (e.g., "Use retry with exponential backoff")
+  | 'preference'    // User preferences (e.g., "Prefers TypeScript over JavaScript")
+  | 'decision'      // Past decisions (e.g., "Chose Redis over Memcached for caching")
+  | 'lesson'        // Learned lessons (e.g., "Always validate input at API boundaries")
+  | 'context';      // Contextual information (e.g., "Project uses monorepo structure")
+
+/**
+ * Memory importance levels for prioritization
+ */
+export type MemoryImportance = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Memory source types
+ */
+export type MemorySource =
+  | 'user'          // Explicitly provided by user
+  | 'worker'        // Discovered by a worker during task execution
+  | 'homr'          // Extracted by HOMЯ observer
+  | 'review'        // Discovered during review cycles
+  | 'system';       // System-generated (e.g., from escalation resolution)
+
+/**
+ * Memory entity - a piece of cross-outcome knowledge
+ */
+export interface Memory {
+  id: string;
+  content: string;                    // The actual memory content
+  type: MemoryType;
+  importance: MemoryImportance;
+  source: MemorySource;
+  source_outcome_id: string | null;   // Outcome where this was discovered (null = global)
+  source_task_id: string | null;      // Task where this was discovered
+  tags: string;                       // JSON array of tags for categorization
+  embedding: string | null;           // Vector embedding for semantic search (JSON array)
+  access_count: number;               // How many times this memory was retrieved
+  last_accessed_at: number | null;    // Last retrieval timestamp
+  confidence: number;                 // Confidence score (0.0-1.0)
+  expires_at: number | null;          // Expiration timestamp (null = never expires)
+  superseded_by: string | null;       // ID of memory that replaces this one
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * Memory association - links memories to outcomes, tasks, or other memories
+ */
+export type MemoryAssociationType =
+  | 'relevant_to_outcome'   // Memory is relevant to an outcome
+  | 'relevant_to_task'      // Memory is relevant to a task
+  | 'related_to_memory'     // Memory is related to another memory
+  | 'contradicts_memory'    // Memory contradicts another memory
+  | 'supersedes_memory';    // Memory replaces another memory
+
+export interface MemoryAssociation {
+  id: string;
+  memory_id: string;                  // Source memory
+  association_type: MemoryAssociationType;
+  target_id: string;                  // Target (outcome_id, task_id, or memory_id)
+  strength: number;                   // Association strength (0.0-1.0)
+  context: string | null;             // Why this association exists
+  created_at: number;
+}
+
+/**
+ * Memory retrieval log - tracks when and why memories were retrieved
+ */
+export interface MemoryRetrieval {
+  id: string;
+  memory_id: string;
+  outcome_id: string | null;          // Which outcome triggered retrieval
+  task_id: string | null;             // Which task triggered retrieval
+  retrieval_method: 'semantic' | 'tag' | 'association' | 'recency' | 'explicit';
+  query: string | null;               // Search query if applicable
+  relevance_score: number;            // How relevant this memory was (0.0-1.0)
+  was_useful: number | null;          // User/worker feedback (1=useful, 0=not useful, null=unknown)
+  created_at: number;
+}
+
+/**
+ * Memory tag - for efficient tag-based retrieval
+ */
+export interface MemoryTag {
+  id: string;
+  tag: string;                        // Normalized tag (lowercase, trimmed)
+  memory_count: number;               // Number of memories with this tag
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * Parsed memory with typed arrays (for application use)
+ */
+export interface ParsedMemory extends Omit<Memory, 'tags' | 'embedding'> {
+  tags: string[];
+  embedding: number[] | null;
+}
+
+// ============================================================================
 // Parsed/Enriched Types
 // ============================================================================
 
@@ -1236,6 +1342,135 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON analysis_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_outcome ON analysis_jobs(outcome_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_created ON analysis_jobs(created_at DESC);
+
+-- ============================================================================
+-- Cross-Outcome Memory System Tables
+-- ============================================================================
+
+-- Memories: Cross-outcome knowledge store
+CREATE TABLE IF NOT EXISTS memories (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  type TEXT NOT NULL,                 -- 'fact' | 'pattern' | 'preference' | 'decision' | 'lesson' | 'context'
+  importance TEXT NOT NULL DEFAULT 'medium',  -- 'low' | 'medium' | 'high' | 'critical'
+  source TEXT NOT NULL,               -- 'user' | 'worker' | 'homr' | 'review' | 'system'
+  source_outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL,
+  source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  tags TEXT NOT NULL DEFAULT '[]',    -- JSON array of tags
+  embedding TEXT,                     -- JSON array of floats for vector search
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_accessed_at INTEGER,
+  confidence REAL NOT NULL DEFAULT 1.0,  -- 0.0-1.0
+  expires_at INTEGER,                 -- Null = never expires
+  superseded_by TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Memory indexes for efficient retrieval
+CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
+CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source);
+CREATE INDEX IF NOT EXISTS idx_memories_source_outcome ON memories(source_outcome_id);
+CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(last_accessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by) WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_expiring ON memories(expires_at) WHERE expires_at IS NOT NULL;
+
+-- Memory Associations: Links between memories and other entities
+CREATE TABLE IF NOT EXISTS memory_associations (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  association_type TEXT NOT NULL,     -- 'relevant_to_outcome' | 'relevant_to_task' | 'related_to_memory' | etc.
+  target_id TEXT NOT NULL,            -- outcome_id, task_id, or memory_id depending on type
+  strength REAL NOT NULL DEFAULT 0.5, -- 0.0-1.0
+  context TEXT,                       -- Why this association exists
+  created_at INTEGER NOT NULL,
+  UNIQUE(memory_id, association_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_memory ON memory_associations(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_target ON memory_associations(target_id);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_type ON memory_associations(association_type);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_strength ON memory_associations(strength DESC);
+
+-- Memory Retrievals: Track memory usage for feedback loop
+CREATE TABLE IF NOT EXISTS memory_retrievals (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  retrieval_method TEXT NOT NULL,     -- 'semantic' | 'tag' | 'association' | 'recency' | 'explicit'
+  query TEXT,                         -- Search query if applicable
+  relevance_score REAL NOT NULL DEFAULT 1.0,  -- 0.0-1.0
+  was_useful INTEGER,                 -- 1=useful, 0=not useful, null=unknown
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_memory ON memory_retrievals(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_outcome ON memory_retrievals(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_task ON memory_retrievals(task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_method ON memory_retrievals(retrieval_method);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_created ON memory_retrievals(created_at DESC);
+
+-- Memory Tags: Efficient tag-based lookup
+CREATE TABLE IF NOT EXISTS memory_tags (
+  id TEXT PRIMARY KEY,
+  tag TEXT NOT NULL UNIQUE,           -- Normalized tag (lowercase, trimmed)
+  memory_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_tags_tag ON memory_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_memory_tags_count ON memory_tags(memory_count DESC);
+
+-- Memory-Tag Junction: Many-to-many relationship
+CREATE TABLE IF NOT EXISTS memory_tag_links (
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  tag_id TEXT NOT NULL REFERENCES memory_tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (memory_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_tag_links_tag ON memory_tag_links(tag_id);
+
+-- ============================================================================
+-- Memory FTS5 Full-Text Search (BM25 ranking)
+-- ============================================================================
+
+-- FTS5 virtual table for full-text search with BM25 ranking
+-- Uses content sync to keep in sync with memories table
+-- Supports exact phrase matching with quotes: "exact phrase"
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+  content,                            -- Memory content for searching
+  tags,                               -- Tags as searchable text (space-separated)
+  content='memories',                 -- External content from memories table
+  content_rowid='rowid',              -- Use memories rowid for content sync
+  tokenize='porter unicode61 remove_diacritics 1'  -- Porter stemming + unicode support
+);
+
+-- Triggers to keep FTS5 index synchronized with memories table
+-- INSERT trigger
+CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+  INSERT INTO memories_fts(rowid, content, tags)
+  VALUES (NEW.rowid, NEW.content, NEW.tags);
+END;
+
+-- DELETE trigger
+CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+  INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+END;
+
+-- UPDATE trigger
+CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
+  INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+  INSERT INTO memories_fts(rowid, content, tags)
+  VALUES (NEW.rowid, NEW.content, NEW.tags);
+END;
 `;
 
 // ============================================================================
@@ -1410,4 +1645,128 @@ ALTER TABLE tasks ADD COLUMN decomposed_from_task_id TEXT REFERENCES tasks(id) O
 -- Add indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_tasks_decomposition_status ON tasks(decomposition_status);
 CREATE INDEX IF NOT EXISTS idx_tasks_decomposed_from ON tasks(decomposed_from_task_id);
+`;
+
+// ============================================================================
+// Cross-Outcome Memory System Migration
+// ============================================================================
+
+export const MEMORY_SYSTEM_MIGRATION_SQL = `
+-- Migration: Create cross-outcome memory system tables
+-- These tables enable knowledge sharing across outcomes
+
+-- Memories table
+CREATE TABLE IF NOT EXISTS memories (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  type TEXT NOT NULL,
+  importance TEXT NOT NULL DEFAULT 'medium',
+  source TEXT NOT NULL,
+  source_outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL,
+  source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  embedding TEXT,
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_accessed_at INTEGER,
+  confidence REAL NOT NULL DEFAULT 1.0,
+  expires_at INTEGER,
+  superseded_by TEXT REFERENCES memories(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
+CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source);
+CREATE INDEX IF NOT EXISTS idx_memories_source_outcome ON memories(source_outcome_id);
+CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(last_accessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by) WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_expiring ON memories(expires_at) WHERE expires_at IS NOT NULL;
+
+-- Memory associations table
+CREATE TABLE IF NOT EXISTS memory_associations (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  association_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  strength REAL NOT NULL DEFAULT 0.5,
+  context TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(memory_id, association_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_memory ON memory_associations(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_target ON memory_associations(target_id);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_type ON memory_associations(association_type);
+CREATE INDEX IF NOT EXISTS idx_memory_assoc_strength ON memory_associations(strength DESC);
+
+-- Memory retrievals table
+CREATE TABLE IF NOT EXISTS memory_retrievals (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  retrieval_method TEXT NOT NULL,
+  query TEXT,
+  relevance_score REAL NOT NULL DEFAULT 1.0,
+  was_useful INTEGER,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_memory ON memory_retrievals(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_outcome ON memory_retrievals(outcome_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_task ON memory_retrievals(task_id);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_method ON memory_retrievals(retrieval_method);
+CREATE INDEX IF NOT EXISTS idx_memory_retrieval_created ON memory_retrievals(created_at DESC);
+
+-- Memory tags table
+CREATE TABLE IF NOT EXISTS memory_tags (
+  id TEXT PRIMARY KEY,
+  tag TEXT NOT NULL UNIQUE,
+  memory_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_tags_tag ON memory_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_memory_tags_count ON memory_tags(memory_count DESC);
+
+-- Memory-tag junction table
+CREATE TABLE IF NOT EXISTS memory_tag_links (
+  memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  tag_id TEXT NOT NULL REFERENCES memory_tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (memory_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_tag_links_tag ON memory_tag_links(tag_id);
+
+-- FTS5 virtual table for full-text search with BM25 ranking
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+  content,
+  tags,
+  content='memories',
+  content_rowid='rowid',
+  tokenize='porter unicode61 remove_diacritics 1'
+);
+
+-- Triggers to keep FTS5 index synchronized with memories table
+CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+  INSERT INTO memories_fts(rowid, content, tags)
+  VALUES (NEW.rowid, NEW.content, NEW.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+  INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
+  INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+  INSERT INTO memories_fts(rowid, content, tags)
+  VALUES (NEW.rowid, NEW.content, NEW.tags);
+END;
 `;

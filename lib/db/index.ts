@@ -361,6 +361,90 @@ function runMigrations(database: Database.Database): void {
       }
     }
   }
+
+  // Create cross-outcome memory system tables and indexes if they don't exist
+  const memoryTables = database.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name LIKE 'memor%'
+  `).all() as { name: string }[];
+
+  if (memoryTables.length < 4) {
+    // Memory tables are created via SCHEMA_SQL, just ensure indexes exist
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_source_outcome ON memories(source_outcome_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(last_accessed_at DESC)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memories_confidence ON memories(confidence DESC)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_assoc_memory ON memory_associations(memory_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_assoc_target ON memory_associations(target_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_assoc_type ON memory_associations(association_type)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_retrieval_memory ON memory_retrievals(memory_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_retrieval_outcome ON memory_retrievals(outcome_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_memory_tags_tag ON memory_tags(tag)`);
+    console.log(`[DB Migration] Ensured cross-outcome memory system indexes exist`);
+  }
+
+  // Create FTS5 virtual table for full-text search with BM25 ranking
+  // Check if FTS5 table exists and populate it if needed
+  try {
+    const ftsTableExists = database.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'
+    `).get();
+
+    if (!ftsTableExists) {
+      // Create FTS5 virtual table
+      database.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+          content,
+          tags,
+          content='memories',
+          content_rowid='rowid',
+          tokenize='porter unicode61 remove_diacritics 1'
+        )
+      `);
+
+      // Create triggers for sync
+      database.exec(`
+        CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+          INSERT INTO memories_fts(rowid, content, tags)
+          VALUES (NEW.rowid, NEW.content, NEW.tags);
+        END
+      `);
+
+      database.exec(`
+        CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+          INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+          VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+        END
+      `);
+
+      database.exec(`
+        CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
+          INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+          VALUES ('delete', OLD.rowid, OLD.content, OLD.tags);
+          INSERT INTO memories_fts(rowid, content, tags)
+          VALUES (NEW.rowid, NEW.content, NEW.tags);
+        END
+      `);
+
+      console.log(`[DB Migration] Created FTS5 virtual table for memory search`);
+    }
+
+    // Populate FTS5 index with existing memories (one-time migration)
+    const ftsCount = database.prepare(`SELECT COUNT(*) as count FROM memories_fts`).get() as { count: number };
+    const memoryCount = database.prepare(`SELECT COUNT(*) as count FROM memories`).get() as { count: number };
+
+    if (memoryCount.count > 0 && ftsCount.count === 0) {
+      // Rebuild FTS5 index from memories table
+      database.exec(`INSERT INTO memories_fts(memories_fts) VALUES('rebuild')`);
+      console.log(`[DB Migration] Populated FTS5 index with ${memoryCount.count} existing memories`);
+    }
+  } catch (err) {
+    // FTS5 might not be available in all SQLite builds
+    console.warn(`[DB Migration] FTS5 setup skipped:`, err instanceof Error ? err.message : err);
+  }
 }
 
 /**

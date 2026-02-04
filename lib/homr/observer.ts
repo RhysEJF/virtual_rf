@@ -487,7 +487,7 @@ export function createFailurePatternAmbiguity(
       {
         id: 'increase_turn_limit',
         label: 'Increase Turn Limit',
-        description: 'Double the max turns (20 → 40) and retry the task',
+        description: 'Double the max turns (40 → 80) and retry the task',
         implications: 'Worker gets more iterations but task may still be too complex',
       }
     );

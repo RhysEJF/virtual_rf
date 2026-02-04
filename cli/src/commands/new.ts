@@ -129,15 +129,43 @@ async function handleMatchedOutcomes(
     return;
   }
 
-  // User chose an existing outcome - show how to add to it
+  // User chose an existing outcome - send the message via chat/iterate
   const selectedOutcome = matches.find(m => m.id === choice);
   console.log();
   console.log(chalk.green('✓') + ` Selected: ${selectedOutcome?.name}`);
   console.log();
-  console.log(chalk.gray(`To add work to this outcome, use:`));
-  console.log(chalk.cyan(`  rf show ${choice}`));
-  console.log(chalk.gray(`Or view in browser: http://localhost:3000/outcome/${choice}`));
-  console.log();
+  console.log(chalk.gray('Adding to outcome...'));
+
+  try {
+    // Use the iterate API to process the request and create tasks
+    const iterateResponse = await api.iterate.submit(choice, originalInput);
+
+    console.log();
+    if (iterateResponse.tasksCreated && iterateResponse.tasksCreated > 0) {
+      console.log(chalk.green('✓') + ` Created ${iterateResponse.tasksCreated} task(s) from your request`);
+      if (iterateResponse.taskIds && iterateResponse.taskIds.length > 0) {
+        for (const taskId of iterateResponse.taskIds) {
+          console.log(`  ${chalk.gray('•')} ${taskId}`);
+        }
+      }
+      if (iterateResponse.workerId) {
+        console.log();
+        console.log(chalk.cyan('ℹ') + ` Worker started: ${iterateResponse.workerId}`);
+      }
+    } else {
+      console.log(chalk.yellow('ℹ') + ' Request processed, but no new tasks created');
+    }
+
+    console.log();
+    console.log(chalk.gray(`View outcome: flow show ${choice}`));
+    console.log(chalk.gray(`Start worker: flow start ${choice}`));
+    console.log();
+  } catch (err) {
+    console.error(chalk.red('Error adding to outcome:'), err instanceof Error ? err.message : 'Unknown error');
+    console.log();
+    console.log(chalk.gray(`Try manually: flow chat ${choice} "${originalInput.substring(0, 50)}..."`));
+    console.log();
+  }
 }
 
 /**

@@ -200,6 +200,14 @@ export interface ErrorResponse {
   error: string;
 }
 
+// Iterate response
+export interface IterateResponse {
+  success: boolean;
+  tasksCreated: number;
+  taskIds: string[];
+  workerId: string | null;
+}
+
 // Dispatch types
 export type DispatchResponseType = 'quick' | 'research' | 'deep' | 'clarification' | 'outcome' | 'match_found';
 
@@ -596,6 +604,14 @@ export const api = {
   },
 
   workers: {
+    // List all workers with optional outcome filter
+    list(params?: { outcome?: string }): Promise<WorkersResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.outcome) searchParams.set('outcome', params.outcome);
+      const query = searchParams.toString();
+      return api.get<WorkersResponse>(`/workers${query ? `?${query}` : ''}`);
+    },
+
     // Get worker by ID
     get(id: string): Promise<WorkerResponse> {
       return api.get<WorkerResponse>(`/workers/${id}`);
@@ -633,6 +649,17 @@ export const api = {
     // List all skills
     list(): Promise<SkillsResponse> {
       return api.get<SkillsResponse>('/skills');
+    },
+  },
+
+  // Iterate - create tasks from user feedback
+  iterate: {
+    // Submit feedback to create new tasks
+    submit(outcomeId: string, feedback: string, options?: { startWorker?: boolean }): Promise<IterateResponse> {
+      return api.post<IterateResponse>(`/outcomes/${outcomeId}/iterate`, {
+        feedback,
+        ...options,
+      });
     },
   },
 

@@ -18,3 +18,7 @@ export { skillsCommand } from './skills.js';
 export { toolsCommand } from './tools.js';
 export { skillCommand } from './skill.js';
 export { toolCommand } from './tool.js';
+export { outputsCommand } from './outputs.js';
+export { filesCommand } from './files.js';
+export { workersCommand } from './workers.js';
+export { workerCommand } from './worker.js';

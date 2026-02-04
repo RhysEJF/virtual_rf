@@ -62,6 +62,14 @@ export function getActiveWorkers(): Worker[] {
   `).all() as Worker[];
 }
 
+export function getAllWorkers(): Worker[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM workers
+    ORDER BY updated_at DESC
+  `).all() as Worker[];
+}
+
 export function getActiveWorkersByOutcome(outcomeId: string): Worker[] {
   const db = getDb();
   return db.prepare(`

@@ -5,3 +5,4 @@ export { showCommand } from './show.js';
 export { newCommand } from './new.js';
 export { startCommand } from './start.js';
 export { stopCommand } from './stop.js';
+export { updateCommand } from './update.js';

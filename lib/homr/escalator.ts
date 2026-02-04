@@ -862,7 +862,7 @@ ${appliedActions.length > 0 ? `\n**Actions Applied:** ${appliedActions.filter(a 
       })),
       storedPattern,
     },
-    summary: `Resolved escalation: Selected "${selectedOption.label}", applied ${appliedActions.filter(a => a.success).length} action(s), resumed ${affectedTasks.length} task(s)`,
+    summary: `Resolved escalation: Selected "${selectedOption.label}", applied ${appliedActions.filter(a => a.success && !a.details.skipped).length} action(s)${appliedActions.filter(a => a.details.skipped).length > 0 ? ` (${appliedActions.filter(a => a.details.skipped).length} skipped - already done)` : ''}, resumed ${affectedTasks.length} task(s)`,
   });
 
   console.log(`[HOMЯ Escalator] Resolved escalation ${escalationId}: ${selectedOption.label}`);

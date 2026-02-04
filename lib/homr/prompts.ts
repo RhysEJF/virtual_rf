@@ -4,7 +4,7 @@
  * Prompt building functions for AI-powered observation and analysis.
  */
 
-import type { Task, Intent, HomrDiscovery, HomrDecision, HomrConstraint } from '../db/schema';
+import type { Task, Intent, HomrDiscovery, HomrDecision, HomrConstraint, ParsedMemory } from '../db/schema';
 import type { ParsedContextStore, HomrAmbiguitySignal } from './types';
 
 // ============================================================================
@@ -444,4 +444,434 @@ export function parseEscalationQuestionResponse(response: string): {
     console.error('[HOMЯ] Failed to parse escalation question response:', err);
     return null;
   }
+}
+
+// ============================================================================
+// Memory Context Section
+// ============================================================================
+
+/**
+ * Build a context section for cross-outcome memories to inject into CLAUDE.md
+ */
+export function buildMemoryContextSection(memories: ParsedMemory[]): string {
+  if (memories.length === 0) {
+    return '';
+  }
+
+  const parts: string[] = ['## Cross-Outcome Knowledge', ''];
+  parts.push('_These memories were retrieved from previous work that may be relevant to this task._');
+  parts.push('');
+
+  // Group memories by type for better organization
+  const byType: Record<string, ParsedMemory[]> = {};
+  for (const memory of memories) {
+    const type = memory.type;
+    if (!byType[type]) {
+      byType[type] = [];
+    }
+    byType[type].push(memory);
+  }
+
+  // Define display order and labels for memory types
+  const typeOrder: Array<{ type: string; label: string; icon: string }> = [
+    { type: 'lesson', label: 'Lessons Learned', icon: '💡' },
+    { type: 'technique', label: 'Techniques', icon: '🔧' },
+    { type: 'pattern', label: 'Patterns', icon: '🔄' },
+    { type: 'constraint', label: 'Constraints', icon: '⚠️' },
+    { type: 'decision', label: 'Past Decisions', icon: '✓' },
+    { type: 'fact', label: 'Facts', icon: '📌' },
+    { type: 'preference', label: 'Preferences', icon: '⭐' },
+    { type: 'other', label: 'Other', icon: '📝' },
+  ];
+
+  for (const { type, label, icon } of typeOrder) {
+    const typeMemories = byType[type];
+    if (!typeMemories || typeMemories.length === 0) {
+      continue;
+    }
+
+    parts.push(`### ${icon} ${label}`);
+    parts.push('');
+
+    for (const memory of typeMemories) {
+      // Format based on importance
+      const importanceMarker = memory.importance === 'critical' ? '**[CRITICAL]** ' :
+                               memory.importance === 'high' ? '**[HIGH]** ' :
+                               memory.importance === 'medium' ? '' : '';
+
+      parts.push(`- ${importanceMarker}${memory.content}`);
+
+      // Add tags if present
+      if (memory.tags && memory.tags.length > 0) {
+        const tagStr = memory.tags.map(t => `\`${t}\``).join(' ');
+        parts.push(`  _Tags: ${tagStr}_`);
+      }
+
+      // Add source information if from another outcome
+      if (memory.source_outcome_id) {
+        parts.push(`  _Source: Outcome ${memory.source_outcome_id.substring(0, 8)}..._`);
+      }
+
+      parts.push('');
+    }
+  }
+
+  parts.push('---');
+  parts.push('');
+
+  return parts.join('\n');
+}
+
+/**
+ * Format a single memory for inline context injection
+ */
+export function formatMemoryForContext(memory: ParsedMemory): string {
+  const importancePrefix = memory.importance === 'critical' ? '[CRITICAL] ' :
+                           memory.importance === 'high' ? '[HIGH] ' : '';
+
+  const tagSuffix = memory.tags && memory.tags.length > 0
+    ? ` (tags: ${memory.tags.join(', ')})`
+    : '';
+
+  return `${importancePrefix}${memory.content}${tagSuffix}`;
+}
+
+// ============================================================================
+// Memory Formatting for Context Injection
+// ============================================================================
+
+/**
+ * Configuration options for memory formatting
+ */
+export interface MemoryFormatOptions {
+  /** Maximum length for memory content before truncation (default: 500) */
+  maxContentLength?: number;
+  /** Whether to include source outcome information (default: true) */
+  includeSource?: boolean;
+  /** Whether to include creation dates (default: true) */
+  includeDates?: boolean;
+  /** Whether to include tags (default: true) */
+  includeTags?: boolean;
+  /** Whether to group memories by type (default: true) */
+  groupByType?: boolean;
+  /** Maximum number of memories to display (default: 10) */
+  maxMemories?: number;
+}
+
+/**
+ * Default format options
+ */
+const DEFAULT_FORMAT_OPTIONS: Required<MemoryFormatOptions> = {
+  maxContentLength: 500,
+  includeSource: true,
+  includeDates: true,
+  includeTags: true,
+  groupByType: true,
+  maxMemories: 10,
+};
+
+/**
+ * Type labels and icons for display
+ */
+const MEMORY_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
+  fact: { label: 'Facts', icon: '📌' },
+  pattern: { label: 'Patterns', icon: '🔄' },
+  preference: { label: 'Preferences', icon: '⭐' },
+  decision: { label: 'Past Decisions', icon: '✓' },
+  lesson: { label: 'Lessons Learned', icon: '💡' },
+  context: { label: 'Context', icon: '📝' },
+};
+
+/**
+ * Importance markers for display
+ */
+const IMPORTANCE_MARKERS: Record<string, string> = {
+  critical: '**[CRITICAL]** ',
+  high: '**[HIGH]** ',
+  medium: '',
+  low: '',
+};
+
+/**
+ * Format a date timestamp for display
+ */
+function formatDate(timestamp: number | null | undefined): string {
+  if (!timestamp) return 'Unknown date';
+
+  try {
+    const date = new Date(timestamp);
+    // Check for invalid date
+    if (isNaN(date.getTime())) return 'Unknown date';
+
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return 'Unknown date';
+  }
+}
+
+/**
+ * Truncate content to maximum length with ellipsis
+ */
+function truncateContent(content: string, maxLength: number): string {
+  if (!content) return '';
+  if (content.length <= maxLength) return content;
+
+  // Find a good break point (word boundary)
+  const truncated = content.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+
+  // If we found a space reasonably close to the end, break there
+  if (lastSpace > maxLength * 0.8) {
+    return truncated.substring(0, lastSpace) + '...';
+  }
+
+  return truncated + '...';
+}
+
+/**
+ * Format a single memory entry with all metadata
+ */
+function formatSingleMemory(
+  memory: ParsedMemory,
+  options: Required<MemoryFormatOptions>
+): string {
+  const parts: string[] = [];
+
+  // Build the main content line with importance marker
+  const importanceMarker = IMPORTANCE_MARKERS[memory.importance] || '';
+  const content = truncateContent(memory.content || '', options.maxContentLength);
+
+  parts.push(`- ${importanceMarker}${content}`);
+
+  // Add metadata lines
+  const metadataLines: string[] = [];
+
+  // Source outcome
+  if (options.includeSource && memory.source_outcome_id) {
+    const outcomeRef = `Outcome ${memory.source_outcome_id.substring(0, 12)}...`;
+    metadataLines.push(`Source: ${outcomeRef}`);
+  }
+
+  // Creation date
+  if (options.includeDates && memory.created_at) {
+    metadataLines.push(`Date: ${formatDate(memory.created_at)}`);
+  }
+
+  // Tags
+  if (options.includeTags && memory.tags && memory.tags.length > 0) {
+    const tagStr = memory.tags.map(t => `\`${t}\``).join(' ');
+    metadataLines.push(`Tags: ${tagStr}`);
+  }
+
+  // Confidence (only show if notably high or low)
+  if (memory.confidence !== undefined && memory.confidence !== 1.0) {
+    if (memory.confidence < 0.5) {
+      metadataLines.push(`Confidence: Low (${Math.round(memory.confidence * 100)}%)`);
+    } else if (memory.confidence >= 0.9) {
+      metadataLines.push(`Confidence: High (${Math.round(memory.confidence * 100)}%)`);
+    }
+  }
+
+  // Add metadata as indented lines
+  if (metadataLines.length > 0) {
+    parts.push(`  _${metadataLines.join(' | ')}_`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Format a collection of memories into markdown for CLAUDE.md context injection
+ *
+ * This function transforms memory records into a well-formatted markdown section
+ * suitable for injection into worker context. It handles:
+ * - Grouping memories by type
+ * - Importance-based highlighting
+ * - Source outcome attribution
+ * - Date display
+ * - Content truncation for long memories
+ * - Edge cases (missing fields, empty array, etc.)
+ *
+ * @param memories Array of parsed memories to format
+ * @param options Formatting options
+ * @returns Formatted markdown string, or empty string if no memories
+ *
+ * @example
+ * ```typescript
+ * const memories = await getRelevantMemoriesForTask(taskId, outcomeId);
+ * const markdown = formatMemoriesForContext(memories);
+ * // Returns formatted markdown like:
+ * // ## Cross-Outcome Knowledge
+ * //
+ * // ### 💡 Lessons Learned
+ * // - **[HIGH]** Always validate input at API boundaries
+ * //   _Source: Outcome out_abc123... | Date: Jan 15, 2026_
+ * ```
+ */
+export function formatMemoriesForContext(
+  memories: ParsedMemory[],
+  options: MemoryFormatOptions = {}
+): string {
+  // Handle empty or invalid input
+  if (!memories || !Array.isArray(memories) || memories.length === 0) {
+    return '';
+  }
+
+  // Merge options with defaults
+  const opts: Required<MemoryFormatOptions> = {
+    ...DEFAULT_FORMAT_OPTIONS,
+    ...options,
+  };
+
+  // Limit number of memories
+  const limitedMemories = memories.slice(0, opts.maxMemories);
+
+  const parts: string[] = [];
+
+  // Header
+  parts.push('## Cross-Outcome Knowledge');
+  parts.push('');
+  parts.push('_The following learnings from previous work may be relevant to this task._');
+  parts.push('');
+
+  if (opts.groupByType) {
+    // Group memories by type
+    const grouped = groupMemoriesByType(limitedMemories);
+
+    // Define display order (most important types first)
+    const typeOrder = ['lesson', 'pattern', 'decision', 'fact', 'preference', 'context'];
+
+    for (const type of typeOrder) {
+      const typeMemories = grouped[type];
+      if (!typeMemories || typeMemories.length === 0) continue;
+
+      const display = MEMORY_TYPE_DISPLAY[type] || { label: type, icon: '📝' };
+      parts.push(`### ${display.icon} ${display.label}`);
+      parts.push('');
+
+      for (const memory of typeMemories) {
+        parts.push(formatSingleMemory(memory, opts));
+        parts.push('');
+      }
+    }
+
+    // Handle any types not in the predefined order
+    for (const [type, typeMemories] of Object.entries(grouped)) {
+      if (typeOrder.includes(type)) continue;
+      if (!typeMemories || typeMemories.length === 0) continue;
+
+      const display = MEMORY_TYPE_DISPLAY[type] || { label: type, icon: '📝' };
+      parts.push(`### ${display.icon} ${display.label}`);
+      parts.push('');
+
+      for (const memory of typeMemories) {
+        parts.push(formatSingleMemory(memory, opts));
+        parts.push('');
+      }
+    }
+  } else {
+    // Flat list without grouping
+    for (const memory of limitedMemories) {
+      const typeDisplay = MEMORY_TYPE_DISPLAY[memory.type] || { label: memory.type, icon: '📝' };
+      parts.push(`**[${typeDisplay.label.toUpperCase()}]** ${formatSingleMemory(memory, opts)}`);
+      parts.push('');
+    }
+  }
+
+  // Add truncation notice if we limited the memories
+  if (memories.length > opts.maxMemories) {
+    parts.push(`_Note: ${memories.length - opts.maxMemories} additional memories were omitted for brevity._`);
+    parts.push('');
+  }
+
+  parts.push('---');
+  parts.push('');
+
+  return parts.join('\n');
+}
+
+/**
+ * Group memories by their type
+ */
+function groupMemoriesByType(memories: ParsedMemory[]): Record<string, ParsedMemory[]> {
+  const grouped: Record<string, ParsedMemory[]> = {};
+
+  for (const memory of memories) {
+    const type = memory.type || 'context';
+    if (!grouped[type]) {
+      grouped[type] = [];
+    }
+    grouped[type].push(memory);
+  }
+
+  // Sort each group by importance (critical first) then by date (newest first)
+  const importancePriority: Record<string, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+
+  for (const type of Object.keys(grouped)) {
+    grouped[type].sort((a, b) => {
+      // First by importance
+      const importanceA = importancePriority[a.importance] ?? 4;
+      const importanceB = importancePriority[b.importance] ?? 4;
+      if (importanceA !== importanceB) {
+        return importanceA - importanceB;
+      }
+      // Then by date (newest first)
+      return (b.created_at || 0) - (a.created_at || 0);
+    });
+  }
+
+  return grouped;
+}
+
+/**
+ * Format memories for a compact single-line context
+ * Useful when you need a brief summary rather than full markdown
+ *
+ * @param memories Array of parsed memories
+ * @param maxLength Maximum total length (default: 1000)
+ * @returns Compact formatted string
+ */
+export function formatMemoriesCompact(
+  memories: ParsedMemory[],
+  maxLength: number = 1000
+): string {
+  if (!memories || memories.length === 0) {
+    return '';
+  }
+
+  const items: string[] = [];
+  let currentLength = 0;
+
+  // Sort by importance
+  const sorted = [...memories].sort((a, b) => {
+    const importanceOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    return (importanceOrder[a.importance] ?? 4) - (importanceOrder[b.importance] ?? 4);
+  });
+
+  for (const memory of sorted) {
+    const formatted = `[${memory.type}] ${truncateContent(memory.content, 100)}`;
+
+    // Check if adding this would exceed max length
+    if (currentLength + formatted.length + 3 > maxLength) { // +3 for " | " separator
+      break;
+    }
+
+    items.push(formatted);
+    currentLength += formatted.length + 3;
+  }
+
+  if (items.length === 0) {
+    return '';
+  }
+
+  return `Relevant knowledge: ${items.join(' | ')}`;
 }

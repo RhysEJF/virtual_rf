@@ -15,7 +15,7 @@ import {
 } from '../db/homr';
 import { getOutcomeById } from '../db/outcomes';
 import { getLatestDesignDoc } from '../db/design-docs';
-import type { Task, Intent, HomrDiscovery, HomrAmbiguitySignal } from '../db/schema';
+import type { Task, Intent, HomrDiscovery, HomrAmbiguitySignal, HomrQuestionOption } from '../db/schema';
 import type { ObservationResult, ObserveTaskInput, ParsedContextStore } from './types';
 import { buildObservationPrompt, parseObservationResponse } from './prompts';
 
@@ -465,32 +465,65 @@ export function createFailurePatternAmbiguity(
     repeated_drift: 'A recurring issue is causing drift. How should we address it?',
   };
 
+  // Check if failures are turn-limit related
+  const evidenceText = failureResult.evidence.join(' ').toLowerCase();
+  const isTurnLimitIssue = evidenceText.includes('turn') ||
+                           evidenceText.includes('max_turns') ||
+                           evidenceText.includes('iteration') ||
+                           evidenceText.includes('20 turns');
+
+  // Base options that always apply
+  const options: HomrQuestionOption[] = [];
+
+  // If turn limit related, offer decomposition and turn increase first
+  if (isTurnLimitIssue) {
+    options.push(
+      {
+        id: 'break_into_subtasks',
+        label: 'Break into Subtasks',
+        description: 'Split the complex task into smaller, manageable pieces',
+        implications: 'Task will be decomposed into subtasks that fit within turn limits',
+      },
+      {
+        id: 'increase_turn_limit',
+        label: 'Increase Turn Limit',
+        description: 'Double the max turns (40 → 80) and retry the task',
+        implications: 'Worker gets more iterations but task may still be too complex',
+      }
+    );
+  }
+
+  // Always include these options
+  options.push(
+    {
+      id: 'continue_with_guidance',
+      label: 'Continue with Guidance',
+      description: 'Add specific instructions and let workers retry',
+      implications: 'You\'ll provide additional context to help workers succeed',
+    },
+    {
+      id: 'pause_and_review',
+      label: 'Pause for Review',
+      description: 'Stop all workers and review what went wrong',
+      implications: 'Work will stop until you manually resume after investigation',
+    },
+    {
+      id: 'skip_failing_tasks',
+      label: 'Skip Failing Tasks',
+      description: 'Mark stuck tasks as failed and continue with others',
+      implications: 'Some work may be incomplete but progress will continue',
+    }
+  );
+
   return {
     detected: true,
     type: 'blocking_decision',
     description: descriptions[failureResult.pattern!] || 'Work appears to be stuck',
     evidence: failureResult.evidence,
     affectedTasks: [taskId], // Will be expanded by escalator
-    suggestedQuestion: questions[failureResult.pattern!] || 'How should we proceed?',
-    options: [
-      {
-        id: 'pause_and_review',
-        label: 'Pause for Review',
-        description: 'Stop all workers and review what went wrong',
-        implications: 'Work will stop until you manually resume after investigation',
-      },
-      {
-        id: 'continue_with_guidance',
-        label: 'Continue with Guidance',
-        description: 'Add specific instructions and let workers retry',
-        implications: 'You\'ll provide additional context to help workers succeed',
-      },
-      {
-        id: 'skip_failing_tasks',
-        label: 'Skip Failing Tasks',
-        description: 'Mark stuck tasks as failed and continue with others',
-        implications: 'Some work may be incomplete but progress will continue',
-      },
-    ],
+    suggestedQuestion: isTurnLimitIssue
+      ? 'Tasks are hitting turn limits. Should we break them into smaller pieces or increase the limit?'
+      : (questions[failureResult.pattern!] || 'How should we proceed?'),
+    options,
   };
 }

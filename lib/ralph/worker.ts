@@ -79,7 +79,7 @@ export interface RalphConfig {
   // Pre-claim complexity check options
   enableComplexityCheck?: boolean; // Default true - check task complexity before claiming
   autoDecompose?: boolean; // Default false - auto-decompose high-complexity tasks
-  maxTurns?: number; // Default 20 - worker's max turns per task
+  maxTurns?: number; // Default 40 - worker's max turns per task
 }
 
 // ============================================================================
@@ -314,7 +314,7 @@ export function getCircuitBreakerStatus(outcomeId: string): {
  * Configuration for pre-claim complexity check
  */
 export interface ComplexityCheckConfig {
-  maxTurns: number;                 // Worker's max turns limit (default: 20)
+  maxTurns: number;                 // Worker's max turns limit (default: 40)
   autoDecompose: boolean;           // Auto-decompose high-complexity tasks (default: false)
   escalateOnHighComplexity: boolean; // Create escalation for human decision (default: true)
   complexityThreshold: number;      // Complexity score threshold (default: 6)
@@ -322,7 +322,7 @@ export interface ComplexityCheckConfig {
 }
 
 const DEFAULT_COMPLEXITY_CHECK_CONFIG: ComplexityCheckConfig = {
-  maxTurns: 20,
+  maxTurns: 40,
   autoDecompose: false,
   escalateOnHighComplexity: true,
   complexityThreshold: 6,
@@ -803,7 +803,7 @@ export async function startRalphWorker(
     circuitBreakerThreshold = 3,
     enableComplexityCheck = true,
     autoDecompose = false,
-    maxTurns = 20,
+    maxTurns = 40,
   } = config;
 
   // Build complexity check config
@@ -1830,7 +1830,7 @@ export interface WorkerLoopOptions {
   maxIterations?: number;         // Override max iterations
   enableComplexityCheck?: boolean; // Enable pre-claim complexity check (default: true)
   autoDecompose?: boolean;         // Auto-decompose high-complexity tasks (default: false)
-  maxTurns?: number;               // Worker's max turns per task (default: 20)
+  maxTurns?: number;               // Worker's max turns per task (default: 40)
 }
 
 /**
@@ -1850,7 +1850,7 @@ export async function runWorkerLoop(
     maxIterations = 50,
     enableComplexityCheck = true,
     autoDecompose = false,
-    maxTurns = 20,
+    maxTurns = 40,
   } = options;
 
   // Build complexity check config

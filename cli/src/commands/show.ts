@@ -12,6 +12,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Outcome, Task, Worker } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 // Extended types for the show command response
 interface TaskStats {
@@ -150,13 +151,23 @@ function truncate(text: string, maxLength: number): string {
   return text.substring(0, maxLength - 1) + '…';
 }
 
-export const showCommand = new Command('show')
+interface ShowOptions extends OutputOptions {
+  tasks?: boolean;
+  workers?: boolean;
+  intent?: boolean;
+}
+
+const command = new Command('show')
   .description('Show detailed outcome information')
   .argument('<id>', 'Outcome ID to display')
   .option('--tasks', 'Show full task list', false)
   .option('--workers', 'Show full worker list', false)
-  .option('--intent', 'Show full intent text', false)
-  .action(async (id: string, options) => {
+  .option('--intent', 'Show full intent text', false);
+
+addOutputFlags(command);
+
+export const showCommand = command
+  .action(async (id: string, options: ShowOptions) => {
     try {
       // Fetch outcome details with relations
       const detailResponse = await api.get<OutcomeDetailResponse>(`/outcomes/${id}`);
@@ -170,6 +181,18 @@ export const showCommand = new Command('show')
 
       const { tasks } = tasksResponse;
       const { workers } = workersResponse;
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        const data = {
+          ...detailResponse,
+          tasks,
+          workers,
+        };
+        if (handleOutput(data, options, outcome.id)) {
+          return;
+        }
+      }
 
       // Header
       console.log();

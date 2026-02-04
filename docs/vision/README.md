@@ -45,11 +45,13 @@ As James Phoenix noted: "The PRD shows WHAT the app will do, the Design shows HO
 |--------|--------|--------|---------|
 | **API** | [API.md](./API.md) | [Design](../design/API.md) | Unified conversational API layer |
 | **CLI** | [CLI.md](./CLI.md) | [Design](../design/CLI.md) | Terminal interface (`rf` command) |
+| **Conversational** | [CONVERSATIONAL-API.md](./CONVERSATIONAL-API.md) | - | Telegram/chat interface |
 | **Deployment** | [DEPLOYMENT.md](./DEPLOYMENT.md) | [Design](../design/DEPLOYMENT.md) | Always-on hosting and chat interfaces |
 | **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Design](../design/DISPATCHER.md) | Request routing and classification |
 | **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Design](../design/ORCHESTRATION.md) | Two-phase execution management |
 | **Worker** | [WORKER.md](./WORKER.md) | [Design](../design/WORKER.md) | Task execution engine (Ralph) |
 | **HOMЯ** | [HOMЯ](../homr/VISION.md) | [Design](../homr/DESIGN.md) | Intelligent orchestration layer |
+| **Learnings** | [Learnings](../learnings/VISION.md) | [Design](../learnings/DESIGN.md) | Cross-outcome memory system |
 | **Skills** | [SKILLS.md](./SKILLS.md) | [Design](../design/SKILLS.md) | Reusable instruction system |
 | **Review** | [REVIEW.md](./REVIEW.md) | [Design](../design/REVIEW.md) | Quality assurance and iteration |
 | **Supervisor** | [SUPERVISOR.md](./SUPERVISOR.md) | [Design](../design/SUPERVISOR.md) | Safety monitoring and alerts |

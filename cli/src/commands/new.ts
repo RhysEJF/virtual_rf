@@ -9,8 +9,9 @@ import { Command } from 'commander';
 import { input, editor, confirm, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, DispatchResponse, MatchedOutcome } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
-interface NewCommandOptions {
+interface NewCommandOptions extends OutputOptions {
   quick?: boolean;
   skipMatching?: boolean;
   interactive?: boolean;
@@ -128,15 +129,43 @@ async function handleMatchedOutcomes(
     return;
   }
 
-  // User chose an existing outcome - show how to add to it
+  // User chose an existing outcome - send the message via chat/iterate
   const selectedOutcome = matches.find(m => m.id === choice);
   console.log();
   console.log(chalk.green('✓') + ` Selected: ${selectedOutcome?.name}`);
   console.log();
-  console.log(chalk.gray(`To add work to this outcome, use:`));
-  console.log(chalk.cyan(`  rf show ${choice}`));
-  console.log(chalk.gray(`Or view in browser: http://localhost:3000/outcome/${choice}`));
-  console.log();
+  console.log(chalk.gray('Adding to outcome...'));
+
+  try {
+    // Use the iterate API to process the request and create tasks
+    const iterateResponse = await api.iterate.submit(choice, originalInput);
+
+    console.log();
+    if (iterateResponse.tasksCreated && iterateResponse.tasksCreated > 0) {
+      console.log(chalk.green('✓') + ` Created ${iterateResponse.tasksCreated} task(s) from your request`);
+      if (iterateResponse.taskIds && iterateResponse.taskIds.length > 0) {
+        for (const taskId of iterateResponse.taskIds) {
+          console.log(`  ${chalk.gray('•')} ${taskId}`);
+        }
+      }
+      if (iterateResponse.workerId) {
+        console.log();
+        console.log(chalk.cyan('ℹ') + ` Worker started: ${iterateResponse.workerId}`);
+      }
+    } else {
+      console.log(chalk.yellow('ℹ') + ' Request processed, but no new tasks created');
+    }
+
+    console.log();
+    console.log(chalk.gray(`View outcome: flow show ${choice}`));
+    console.log(chalk.gray(`Start worker: flow start ${choice}`));
+    console.log();
+  } catch (err) {
+    console.error(chalk.red('Error adding to outcome:'), err instanceof Error ? err.message : 'Unknown error');
+    console.log();
+    console.log(chalk.gray(`Try manually: flow chat ${choice} "${originalInput.substring(0, 50)}..."`));
+    console.log();
+  }
 }
 
 /**
@@ -186,12 +215,16 @@ async function handleDispatchResponse(response: DispatchResponse, originalInput:
   }
 }
 
-export const newCommand = new Command('new')
+const command = new Command('new')
   .description('Create a new outcome via the dispatch API')
   .argument('[description...]', 'Description of what you want to achieve')
   .option('-q, --quick', 'Request quick mode (immediate response, no outcome)')
   .option('-s, --skip-matching', 'Skip matching against existing outcomes')
-  .option('-i, --interactive', 'Force interactive mode to enter description')
+  .option('-i, --interactive', 'Force interactive mode to enter description');
+
+addOutputFlags(command);
+
+export const newCommand = command
   .action(async (descriptionParts: string[], options: NewCommandOptions) => {
     try {
       let description = descriptionParts.join(' ').trim();
@@ -236,13 +269,22 @@ export const newCommand = new Command('new')
       }
 
       // Send to dispatch API
-      console.log();
-      console.log(chalk.gray('Processing request...'));
+      if (!options.json && !options.quiet) {
+        console.log();
+        console.log(chalk.gray('Processing request...'));
+      }
 
       const response = await api.dispatch.send(description, {
         modeHint: options.quick ? 'quick' : 'smart',
         skipMatching: options.skipMatching,
       });
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        if (handleOutput(response, options, response.outcomeId)) {
+          return;
+        }
+      }
 
       // Handle the response based on type
       await handleDispatchResponse(response, description);

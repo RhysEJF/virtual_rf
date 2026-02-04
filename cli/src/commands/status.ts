@@ -7,10 +7,15 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, OutcomeWithCounts } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
-export const statusCommand = new Command('status')
-  .description('Show system status overview')
-  .action(async () => {
+const command = new Command('status')
+  .description('Show system status overview');
+
+addOutputFlags(command);
+
+export const statusCommand = command
+  .action(async (options: OutputOptions) => {
     try {
       // Fetch supervisor status and outcomes in parallel
       const [supervisorStatus, outcomesResponse] = await Promise.all([
@@ -19,6 +24,25 @@ export const statusCommand = new Command('status')
       ]);
 
       const outcomes = outcomesResponse.outcomes as OutcomeWithCounts[];
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        const data = {
+          supervisor: supervisorStatus,
+          outcomes,
+          summary: {
+            totalOutcomes: outcomes.length,
+            activeOutcomes: outcomes.filter(o => o.status === 'active').length,
+            totalTasks: outcomes.reduce((sum, o) => sum + o.total_tasks, 0),
+            completedTasks: outcomes.reduce((sum, o) => sum + o.completed_tasks, 0),
+            pendingTasks: outcomes.reduce((sum, o) => sum + o.pending_tasks, 0),
+            activeWorkers: outcomes.reduce((sum, o) => sum + o.active_workers, 0),
+          },
+        };
+        if (handleOutput(data, options)) {
+          return;
+        }
+      }
 
       // Header
       console.log();

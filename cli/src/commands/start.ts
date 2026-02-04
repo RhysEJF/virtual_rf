@@ -7,6 +7,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError } from '../api.js';
+import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 // Response type for starting a worker
 interface StartWorkerResponse {
@@ -24,15 +25,26 @@ interface WorkerConflictError {
   runningCount?: number;
 }
 
-export const startCommand = new Command('start')
+interface StartOptions extends OutputOptions {
+  parallel: boolean;
+  worktree: boolean;
+}
+
+const command = new Command('start')
   .description('Start a worker for an outcome')
   .argument('<outcome-id>', 'The outcome ID to start a worker for')
   .option('-p, --parallel', 'Allow starting even if another worker is running', false)
-  .option('-w, --worktree', 'Use git worktree for worker isolation', false)
-  .action(async (outcomeId: string, options: { parallel: boolean; worktree: boolean }) => {
+  .option('-w, --worktree', 'Use git worktree for worker isolation', false);
+
+addOutputFlags(command);
+
+export const startCommand = command
+  .action(async (outcomeId: string, options: StartOptions) => {
     try {
-      console.log();
-      console.log(chalk.gray(`Starting worker for outcome ${outcomeId}...`));
+      if (!options.json && !options.quiet) {
+        console.log();
+        console.log(chalk.gray(`Starting worker for outcome ${outcomeId}...`));
+      }
 
       const response = await api.post<StartWorkerResponse>(
         `/outcomes/${outcomeId}/workers`,
@@ -41,6 +53,13 @@ export const startCommand = new Command('start')
           useWorktree: options.worktree,
         }
       );
+
+      // Handle JSON/quiet output
+      if (options.json || options.quiet) {
+        if (handleOutput(response, options, response.workerId)) {
+          return;
+        }
+      }
 
       console.log();
       console.log(chalk.green('✓'), chalk.bold('Worker started successfully'));

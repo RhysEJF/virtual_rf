@@ -14,3 +14,5 @@ export { escalationsCommand } from './escalations.js';
 export { answerCommand } from './answer.js';
 export { dismissCommand } from './dismiss.js';
 export { chatCommand } from './chat.js';
+export { skillsCommand } from './skills.js';
+export { toolsCommand } from './tools.js';

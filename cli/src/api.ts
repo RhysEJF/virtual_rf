@@ -246,6 +246,164 @@ export interface ProgressResponse {
   entries: ProgressEntry[];
 }
 
+// HOMЯ types
+export type HomrDiscoveryType = 'pattern' | 'constraint' | 'insight' | 'blocker';
+
+export interface HomrDiscovery {
+  type: HomrDiscoveryType;
+  content: string;
+  source: string;
+  createdAt: number;
+}
+
+export interface HomrDecision {
+  question: string;
+  answer: string;
+  context: string;
+  decidedAt: number;
+}
+
+export interface HomrConstraint {
+  rule: string;
+  reason: string;
+  addedAt: number;
+}
+
+export interface HomrContextInjection {
+  taskId: string;
+  injectedAt: number;
+  content: string;
+}
+
+export interface HomrObservation {
+  id: string;
+  outcomeId: string;
+  taskId: string;
+  workerOutput: string;
+  analysis: {
+    summary: string;
+    discoveries: HomrDiscovery[];
+    concerns: string[];
+    nextSteps: string[];
+  };
+  createdAt: number;
+}
+
+export interface HomrEscalationOption {
+  id: string;
+  label: string;
+  description: string;
+  implications: string;
+}
+
+export interface HomrEscalation {
+  id: string;
+  outcomeId: string;
+  status: 'pending' | 'answered' | 'dismissed';
+  trigger: {
+    type: string;
+    taskId: string;
+    evidence: string[];
+  };
+  question: {
+    text: string;
+    context: string;
+    options: HomrEscalationOption[];
+  };
+  answer?: {
+    selectedOption: string;
+    additionalContext?: string;
+    answeredAt: number;
+  };
+  createdAt: number;
+}
+
+export interface HomrActivity {
+  id: number;
+  outcomeId: string;
+  type: string;
+  summary: string;
+  details: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface HomrStatusResponse {
+  tasksObserved: number;
+  discoveriesExtracted: number;
+  escalationsCreated: number;
+  steeringActions: number;
+  recentObservations: HomrObservation[];
+  pendingEscalations: HomrEscalation[];
+  recentActivity: HomrActivity[];
+}
+
+export interface HomrContextResponse {
+  outcomeId: string;
+  discoveries: HomrDiscovery[];
+  decisions: HomrDecision[];
+  constraints: HomrConstraint[];
+  injections: HomrContextInjection[];
+  stats: {
+    tasksObserved: number;
+    discoveriesExtracted: number;
+    escalationsCreated: number;
+    steeringActions: number;
+  };
+  createdAt: number | null;
+  updatedAt: number | null;
+}
+
+export interface HomrEscalationsResponse {
+  outcomeId: string;
+  escalations: HomrEscalation[];
+  pendingCount: number;
+  total: number;
+}
+
+export interface HomrActivityResponse {
+  outcomeId: string;
+  activity: HomrActivity[];
+  total: number;
+}
+
+export interface HomrAggregateOutcome {
+  outcomeId: string;
+  outcomeName: string;
+  workersRunning: number;
+  workersTotal: number;
+  totalCost: number;
+  pendingEscalations: number;
+  failedTasks: number;
+}
+
+export interface HomrAggregateEscalation {
+  id: string;
+  outcomeId: string;
+  outcomeName: string;
+  createdAt: number;
+  status: string;
+  trigger: {
+    type: string;
+    taskId: string;
+    evidence: string[];
+  };
+  question: {
+    text: string;
+    context: string;
+    options: HomrEscalationOption[];
+  };
+}
+
+export interface HomrAggregateResponse {
+  totalWorkersRunning: number;
+  totalWorkers: number;
+  totalCost: number;
+  totalPending: number;
+  totalFailed: number;
+  outcomes: HomrAggregateOutcome[];
+  escalations: HomrAggregateEscalation[];
+}
+
 // Create/Update input types
 export interface CreateOutcomeInput {
   name: string;
@@ -497,6 +655,52 @@ export const api = {
     // Get supervisor status
     status(): Promise<SupervisorStatus> {
       return api.get<SupervisorStatus>('/supervisor');
+    },
+  },
+
+  // HOMЯ - Intelligent orchestration layer
+  homr: {
+    // Get HOMЯ status for an outcome (includes recent observations, pending escalations, activity)
+    status(outcomeId: string): Promise<HomrStatusResponse> {
+      return api.get<HomrStatusResponse>(`/outcomes/${outcomeId}/homr`);
+    },
+
+    // Get full context store for an outcome
+    context(outcomeId: string): Promise<HomrContextResponse> {
+      return api.get<HomrContextResponse>(`/outcomes/${outcomeId}/homr/context`);
+    },
+
+    // Get escalations for an outcome
+    escalations(outcomeId: string, params?: { pending?: boolean; limit?: number }): Promise<HomrEscalationsResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.pending) searchParams.set('pending', 'true');
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      const query = searchParams.toString();
+      return api.get<HomrEscalationsResponse>(`/outcomes/${outcomeId}/homr/escalations${query ? `?${query}` : ''}`);
+    },
+
+    // Get activity log for an outcome
+    activity(outcomeId: string, params?: { limit?: number; type?: string }): Promise<HomrActivityResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.type) searchParams.set('type', params.type);
+      const query = searchParams.toString();
+      return api.get<HomrActivityResponse>(`/outcomes/${outcomeId}/homr/activity${query ? `?${query}` : ''}`);
+    },
+
+    // Get aggregated HOMЯ stats across all outcomes
+    aggregate(): Promise<HomrAggregateResponse> {
+      return api.get<HomrAggregateResponse>('/homr/aggregate');
+    },
+
+    // Answer an escalation
+    answerEscalation(outcomeId: string, escalationId: string, answer: { selectedOption: string; additionalContext?: string }): Promise<{ success: boolean }> {
+      return api.post<{ success: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/answer`, answer);
+    },
+
+    // Dismiss an escalation
+    dismissEscalation(outcomeId: string, escalationId: string): Promise<{ success: boolean }> {
+      return api.post<{ success: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/dismiss`);
     },
   },
 };

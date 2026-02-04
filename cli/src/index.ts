@@ -6,7 +6,7 @@ import { statusCommand, listCommand, showCommand, newCommand, startCommand, stop
 const program = new Command();
 
 program
-  .name('rf')
+  .name('flow')
   .description('CLI for Digital Twin API - manage outcomes and workers')
   .version('0.1.0');
 

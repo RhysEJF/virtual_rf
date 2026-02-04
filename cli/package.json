@@ -1,10 +1,10 @@
 {
-  "name": "rf-cli",
+  "name": "flow-cli",
   "version": "0.1.0",
   "description": "Command-line interface for Digital Twin API - outcome and worker management",
   "main": "dist/index.js",
   "bin": {
-    "rf": "./dist/index.js"
+    "flow": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

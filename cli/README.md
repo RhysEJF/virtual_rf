@@ -1,6 +1,6 @@
 # RF CLI
 
-Command-line interface for the Digital Twin API. Manage outcomes and workers from your terminal.
+Command-line inteflowace for the Digital Twin API. Manage outcomes and workers from your terminal.
 
 ## Installation
 
@@ -9,7 +9,7 @@ Command-line interface for the Digital Twin API. Manage outcomes and workers fro
 cd cli
 npm install
 npm run build
-npm link  # Makes 'rf' command available globally
+npm link  # Makes 'flow' command available globally
 ```
 
 ## Prerequisites
@@ -19,12 +19,12 @@ npm link  # Makes 'rf' command available globally
 
 ## Commands
 
-### `rf status`
+### `flow status`
 
 Shows system overview including supervisor status, alerts, and outcome statistics.
 
 ```bash
-rf status
+flow status
 ```
 
 **Example output:**
@@ -49,21 +49,21 @@ Active Outcomes
   • Documentation Update [3/3 tasks] ⟳
 ```
 
-### `rf list`
+### `flow list`
 
 Lists outcomes with optional status filter, displayed as a formatted table.
 
 ```bash
 # List all non-archived outcomes
-rf list
+flow list
 
 # Filter by status
-rf list --status active
-rf list --status dormant
-rf list --status achieved
+flow list --status active
+flow list --status dormant
+flow list --status achieved
 
 # Include archived outcomes
-rf list --all
+flow list --all
 ```
 
 **Options:**
@@ -84,25 +84,25 @@ out_def456uvw   API Refactoring                 dormant   0/4
 2 active, 1 worker running
 ```
 
-### `rf show <id>`
+### `flow show <id>`
 
 Displays detailed information about a specific outcome.
 
 ```bash
 # Basic usage
-rf show out_gQ7CClmB4h5
+flow show out_gQ7CClmB4h5
 
 # Show all tasks
-rf show out_gQ7CClmB4h5 --tasks
+flow show out_gQ7CClmB4h5 --tasks
 
 # Show all workers
-rf show out_gQ7CClmB4h5 --workers
+flow show out_gQ7CClmB4h5 --workers
 
 # Show full intent text
-rf show out_gQ7CClmB4h5 --intent
+flow show out_gQ7CClmB4h5 --intent
 
 # Combine options
-rf show out_gQ7CClmB4h5 --tasks --workers --intent
+flow show out_gQ7CClmB4h5 --tasks --workers --intent
 ```
 
 **Options:**
@@ -125,15 +125,15 @@ Info
   Updated:    1h ago
 
 Intent
-  Build a command-line interface that talks to the Digital Twin...
+  Build a command-line inteflowace that talks to the Digital Twin...
   (use --intent to see full text)
 
 Tasks
   Total: 8 — 5 completed, 1 running, 2 pending
 
     • Set up CLI project structure completed
-    • Implement rf status command completed
-    • Implement rf list command completed
+    • Implement flow status command completed
+    • Implement flow list command completed
     ... and 5 more (use --tasks to see all)
 
 Workers
@@ -147,27 +147,27 @@ Convergence
   Review cycles: 2
 ```
 
-### `rf new [name]`
+### `flow new [name]`
 
 Creates a new outcome. Supports both interactive and non-interactive modes.
 
 ```bash
 # Interactive mode (prompts for details)
-rf new
+flow new
 
 # Quick creation with name only
-rf new "Build user dashboard"
+flow new "Build user dashboard"
 
 # Full non-interactive creation
-rf new "Build user dashboard" \
+flow new "Build user dashboard" \
   --brief "Create a dashboard showing user metrics and activity" \
   --timeline "1 week"
 
 # Create as sub-outcome
-rf new "API endpoints" --parent out_abc123
+flow new "API endpoints" --parent out_abc123
 
 # With git integration
-rf new "Feature branch work" \
+flow new "Feature branch work" \
   --directory /path/to/project \
   --git-mode branch \
   --base-branch main \
@@ -176,7 +176,7 @@ rf new "Feature branch work" \
   --create-pr
 
 # Force interactive mode even with name
-rf new "Quick idea" --interactive
+flow new "Quick idea" --interactive
 ```
 
 **Options:**
@@ -203,25 +203,25 @@ rf new "Quick idea" --interactive
   Brief: Create a dashboard showing user metrics and activity...
   Timeline: 1 week
 
-View details: rf show out_xyz789abc
+View details: flow show out_xyz789abc
 ```
 
-### `rf start <outcome-id>`
+### `flow start <outcome-id>`
 
 Starts a worker for an outcome.
 
 ```bash
 # Start a worker
-rf start out_gQ7CClmB4h5
+flow start out_gQ7CClmB4h5
 
 # Start additional worker (parallel execution)
-rf start out_gQ7CClmB4h5 --parallel
+flow start out_gQ7CClmB4h5 --parallel
 
 # Use git worktree for isolation
-rf start out_gQ7CClmB4h5 --worktree
+flow start out_gQ7CClmB4h5 --worktree
 
 # Combine options
-rf start out_gQ7CClmB4h5 --parallel --worktree
+flow start out_gQ7CClmB4h5 --parallel --worktree
 ```
 
 **Options:**
@@ -241,7 +241,7 @@ Starting worker for outcome out_gQ7CClmB4h5...
   Mode:      Parallel
   Isolation: Git Worktree
 
-Use 'rf show out_gQ7CClmB4h5' to monitor progress
+Use 'flow show out_gQ7CClmB4h5' to monitor progress
 ```
 
 **Error handling:**
@@ -254,12 +254,12 @@ Warning: A worker is already running for this outcome
 Use --parallel flag to start another worker
 ```
 
-### `rf stop <worker-id>`
+### `flow stop <worker-id>`
 
 Stops (pauses) a running worker.
 
 ```bash
-rf stop wrk_abc123xyz
+flow stop wrk_abc123xyz
 ```
 
 **Example output:**
@@ -274,7 +274,7 @@ Stopping worker wrk_abc123xyz...
   Iteration: 5
   Task:      task_VSP9-XeS3ES4
 
-Use 'rf start out_gQ7CClmB4h5' to start a new worker
+Use 'flow start out_gQ7CClmB4h5' to start a new worker
 ```
 
 **Status handling:**
@@ -288,60 +288,60 @@ Use 'rf start out_gQ7CClmB4h5' to start a new worker
 
 ```bash
 # Create the outcome
-rf new "Implement user authentication"
+flow new "Implement user authentication"
 
 # View the details (tasks generated automatically)
-rf show out_xyz789
+flow show out_xyz789
 
 # Start a worker
-rf start out_xyz789
+flow start out_xyz789
 
 # Monitor progress
-rf status
-rf show out_xyz789
+flow status
+flow show out_xyz789
 ```
 
 ### Check system health
 
 ```bash
 # Quick overview
-rf status
+flow status
 
 # See all active outcomes
-rf list --status active
+flow list --status active
 
 # Check specific outcome in detail
-rf show out_xyz789 --tasks --workers
+flow show out_xyz789 --tasks --workers
 ```
 
 ### Manage workers
 
 ```bash
 # Start a worker
-rf start out_xyz789
+flow start out_xyz789
 
 # Start parallel worker
-rf start out_xyz789 --parallel
+flow start out_xyz789 --parallel
 
 # Stop a worker
-rf stop wrk_abc123
+flow stop wrk_abc123
 
 # Check worker status
-rf show out_xyz789 --workers
+flow show out_xyz789 --workers
 ```
 
 ### Organize with sub-outcomes
 
 ```bash
 # Create parent outcome
-rf new "Q1 Goals"
+flow new "Q1 Goals"
 
 # Create sub-outcomes
-rf new "Launch feature X" --parent out_q1goals
-rf new "Improve performance" --parent out_q1goals
+flow new "Launch feature X" --parent out_q1goals
+flow new "Improve peflowormance" --parent out_q1goals
 
 # View hierarchy
-rf show out_q1goals
+flow show out_q1goals
 ```
 
 ## Configuration
@@ -355,8 +355,8 @@ The CLI provides clear error messages for common issues:
 | Error | Cause | Solution |
 |-------|-------|----------|
 | "Could not connect to Digital Twin API" | Server not running | Run `npm run dev` from main project |
-| "Outcome not found" | Invalid outcome ID | Check ID with `rf list` |
-| "Worker not found" | Invalid worker ID | Check ID with `rf show <outcome-id>` |
+| "Outcome not found" | Invalid outcome ID | Check ID with `flow list` |
+| "Worker not found" | Invalid worker ID | Check ID with `flow show <outcome-id>` |
 | "A worker is already running" | Worker conflict | Use `--parallel` flag |
 
 ## Development

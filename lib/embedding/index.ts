@@ -30,3 +30,19 @@ export {
   type QueryExpansionResult,
   type ExpandedQuery,
 } from './query-expansion';
+
+// Hybrid Search exports
+export {
+  searchMemoriesHybrid,
+  searchMemoriesHybridSimple,
+  searchMemoriesHybridWeighted,
+  searchMemoriesVector,
+  searchMemoriesVectorByQuery,
+  searchMemoriesBM25Only,
+  searchMemoriesVectorOnly,
+  isHybridSearchAvailable,
+  type HybridSearchResult,
+  type HybridSearchOptions,
+  type HybridSearchResponse,
+  type VectorSearchResult,
+} from './hybrid-search';

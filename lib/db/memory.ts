@@ -1201,3 +1201,22 @@ export async function searchMemoriesWithExpansion(
 
   return response.results.map(r => r.memory);
 }
+
+// ============================================================================
+// Hybrid Search (Re-export from embedding module)
+// ============================================================================
+
+export {
+  searchMemoriesHybrid,
+  searchMemoriesHybridSimple,
+  searchMemoriesHybridWeighted,
+  searchMemoriesVector,
+  searchMemoriesVectorByQuery,
+  searchMemoriesBM25Only,
+  searchMemoriesVectorOnly,
+  isHybridSearchAvailable,
+  type HybridSearchResult,
+  type HybridSearchOptions,
+  type HybridSearchResponse,
+  type VectorSearchResult,
+} from '../embedding/hybrid-search';

@@ -7,3 +7,5 @@ export { startCommand } from './start.js';
 export { stopCommand } from './stop.js';
 export { updateCommand } from './update.js';
 export { archiveCommand } from './archive.js';
+export { taskCommand } from './task.js';
+export { tasksCommand } from './tasks.js';

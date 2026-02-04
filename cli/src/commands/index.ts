@@ -16,3 +16,5 @@ export { dismissCommand } from './dismiss.js';
 export { chatCommand } from './chat.js';
 export { skillsCommand } from './skills.js';
 export { toolsCommand } from './tools.js';
+export { skillCommand } from './skill.js';
+export { toolCommand } from './tool.js';

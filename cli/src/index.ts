@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, chatCommand } from './commands/index.js';
 
 const program = new Command();
 
@@ -25,5 +25,6 @@ program.addCommand(homrCommand);
 program.addCommand(escalationsCommand);
 program.addCommand(answerCommand);
 program.addCommand(dismissCommand);
+program.addCommand(chatCommand);
 
 program.parse(process.argv);

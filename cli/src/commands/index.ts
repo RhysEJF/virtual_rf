@@ -25,3 +25,4 @@ export { workerCommand } from './worker.js';
 export { interveneCommand } from './intervene.js';
 export { configCommand } from './config.js';
 export { syncCommand } from './sync.js';
+export { retroCommand } from './retro.js';

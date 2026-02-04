@@ -10,10 +10,9 @@
  * - Auto-resolve settings toggle
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
 
 interface HomrStatus {
   enabled: boolean;
@@ -117,25 +116,34 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
     }
   };
 
-  const handleThresholdChange = async (threshold: number) => {
-    setAutoResolveConfig(prev => ({ ...prev, confidenceThreshold: threshold }));
-  };
+  // Debounce ref for auto-saving threshold
+  const thresholdDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleThresholdSave = async () => {
-    setSavingAutoResolve(true);
-    try {
-      const res = await fetch(`/api/outcomes/${outcomeId}/auto-resolve`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threshold: autoResolveConfig.confidenceThreshold }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAutoResolveConfig(data.config);
-      }
-    } finally {
-      setSavingAutoResolve(false);
+  const handleThresholdChange = (threshold: number) => {
+    // Update local state immediately for responsive UI
+    setAutoResolveConfig(prev => ({ ...prev, confidenceThreshold: threshold }));
+
+    // Debounce the save to avoid spamming the API while dragging
+    if (thresholdDebounceRef.current) {
+      clearTimeout(thresholdDebounceRef.current);
     }
+
+    thresholdDebounceRef.current = setTimeout(async () => {
+      setSavingAutoResolve(true);
+      try {
+        const res = await fetch(`/api/outcomes/${outcomeId}/auto-resolve`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threshold }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAutoResolveConfig(data.config);
+        }
+      } finally {
+        setSavingAutoResolve(false);
+      }
+    }, 500); // 500ms debounce
   };
 
   if (loading) {
@@ -243,30 +251,25 @@ export function HomrStatusCard({ outcomeId, onEscalationClick, onActivityClick }
               {/* Confidence Threshold */}
               {autoResolveConfig.mode !== 'manual' && (
                 <div>
-                  <label className="text-xs text-text-muted block mb-1">
-                    Confidence Threshold: {Math.round(autoResolveConfig.confidenceThreshold * 100)}%
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="1"
-                      step="0.05"
-                      value={autoResolveConfig.confidenceThreshold}
-                      onChange={(e) => handleThresholdChange(parseFloat(e.target.value))}
-                      className="flex-1 h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-primary"
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleThresholdSave}
-                      disabled={savingAutoResolve}
-                    >
-                      Save
-                    </Button>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-text-muted">
+                      Confidence: {Math.round(autoResolveConfig.confidenceThreshold * 100)}%
+                    </label>
+                    {savingAutoResolve && (
+                      <span className="text-xs text-text-muted">Saving...</span>
+                    )}
                   </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="1"
+                    step="0.05"
+                    value={autoResolveConfig.confidenceThreshold}
+                    onChange={(e) => handleThresholdChange(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent-primary"
+                  />
                   <p className="text-xs text-text-muted mt-1">
-                    Below this threshold, escalations go to human
+                    Higher = more human review, lower = more auto-resolve
                   </p>
                 </div>
               )}

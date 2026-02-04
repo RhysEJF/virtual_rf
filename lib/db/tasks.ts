@@ -849,6 +849,12 @@ export function failTask(taskId: string): Task | null {
   const task = getTaskById(taskId);
   if (!task) return null;
 
+  // NEVER reset decomposed tasks to pending - their subtasks should be worked on instead
+  if (task.decomposition_status === 'completed') {
+    console.log(`[Tasks] Skipping failTask for decomposed task ${taskId}`);
+    return task;
+  }
+
   if (task.attempts >= task.max_attempts) {
     // Mark as permanently failed
     db.prepare(`
@@ -882,6 +888,12 @@ export function releaseTask(taskId: string): Task | null {
   const task = getTaskById(taskId);
   if (!task) return null;
 
+  // NEVER reset decomposed tasks to pending - their subtasks should be worked on instead
+  if (task.decomposition_status === 'completed') {
+    console.log(`[Tasks] Skipping releaseTask for decomposed task ${taskId}`);
+    return task;
+  }
+
   db.prepare(`
     UPDATE tasks
     SET status = 'pending', claimed_by = NULL, claimed_at = NULL, updated_at = ?
@@ -914,10 +926,12 @@ export function cleanupStaleClaims(): number {
   const timestamp = now();
 
   // Find tasks claimed by stale workers
+  // NEVER reset decomposed tasks to pending - their subtasks should be worked on instead
   const result = db.prepare(`
     UPDATE tasks
     SET status = 'pending', claimed_by = NULL, claimed_at = NULL, updated_at = ?
     WHERE status IN ('claimed', 'running')
+    AND (decomposition_status IS NULL OR decomposition_status != 'completed')
     AND claimed_by IN (
       SELECT id FROM workers WHERE last_heartbeat < ? OR last_heartbeat IS NULL
     )

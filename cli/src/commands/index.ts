@@ -10,3 +10,4 @@ export { archiveCommand } from './archive.js';
 export { taskCommand } from './task.js';
 export { tasksCommand } from './tasks.js';
 export { homrCommand } from './homr.js';
+export { escalationsCommand } from './escalations.js';

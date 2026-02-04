@@ -13,8 +13,14 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { api, ApiError, NetworkError, HomrEscalation } from '../api.js';
+import { api, ApiError, NetworkError, HomrEscalation, Task, Worker } from '../api.js';
 import { addOutputFlags, OutputOptions } from '../utils/flags.js';
+
+// Track previous state for detecting changes
+interface PreviousState {
+  completedTasks: Set<string>;
+  runningWorkers: Set<string>;
+}
 
 /**
  * Formats a timestamp to relative time (e.g., "2h ago", "3d ago")
@@ -78,13 +84,45 @@ async function displayHomrStatus(
   outcomeId: string,
   options: HomrOptions,
   isSuperviseMode: boolean = false,
-  yoloResults?: { resolved: number; deferred: number; lastDecision?: string }
-): Promise<{ pendingCount: number; escalations: HomrEscalation[] }> {
+  yoloResults?: { resolved: number; deferred: number; lastDecision?: string },
+  previousState?: PreviousState
+): Promise<{ pendingCount: number; escalations: HomrEscalation[]; newCompletions: string[] }> {
   // Fetch HOMЯ context for the outcome
   const context = await api.homr.context(outcomeId);
 
   // Also fetch escalations to get pending count and details
   const escalationsData = await api.homr.escalations(outcomeId, { pending: true });
+
+  // Fetch tasks and workers for progress display (only in supervise mode)
+  let tasks: Task[] = [];
+  let workers: Worker[] = [];
+  let newCompletions: string[] = [];
+
+  if (isSuperviseMode) {
+    try {
+      const [tasksData, workersData] = await Promise.all([
+        api.outcomes.tasks(outcomeId),
+        api.workers.list({ outcome: outcomeId }),
+      ]);
+      tasks = tasksData.tasks;
+      workers = workersData.workers;
+
+      // Detect newly completed tasks
+      if (previousState) {
+        const currentCompleted = new Set(tasks.filter(t => t.status === 'completed').map(t => t.id));
+        for (const taskId of currentCompleted) {
+          if (!previousState.completedTasks.has(taskId)) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+              newCompletions.push(task.title);
+            }
+          }
+        }
+      }
+    } catch {
+      // Continue without task/worker data
+    }
+  }
 
   // Handle JSON output (only in non-supervise mode)
   if (options.json && !isSuperviseMode) {
@@ -93,7 +131,7 @@ async function displayHomrStatus(
       pendingEscalations: escalationsData.pendingCount,
     };
     console.log(JSON.stringify(data, null, 2));
-    return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations };
+    return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations, newCompletions };
   }
 
   // Handle quiet output - summary only (only in non-supervise mode)
@@ -102,7 +140,7 @@ async function displayHomrStatus(
     const decisionCount = context.decisions.length;
     const pendingCount = escalationsData.pendingCount;
     console.log(`${outcomeId}: ${discoveryCount} discoveries, ${decisionCount} decisions, ${pendingCount} pending escalations`);
-    return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations };
+    return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations, newCompletions };
   }
 
   // Normal output
@@ -126,6 +164,63 @@ async function displayHomrStatus(
     if (yoloResults.lastDecision) {
       console.log(`  ${chalk.cyan('Last decision:')} ${yoloResults.lastDecision}`);
     }
+    console.log();
+  }
+
+  // Task Progress (supervise mode only)
+  if (isSuperviseMode && tasks.length > 0) {
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    const running = tasks.filter(t => t.status === 'running').length;
+    const pending = tasks.filter(t => t.status === 'pending').length;
+    const failed = tasks.filter(t => t.status === 'failed').length;
+    const total = tasks.length;
+    const percent = Math.round((completed / total) * 100);
+
+    // Progress bar
+    const barWidth = 20;
+    const filledWidth = Math.round((completed / total) * barWidth);
+    const bar = chalk.green('█'.repeat(filledWidth)) + chalk.gray('░'.repeat(barWidth - filledWidth));
+
+    console.log(chalk.bold.cyan(`📊 Task Progress:`));
+    console.log(`  ${bar} ${percent}% (${completed}/${total})`);
+
+    // Status breakdown
+    const statusParts = [];
+    if (running > 0) statusParts.push(chalk.blue(`${running} running`));
+    if (pending > 0) statusParts.push(chalk.yellow(`${pending} pending`));
+    if (failed > 0) statusParts.push(chalk.red(`${failed} failed`));
+    if (statusParts.length > 0) {
+      console.log(`  ${statusParts.join(' • ')}`);
+    }
+
+    // Show newly completed tasks with celebration
+    if (newCompletions.length > 0) {
+      console.log();
+      console.log(chalk.bold.green(`🎉 Just Completed:`));
+      for (const title of newCompletions) {
+        console.log(`  ${chalk.green('✓')} ${title}`);
+      }
+    }
+
+    // Active workers
+    const activeWorkers = workers.filter(w => w.status === 'running');
+    if (activeWorkers.length > 0) {
+      console.log();
+      console.log(chalk.bold.blue(`👷 Active Workers: ${activeWorkers.length}`));
+      for (const worker of activeWorkers) {
+        const taskName = worker.current_task_id
+          ? tasks.find(t => t.id === worker.current_task_id)?.title || worker.current_task_id
+          : 'idle';
+        console.log(`  ${chalk.gray('•')} ${worker.name} → ${taskName.substring(0, 50)}${taskName.length > 50 ? '...' : ''}`);
+      }
+    }
+
+    // All tasks completed celebration
+    if (completed === total && total > 0) {
+      console.log();
+      console.log(chalk.bold.green(`✨ ALL TASKS COMPLETED! ✨`));
+    }
+
     console.log();
   }
 
@@ -194,7 +289,7 @@ async function displayHomrStatus(
     console.log();
   }
 
-  return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations };
+  return { pendingCount: escalationsData.pendingCount, escalations: escalationsData.escalations, newCompletions };
 }
 
 const command = new Command('homr')
@@ -224,6 +319,12 @@ export const homrCommand = command
 
       let yoloResults = { resolved: 0, deferred: 0, lastDecision: undefined as string | undefined };
 
+      // Track previous state for detecting changes
+      let previousState: PreviousState = {
+        completedTasks: new Set<string>(),
+        runningWorkers: new Set<string>(),
+      };
+
       // Handle Ctrl+C gracefully
       process.on('SIGINT', () => {
         console.log();
@@ -231,8 +332,18 @@ export const homrCommand = command
         process.exit(0);
       });
 
+      // Initial fetch to populate previous state
+      try {
+        const initialTasks = await api.outcomes.tasks(outcomeId);
+        previousState.completedTasks = new Set(
+          initialTasks.tasks.filter(t => t.status === 'completed').map(t => t.id)
+        );
+      } catch {
+        // Continue without initial state
+      }
+
       // Initial display
-      await displayHomrStatus(outcomeId, options, true, options.yolo ? yoloResults : undefined);
+      await displayHomrStatus(outcomeId, options, true, options.yolo ? yoloResults : undefined, previousState);
 
       // Poll every 5 seconds
       setInterval(async () => {
@@ -255,7 +366,17 @@ export const homrCommand = command
             }
           }
 
-          await displayHomrStatus(outcomeId, options, true, options.yolo ? yoloResults : undefined);
+          await displayHomrStatus(outcomeId, options, true, options.yolo ? yoloResults : undefined, previousState);
+
+          // Update previous state for next iteration
+          try {
+            const currentTasks = await api.outcomes.tasks(outcomeId);
+            previousState.completedTasks = new Set(
+              currentTasks.tasks.filter(t => t.status === 'completed').map(t => t.id)
+            );
+          } catch {
+            // Continue with existing state
+          }
         } catch (error) {
           // On error, show error but keep polling
           console.error(chalk.red('Error fetching status:'), error instanceof Error ? error.message : 'Unknown error');

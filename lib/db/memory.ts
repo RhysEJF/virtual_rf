@@ -1009,3 +1009,195 @@ export function getMemorySystemStats(): MemorySystemStats {
     byImportance,
   };
 }
+
+// ============================================================================
+// Query Expansion Search
+// ============================================================================
+
+import {
+  expandQuery,
+  getExpandedQueries,
+  combineQueryResults,
+  shouldExpandQuery,
+  type QueryExpansionOptions,
+  type QueryExpansionResult,
+  type ExpandedQuery,
+} from '../embedding/query-expansion';
+
+export {
+  expandQuery,
+  getExpandedQueries,
+  shouldExpandQuery,
+  type QueryExpansionOptions,
+  type QueryExpansionResult,
+  type ExpandedQuery,
+};
+
+/**
+ * Search result with expansion metadata
+ */
+export interface ExpandedSearchResult extends BM25SearchResult {
+  /** Which expanded query found this result */
+  matchedQuery: string;
+  /** Type of expansion that found this result */
+  expansionType: 'synonym' | 'related' | 'rephrase' | 'technical' | 'original';
+}
+
+/**
+ * Result from expanded search operation
+ */
+export interface ExpandedSearchResponse {
+  /** All results from expanded search, deduplicated */
+  results: ExpandedSearchResult[];
+  /** The original query */
+  originalQuery: string;
+  /** All queries used in the search */
+  expandedQueries: ExpandedQuery[];
+  /** Whether query expansion was used */
+  expansionUsed: boolean;
+  /** Total time for search including expansion */
+  totalDurationMs: number;
+  /** Time for query expansion alone */
+  expansionDurationMs: number;
+}
+
+/**
+ * Options for expanded memory search
+ */
+export interface ExpandedSearchOptions {
+  /** Maximum results per query (default: 10) */
+  limitPerQuery?: number;
+  /** Total maximum results (default: 20) */
+  totalLimit?: number;
+  /** Search context hint for expansion */
+  searchContext?: 'technical' | 'general' | 'pattern' | 'decision';
+  /** Number of query expansions (default: 5) */
+  expansionCount?: number;
+  /** Whether to force expansion even for complex queries (default: false) */
+  forceExpansion?: boolean;
+  /** Outcome ID for cost tracking */
+  outcomeId?: string;
+  /** Timeout for expansion in ms (default: 30000) */
+  expansionTimeout?: number;
+}
+
+/**
+ * Search memories using query expansion for improved recall
+ *
+ * This function:
+ * 1. Expands the query into 5+ related queries using Claude
+ * 2. Runs each expanded query against the BM25 FTS5 index
+ * 3. Combines and deduplicates results
+ * 4. Returns results ordered by relevance
+ *
+ * @param query The search query to expand and search
+ * @param options Search options
+ * @returns Search results with expansion metadata
+ */
+export async function searchMemoriesExpanded(
+  query: string,
+  options: ExpandedSearchOptions = {}
+): Promise<ExpandedSearchResponse> {
+  const {
+    limitPerQuery = 10,
+    totalLimit = 20,
+    searchContext = 'general',
+    expansionCount = 5,
+    forceExpansion = false,
+    outcomeId,
+    expansionTimeout = 30000,
+  } = options;
+
+  const startTime = Date.now();
+
+  // Check if we should expand this query
+  const shouldExpand = forceExpansion || shouldExpandQuery(query);
+
+  if (!shouldExpand) {
+    // Just do a regular BM25 search
+    const results = searchMemoriesBM25(query, totalLimit);
+    return {
+      results: results.map(r => ({
+        ...r,
+        matchedQuery: query,
+        expansionType: 'original' as const,
+      })),
+      originalQuery: query,
+      expandedQueries: [{ query, expansionType: 'original' }],
+      expansionUsed: false,
+      totalDurationMs: Date.now() - startTime,
+      expansionDurationMs: 0,
+    };
+  }
+
+  // Expand the query
+  const expansionResult = await expandQuery(query, {
+    expansionCount,
+    timeout: expansionTimeout,
+    searchContext,
+    outcomeId,
+  });
+
+  const expansionDurationMs = expansionResult.durationMs;
+
+  // Run searches for each expanded query
+  const allResults: ExpandedSearchResult[] = [];
+  const seenMemoryIds = new Set<string>();
+
+  for (const expandedQuery of expansionResult.expandedQueries) {
+    try {
+      const queryResults = searchMemoriesBM25(expandedQuery.query, limitPerQuery);
+
+      for (const result of queryResults) {
+        // Deduplicate by memory ID
+        if (!seenMemoryIds.has(result.memory.id)) {
+          seenMemoryIds.add(result.memory.id);
+          allResults.push({
+            ...result,
+            matchedQuery: expandedQuery.query,
+            expansionType: expandedQuery.expansionType,
+          });
+        }
+      }
+    } catch (searchError) {
+      // Log and continue with other queries
+      console.warn(`[Expanded Search] Query "${expandedQuery.query}" failed:`, searchError);
+    }
+  }
+
+  // Sort by BM25 score (higher is better)
+  allResults.sort((a, b) => b.bm25Score - a.bm25Score);
+
+  // Limit total results
+  const limitedResults = allResults.slice(0, totalLimit);
+
+  return {
+    results: limitedResults,
+    originalQuery: query,
+    expandedQueries: expansionResult.expandedQueries,
+    expansionUsed: true,
+    totalDurationMs: Date.now() - startTime,
+    expansionDurationMs,
+  };
+}
+
+/**
+ * Simple expanded search that returns just memories
+ *
+ * @param query The search query
+ * @param limit Maximum results (default: 20)
+ * @param outcomeId Optional outcome ID for cost tracking
+ * @returns Array of memories found via expanded search
+ */
+export async function searchMemoriesWithExpansion(
+  query: string,
+  limit: number = 20,
+  outcomeId?: string
+): Promise<Memory[]> {
+  const response = await searchMemoriesExpanded(query, {
+    totalLimit: limit,
+    outcomeId,
+  });
+
+  return response.results.map(r => r.memory);
+}

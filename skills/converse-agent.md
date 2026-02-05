@@ -135,9 +135,9 @@ Answer a pending escalation by selecting an option.
 ### Task Tools
 
 #### getTask
-Get details of a specific task by ID.
+Get details of a specific task by ID including all context fields.
 - **Parameters**: `task_id` (required) - Task ID
-- **Returns**: `{ id, title, description, status, priority, attempts, workerId }`
+- **Returns**: `{ id, title, description, status, priority, attempts, workerId, prd_context, design_context, task_intent, task_approach, required_skills }`
 - **Use when**: "show task X", "task details", "what is task_xxx"
 
 #### addTask
@@ -163,6 +163,14 @@ Update a task with additional context or details.
   - `priority` (optional) - Updated priority (lower = higher priority)
 - **Returns**: `{ task }` with all context fields
 - **Use when**: "optimize task", "add context to task", "update task with PRD", "enrich task", "add design context"
+
+#### findTask
+Search for tasks by title or description. Returns all matching tasks with full context.
+- **Parameters**:
+  - `query` (required) - Search terms to match against task title and description
+  - `outcome_id` (optional) - Outcome ID to limit search scope
+- **Returns**: `{ tasks[{ id, outcomeId, outcomeName, title, description, status, priority, prd_context, design_context, task_intent, task_approach, required_skills }] }`
+- **Use when**: User refers to a task by name/description rather than ID, like "show me the sharing task", "find the task about validation", "what information do we have on the interactive elements task"
 
 ### Worker Details Tools
 

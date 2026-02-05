@@ -299,6 +299,23 @@ export const converseTools: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'findTask',
+    description:
+      'Search for tasks by title or description. Returns all matching tasks with full context. Use when user refers to a task by name/description rather than ID, like "show me the sharing task" or "find the task about validation".',
+    parameters: {
+      query: {
+        type: 'string',
+        description: 'Search query to match against task title and description',
+        required: true,
+      },
+      outcome_id: {
+        type: 'string',
+        description: 'Optional outcome ID to limit search scope',
+        required: false,
+      },
+    },
+  },
 
   // =========================================================================
   // Worker Details Tools

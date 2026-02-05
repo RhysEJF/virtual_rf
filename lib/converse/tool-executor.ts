@@ -265,6 +265,20 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         };
       }
 
+      case 'findTask': {
+        const query = args.query as string;
+        if (!query) {
+          return { success: false, error: 'query is required' };
+        }
+        const outcomeId = args.outcome_id as string | undefined;
+        const result = taskTools.findTask(query, outcomeId);
+        return {
+          success: result.found,
+          data: result.tasks,
+          error: result.error,
+        };
+      }
+
       // =====================================================================
       // Worker Details Tools
       // =====================================================================

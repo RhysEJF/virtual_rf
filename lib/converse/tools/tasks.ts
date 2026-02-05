@@ -6,11 +6,12 @@
 
 import {
   getTaskById,
+  getTasksByOutcome,
   createTask as dbCreateTask,
   getTaskStats,
   updateTask as dbUpdateTask,
 } from '../../db/tasks';
-import { getOutcomeById } from '../../db/outcomes';
+import { getOutcomeById, getAllOutcomes } from '../../db/outcomes';
 
 export interface TaskResult {
   found: boolean;
@@ -26,6 +27,12 @@ export interface TaskResult {
     claimedBy: string | null;
     createdAt: number;
     completedAt: number | null;
+    // Context fields
+    prd_context: string | null;
+    design_context: string | null;
+    task_intent: string | null;
+    task_approach: string | null;
+    required_skills: string | null;
   };
   error?: string;
 }
@@ -57,6 +64,12 @@ export function getTask(taskId: string): TaskResult {
       claimedBy: task.claimed_by,
       createdAt: task.created_at,
       completedAt: task.completed_at,
+      // Context fields
+      prd_context: task.prd_context,
+      design_context: task.design_context,
+      task_intent: task.task_intent,
+      task_approach: task.task_approach,
+      required_skills: task.required_skills,
     },
   };
 }
@@ -191,4 +204,91 @@ export function updateTask(
       error: error instanceof Error ? error.message : 'Failed to update task',
     };
   }
+}
+
+export interface FindTaskResult {
+  found: boolean;
+  tasks?: Array<{
+    id: string;
+    outcomeId: string;
+    outcomeName: string;
+    title: string;
+    description: string | null;
+    status: string;
+    priority: number;
+    prd_context: string | null;
+    design_context: string | null;
+    task_intent: string | null;
+    task_approach: string | null;
+    required_skills: string | null;
+  }>;
+  error?: string;
+}
+
+/**
+ * Find tasks by searching title and description.
+ * Returns all matching tasks with their context fields.
+ */
+export function findTask(
+  query: string,
+  outcomeId?: string
+): FindTaskResult {
+  if (!query || query.trim().length === 0) {
+    return { found: false, error: 'Search query is required' };
+  }
+
+  const searchTerms = query.toLowerCase().split(/\s+/);
+
+  // Get tasks from specific outcome or all outcomes
+  let allTasks: Array<{
+    task: ReturnType<typeof getTasksByOutcome>[0];
+    outcomeName: string;
+  }> = [];
+
+  if (outcomeId) {
+    const outcome = getOutcomeById(outcomeId);
+    if (!outcome) {
+      return { found: false, error: `Outcome ${outcomeId} not found` };
+    }
+    const tasks = getTasksByOutcome(outcomeId);
+    allTasks = tasks.map(t => ({ task: t, outcomeName: outcome.name }));
+  } else {
+    // Search across all outcomes
+    const outcomes = getAllOutcomes();
+    for (const outcome of outcomes) {
+      const tasks = getTasksByOutcome(outcome.id);
+      allTasks.push(...tasks.map(t => ({ task: t, outcomeName: outcome.name })));
+    }
+  }
+
+  // Filter by search terms - all terms must match in title or description
+  const matchingTasks = allTasks.filter(({ task }) => {
+    const searchText = `${task.title} ${task.description || ''}`.toLowerCase();
+    return searchTerms.every(term => searchText.includes(term));
+  });
+
+  if (matchingTasks.length === 0) {
+    return {
+      found: false,
+      error: `No tasks found matching "${query}"`,
+    };
+  }
+
+  return {
+    found: true,
+    tasks: matchingTasks.map(({ task, outcomeName }) => ({
+      id: task.id,
+      outcomeId: task.outcome_id,
+      outcomeName,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      prd_context: task.prd_context,
+      design_context: task.design_context,
+      task_intent: task.task_intent,
+      task_approach: task.task_approach,
+      required_skills: task.required_skills,
+    })),
+  };
 }

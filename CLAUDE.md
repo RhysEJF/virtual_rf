@@ -412,11 +412,19 @@ kill -9 <PID>
 - [x] HOMЯ integration: homr (--supervise, --yolo), escalations, answer, dismiss
 - [x] Resources: skills, skill, tools, tool, outputs, files
 - [x] Settings: config, sync, retro
+- [x] Retro subcommands: `retro show`, `retro history`, `retro create` (with --consolidated, --start, --open)
 - [x] Chat/iterate: chat
 - [x] Workspace isolation: `new --isolated/--allow-codebase`, `config isolation-mode`
 - [x] Workspace servers: `serve`, `serve start`, `serve stop`, `serve list`
 - [x] Output flags: --json, --quiet on all commands
 - [ ] Interactive mode (REPL)
+
+### Converse Mode (Complete)
+- [x] Conversational REPL (`flow converse`, `flow talk`)
+- [x] Markdown rendering in responses
+- [x] Session context tracking
+- [x] 30+ tools for system interaction
+- [x] Retro tools: triggerRetroAnalysis, getRetroJobStatus, getRetroJobDetails, listRecentRetroJobs, createFromRetroProposal
 
 ### Working Flow
 1. User submits request via CommandBar

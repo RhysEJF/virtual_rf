@@ -79,6 +79,7 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Technical audit (`flow audit`) | Complete |
 | Success criteria review (`flow review`) | Complete |
 | Conversational REPL (`flow converse`, `flow talk`) | Complete |
+| Converse retro tools (triggerRetroAnalysis, createFromRetroProposal) | Complete |
 | Capability management (`flow capability`, `skill new`, `tool new`) | Complete |
 | Dev server (`flow server`) | Complete |
 | Markdown rendering in REPL | Complete |

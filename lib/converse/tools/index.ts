@@ -461,6 +461,85 @@ export const converseTools: ToolDefinition[] = [
       },
     },
   },
+
+  // =========================================================================
+  // Retrospective Analysis Tools (Self-Improvement)
+  // =========================================================================
+  {
+    name: 'triggerRetroAnalysis',
+    description:
+      'Start a retrospective analysis job for an outcome to find improvement opportunities from escalation patterns. Use for "run retro", "analyze escalations", "what can we improve?", "find improvement opportunities".',
+    parameters: {
+      outcome_id: {
+        type: 'string',
+        description: 'Outcome ID to analyze',
+        required: true,
+      },
+    },
+  },
+  {
+    name: 'getRetroJobStatus',
+    description:
+      'Check the status of a retrospective analysis job. Use to poll for completion after triggering analysis.',
+    parameters: {
+      job_id: {
+        type: 'string',
+        description: 'Job ID returned from triggerRetroAnalysis',
+        required: true,
+      },
+    },
+  },
+  {
+    name: 'getRetroJobDetails',
+    description:
+      'Get full details of a completed analysis job including numbered proposals. Use for "show retro results", "what did the analysis find?", "show me the proposals".',
+    parameters: {
+      job_id: {
+        type: 'string',
+        description: 'Job ID to get details for',
+        required: true,
+      },
+    },
+  },
+  {
+    name: 'listRecentRetroJobs',
+    description:
+      'List recent retrospective analysis jobs (including completed/failed). Use for "retro history", "recent analyses", "what retros have run?".',
+    parameters: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of jobs to return (default 10)',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'createFromRetroProposal',
+    description:
+      'Create an outcome from a retrospective analysis proposal. Use for "create outcome from proposal 1", "implement suggestion 2", "create from retro".',
+    parameters: {
+      job_id: {
+        type: 'string',
+        description: 'Job ID containing the proposals',
+        required: true,
+      },
+      proposal_number: {
+        type: 'number',
+        description: 'Which proposal to create (1, 2, 3, etc.)',
+        required: false,
+      },
+      consolidated: {
+        type: 'string',
+        description: 'Comma-separated proposal numbers to consolidate into one outcome (e.g., "1,3")',
+        required: false,
+      },
+      start_worker: {
+        type: 'boolean',
+        description: 'Whether to start a worker immediately after creation',
+        required: false,
+      },
+    },
+  },
 ];
 
 /**

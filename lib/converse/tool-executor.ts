@@ -12,6 +12,7 @@ import * as escalationTools from './tools/escalations';
 import * as taskTools from './tools/tasks';
 import * as homrTools from './tools/homr';
 import * as capabilityTools from './tools/capabilities';
+import * as retroTools from './tools/retro';
 import type { OutcomeStatus, IsolationMode } from '../db/schema';
 
 export interface ToolCall {
@@ -419,6 +420,108 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             message: result.message,
           },
           error: result.error,
+        };
+      }
+
+      // =====================================================================
+      // Retrospective Analysis Tools
+      // =====================================================================
+      case 'triggerRetroAnalysis': {
+        const outcomeId = args.outcome_id as string;
+        if (!outcomeId) {
+          return { success: false, error: 'outcome_id is required' };
+        }
+        const result = await retroTools.triggerRetroAnalysis({ outcome_id: outcomeId });
+        return {
+          success: result.success,
+          data: {
+            jobId: result.jobId,
+            outcomeName: result.outcomeName,
+            message: result.message,
+          },
+          error: result.success ? undefined : result.message,
+        };
+      }
+
+      case 'getRetroJobStatus': {
+        const jobId = args.job_id as string;
+        if (!jobId) {
+          return { success: false, error: 'job_id is required' };
+        }
+        const result = await retroTools.getRetroJobStatus({ job_id: jobId });
+        return {
+          success: result.success,
+          data: {
+            status: result.status,
+            progressMessage: result.progressMessage,
+            completedAt: result.completedAt,
+            message: result.message,
+          },
+          error: result.success ? undefined : result.message,
+        };
+      }
+
+      case 'getRetroJobDetails': {
+        const jobId = args.job_id as string;
+        if (!jobId) {
+          return { success: false, error: 'job_id is required' };
+        }
+        const result = await retroTools.getRetroJobDetails({ job_id: jobId });
+        return {
+          success: result.success,
+          data: {
+            status: result.status,
+            escalationsAnalyzed: result.escalationsAnalyzed,
+            proposals: result.proposals,
+            message: result.message,
+          },
+          error: result.success ? undefined : result.message,
+        };
+      }
+
+      case 'listRecentRetroJobs': {
+        const limit = args.limit as number | undefined;
+        const result = await retroTools.listRecentRetroJobs({ limit });
+        return {
+          success: result.success,
+          data: {
+            jobs: result.jobs,
+            message: result.message,
+          },
+          error: result.success ? undefined : result.message,
+        };
+      }
+
+      case 'createFromRetroProposal': {
+        const jobId = args.job_id as string;
+        if (!jobId) {
+          return { success: false, error: 'job_id is required' };
+        }
+        const proposalNumber = args.proposal_number as number | undefined;
+        const consolidated = args.consolidated as string | undefined;
+        const startWorker = args.start_worker as boolean | undefined;
+
+        if (!proposalNumber && !consolidated) {
+          return {
+            success: false,
+            error: 'Either proposal_number or consolidated is required',
+          };
+        }
+
+        const result = await retroTools.createFromRetroProposal({
+          job_id: jobId,
+          proposal_number: proposalNumber,
+          consolidated,
+          start_worker: startWorker,
+        });
+        return {
+          success: result.success,
+          data: {
+            outcomes: result.outcomes,
+            workerId: result.workerId,
+            message: result.message,
+          },
+          error: result.success ? undefined : result.message,
         };
       }
 

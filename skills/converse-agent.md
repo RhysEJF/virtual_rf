@@ -279,6 +279,42 @@ Create a new capability (skill or tool). Creates a capability task for workers t
 - Default behavior creates a capability task for workers to build
 - Use `create_file=true` only if user explicitly wants a template file immediately
 
+### Retrospective Analysis Tools (Self-Improvement)
+
+#### triggerRetroAnalysis
+Start a retrospective analysis job for an outcome to find improvement opportunities from escalation patterns.
+- **Parameters**: `outcome_id` (required) - Outcome ID to analyze
+- **Returns**: `{ jobId, outcomeName, message }`
+- **Use when**: "run retro", "analyze escalations", "what can we improve?", "find improvement opportunities"
+
+#### getRetroJobStatus
+Check the status of a retrospective analysis job.
+- **Parameters**: `job_id` (required) - Job ID from triggerRetroAnalysis
+- **Returns**: `{ status, progressMessage, completedAt, message }`
+- **Use when**: Checking if analysis has completed
+
+#### getRetroJobDetails
+Get full details of a completed analysis job including numbered proposals.
+- **Parameters**: `job_id` (required) - Job ID to get details for
+- **Returns**: `{ status, escalationsAnalyzed, proposals[{ number, outcomeName, rootCause, taskCount }], message }`
+- **Use when**: "show retro results", "what did the analysis find?", "show me the proposals"
+
+#### listRecentRetroJobs
+List recent retrospective analysis jobs (including completed/failed).
+- **Parameters**: `limit` (optional) - Max jobs to return (default 10)
+- **Returns**: `{ jobs[{ id, status, proposalCount, escalationsAnalyzed }], message }`
+- **Use when**: "retro history", "recent analyses", "what retros have run?"
+
+#### createFromRetroProposal
+Create an outcome from a retrospective analysis proposal.
+- **Parameters**:
+  - `job_id` (required) - Job ID containing the proposals
+  - `proposal_number` (optional) - Which proposal to create (1, 2, 3, etc.)
+  - `consolidated` (optional) - Comma-separated numbers to consolidate (e.g., "1,3")
+  - `start_worker` (optional) - Start worker immediately after creation
+- **Returns**: `{ outcomes[{ id, name, taskCount }], workerId, message }`
+- **Use when**: "create outcome from proposal 1", "implement suggestion 2", "consolidate proposals 1 and 3"
+
 ### Project Type Detection (Isolation Mode)
 
 When creating outcomes, determine whether to use `workspace` (isolated) or `codebase` mode based on these patterns:
@@ -500,3 +536,37 @@ Response: "I found 2 skills mentioned that don't exist yet:
 - Competitor Analysis
 
 Would you like me to create capability tasks for these?"
+
+**User**: "Run a retro on the landing page outcome"
+```
+TOOL_CALL: triggerRetroAnalysis(outcome_id="out_abc123")
+```
+Response: "Started retrospective analysis for 'Landing Page'. Job ID: job_xyz. I'll let you know when it's complete, or you can ask 'retro status'."
+
+**User**: "Show me the retro results"
+```
+TOOL_CALL: getRetroJobDetails(job_id="job_xyz")
+```
+Response:
+"**Retro Analysis Complete** (5 escalations analyzed)
+
+**Improvement Proposals:**
+
+| # | Outcome | Root Cause | Tasks |
+|---|---------|------------|-------|
+| 1 | Add Retry Logic | Missing retry handling | 4 |
+| 2 | Improve Error Messages | Generic errors | 3 |
+
+To create an outcome: 'create from proposal 1' or 'consolidate proposals 1 and 2'"
+
+**User**: "Create from proposal 1 and start working"
+```
+TOOL_CALL: createFromRetroProposal(job_id="job_xyz", proposal_number=1, start_worker=true)
+```
+Response: "Created outcome 'Add Retry Logic' with 4 tasks. Worker started (wrk_abc)."
+
+**User**: "Consolidate proposals 1 and 2"
+```
+TOOL_CALL: createFromRetroProposal(job_id="job_xyz", consolidated="1,2")
+```
+Response: "Created consolidated outcome 'System Improvements' with 7 tasks from 2 proposals."

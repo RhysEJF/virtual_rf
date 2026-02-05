@@ -29,3 +29,4 @@ export { retroCommand } from './retro.js';
 export { flowPauseCommand } from './flow-pause.js';
 export { flowResumeCommand } from './flow-resume.js';
 export { flowLogsCommand } from './flow-logs.js';
+export { converseCommand } from './converse.js';

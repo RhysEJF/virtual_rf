@@ -108,20 +108,54 @@ User message to classify:
 // ============================================================================
 
 /**
+ * Extended context for intent classification with full enriched context support.
+ * Includes intent history and referenced entities for disambiguation.
+ */
+export interface ClassifierContext {
+  // Basic context (legacy support)
+  hasActiveOutcome?: boolean;
+  activeOutcomeId?: string;
+  hasPendingEscalations?: boolean;
+  lastEscalationQuestion?: string;
+  pendingEscalationId?: string;
+
+  // Enhanced context for disambiguation
+  previousIntents?: Array<{
+    type: string;
+    confidence: number;
+    entities: Record<string, string | undefined>;
+    timestamp: number;
+  }>;
+  recentIntentTypes?: string[];  // Just the types for quick lookup
+  conversationTopic?: string;    // Current topic being discussed
+
+  // Referenced entities for pronoun resolution
+  referencedEntities?: {
+    outcome?: { id: string; name?: string };
+    worker?: { id: string; name?: string };
+    task?: { id: string; name?: string };
+    escalation?: { id: string };
+    lastMentioned?: { type: string; id: string; name?: string };
+  };
+
+  // Recent messages for conversation flow
+  recentMessages?: Array<{
+    role: string;
+    content: string;
+    timestamp: number;
+  }>;
+}
+
+/**
  * Classify a user message into an intent with extracted entities.
  *
  * @param message - The user's natural language message
- * @param context - Optional context about the current state (e.g., pending escalations)
+ * @param context - Optional context about the current state (e.g., pending escalations, previous intents)
  * @returns Classification result with intent type, confidence, and entities
  */
 export async function classifyIntent(
   message: string,
-  context?: {
-    hasActiveOutcome?: boolean;
-    activeOutcomeId?: string;
-    hasPendingEscalations?: boolean;
-    lastEscalationQuestion?: string;
-  }
+  context?: ClassifierContext
 ): Promise<IntentClassification> {
   // Build context hint if available
   let contextHint = '';
@@ -133,6 +167,52 @@ export async function classifyIntent(
     if (context.lastEscalationQuestion) {
       contextHint += `\nLast escalation question: "${context.lastEscalationQuestion}"`;
     }
+  }
+
+  // Add previous intent context for disambiguation
+  if (context?.previousIntents && context.previousIntents.length > 0) {
+    const recentIntent = context.previousIntents[0];
+    contextHint += `\nPREVIOUS INTENT: The user's previous message was classified as "${recentIntent.type}"`;
+
+    // Include entity context from previous intent
+    if (recentIntent.entities.outcome_id || recentIntent.entities.outcome_name) {
+      const outcomeRef = recentIntent.entities.outcome_id || recentIntent.entities.outcome_name;
+      contextHint += ` (referencing outcome: ${outcomeRef})`;
+    }
+
+    // Show pattern if there's a consistent topic
+    if (context.recentIntentTypes && context.recentIntentTypes.length >= 2) {
+      const uniqueTypes = Array.from(new Set(context.recentIntentTypes.slice(0, 3)));
+      if (uniqueTypes.length <= 2) {
+        contextHint += `\nCONVERSATION PATTERN: User has been focused on ${uniqueTypes.join(' and ')} intents`;
+      }
+    }
+  }
+
+  // Add referenced entity context for pronoun resolution
+  if (context?.referencedEntities) {
+    const refs = context.referencedEntities;
+    const entityRefs: string[] = [];
+
+    if (refs.outcome?.id) {
+      entityRefs.push(`outcome "${refs.outcome.name || refs.outcome.id}"`);
+    }
+    if (refs.worker?.id) {
+      entityRefs.push(`worker "${refs.worker.id}"`);
+    }
+    if (refs.task?.id) {
+      entityRefs.push(`task "${refs.task.id}"`);
+    }
+
+    if (entityRefs.length > 0) {
+      contextHint += `\nREFERENCED ENTITIES: Recently mentioned: ${entityRefs.join(', ')}`;
+      contextHint += '\nNOTE: If the user says "it", "that", "the project", etc., they likely mean one of these referenced entities.';
+    }
+  }
+
+  // Add conversation topic context
+  if (context?.conversationTopic && context.conversationTopic !== 'general') {
+    contextHint += `\nCONVERSATION TOPIC: The conversation is currently about ${context.conversationTopic.replace(/_/g, ' ')}`;
   }
 
   const fullPrompt = `${INTENT_CLASSIFICATION_PROMPT}${contextHint}\n\n"${message}"`;

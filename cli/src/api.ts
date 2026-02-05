@@ -273,10 +273,12 @@ export interface HomrDiscovery {
 }
 
 export interface HomrDecision {
-  question: string;
-  answer: string;
+  id: string;
+  content: string;
+  madeBy: string;
+  madeAt: number;
   context: string;
-  decidedAt: number;
+  affectedAreas: string[];
 }
 
 export interface HomrConstraint {
@@ -433,6 +435,71 @@ export interface AutoResolveResponse {
   resolved: number;
   deferred: number;
   results: AutoResolveResult[];
+}
+
+// Converse API types
+export type ConverseResponseType = 'action' | 'response' | 'clarification' | 'error';
+export type IntentType =
+  | 'create_outcome'
+  | 'check_status'
+  | 'list_outcomes'
+  | 'show_outcome'
+  | 'list_tasks'
+  | 'start_worker'
+  | 'stop_worker'
+  | 'pause_worker'
+  | 'answer_escalation'
+  | 'show_escalations'
+  | 'iterate'
+  | 'help'
+  | 'general_query';
+
+export interface ActionTaken {
+  action: string;
+  target?: string;
+  result?: string;
+  success: boolean;
+}
+
+export interface ConverseIntent {
+  type: IntentType;
+  confidence: number;
+  entities: Record<string, string | undefined>;
+  description: string;
+}
+
+export interface ConverseRequest {
+  message: string;
+  session_id?: string;
+}
+
+export interface ConverseResponse {
+  type: ConverseResponseType;
+  message: string;
+  session_id: string;
+  intent: ConverseIntent;
+  actions_taken: ActionTaken[];
+  follow_up_questions?: string[];
+  data?: Record<string, unknown>;
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: number;
+}
+
+export interface ConverseSession {
+  id: string;
+  current_outcome_id: string | null;
+  created_at: number;
+  last_activity_at: number;
+}
+
+export interface ConverseSessionResponse {
+  session: ConverseSession;
+  messages: ConversationMessage[];
 }
 
 // Create/Update input types
@@ -756,6 +823,23 @@ export const api = {
     // Auto-resolve pending escalations (YOLO mode)
     autoResolve(outcomeId: string): Promise<AutoResolveResponse> {
       return api.post<AutoResolveResponse>(`/outcomes/${outcomeId}/auto-resolve`, { mode: 'full-auto' });
+    },
+  },
+
+  // Converse - Multi-turn conversational API
+  converse: {
+    // Send a message to the conversational API
+    send(message: string, sessionId?: string): Promise<ConverseResponse> {
+      const body: ConverseRequest = { message };
+      if (sessionId) {
+        body.session_id = sessionId;
+      }
+      return api.post<ConverseResponse>('/converse', body);
+    },
+
+    // Get session info and message history
+    session(sessionId: string): Promise<ConverseSessionResponse> {
+      return api.get<ConverseSessionResponse>(`/converse?session_id=${encodeURIComponent(sessionId)}`);
     },
   },
 };

@@ -110,7 +110,7 @@ async function displayHomrStatus(
       // Detect newly completed tasks
       if (previousState) {
         const currentCompleted = new Set(tasks.filter(t => t.status === 'completed').map(t => t.id));
-        for (const taskId of currentCompleted) {
+        for (const taskId of Array.from(currentCompleted)) {
           if (!previousState.completedTasks.has(taskId)) {
             const task = tasks.find(t => t.id === taskId);
             if (task) {
@@ -271,8 +271,10 @@ async function displayHomrStatus(
   } else {
     const displayCount = isSuperviseMode ? 3 : decisions.length;
     for (const decision of decisions.slice(0, displayCount)) {
-      const timeAgo = formatRelativeTime(decision.decidedAt);
-      console.log(`  ${chalk.gray('•')} ${chalk.white(decision.answer)} ${chalk.gray(`(${timeAgo})`)}`);
+      const timeAgo = formatRelativeTime(decision.madeAt);
+      // Extract the option name from content (e.g., "Break Into Subtasks: description" → "Break Into Subtasks")
+      const displayText = decision.content.split(':')[0] || decision.content;
+      console.log(`  ${chalk.gray('•')} ${chalk.white(displayText)} ${chalk.gray(`(${timeAgo})`)}`);
     }
     if (isSuperviseMode && decisions.length > displayCount) {
       console.log(chalk.gray(`  ... and ${decisions.length - displayCount} more`));

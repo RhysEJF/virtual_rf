@@ -516,6 +516,26 @@ function runMigrations(database: Database.Database): void {
       console.warn(`[DB Migration] VSS table setup failed:`, errorMsg);
     }
   }
+
+  // Ensure conversation tables and indexes exist (created via SCHEMA_SQL)
+  const convTables = database.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name LIKE 'conversation_%'
+  `).all() as { name: string }[];
+
+  if (convTables.length < 2) {
+    // Tables will be created by SCHEMA_SQL on next restart
+    // Just log for awareness
+    console.log(`[DB Migration] Conversation tables pending creation`);
+  } else {
+    // Ensure indexes exist
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_sessions_user ON conversation_sessions(user_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_sessions_outcome ON conversation_sessions(current_outcome_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_sessions_activity ON conversation_sessions(last_activity_at DESC)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_sessions_expires ON conversation_sessions(expires_at) WHERE expires_at IS NOT NULL`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_messages_session ON conversation_messages(session_id)`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_messages_created ON conversation_messages(session_id, created_at)`);
+  }
 }
 
 /**

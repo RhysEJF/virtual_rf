@@ -616,11 +616,72 @@ export interface MemoryTag {
 }
 
 /**
+ * Memory usage tracking - records when a memory was injected into a task
+ */
+export interface MemoryUsage {
+  id: string;
+  memory_id: string;
+  task_id: string;
+  outcome_id: string;
+  was_helpful: number | null;         // 1 = helpful, 0 = not helpful, null = no feedback yet
+  injected_at: number;
+  feedback_at: number | null;
+}
+
+/**
  * Parsed memory with typed arrays (for application use)
  */
 export interface ParsedMemory extends Omit<Memory, 'tags' | 'embedding'> {
   tags: string[];
   embedding: number[] | null;
+}
+
+// ============================================================================
+// Conversational API Types
+// ============================================================================
+
+/**
+ * Message roles in a conversation
+ */
+export type ConversationRole = 'user' | 'assistant' | 'system';
+
+/**
+ * Conversation session - tracks multi-turn conversations
+ */
+export interface ConversationSession {
+  id: string;
+  user_id: string | null;           // Optional user identifier
+  current_outcome_id: string | null; // Currently active outcome context
+  context: string;                  // JSON object for session context/state
+  created_at: number;
+  last_activity_at: number;
+  expires_at: number | null;        // Optional expiration timestamp
+}
+
+/**
+ * Conversation message - individual messages within a session
+ */
+export interface ConversationMessage {
+  id: string;
+  session_id: string;               // FK to conversation_sessions
+  role: ConversationRole;           // 'user' | 'assistant' | 'system'
+  content: string;                  // Message content
+  metadata: string;                 // JSON object for additional data (intent, actions, etc.)
+  created_at: number;
+}
+
+/**
+ * Parsed conversation session with typed context
+ */
+export interface ParsedConversationSession extends Omit<ConversationSession, 'context'> {
+  context: Record<string, unknown>;
+}
+
+/**
+ * Parsed conversation message with typed metadata
+ */
+export interface ParsedConversationMessage extends Omit<ConversationMessage, 'metadata'> {
+  metadata: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -1471,6 +1532,39 @@ CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
   INSERT INTO memories_fts(rowid, content, tags)
   VALUES (NEW.rowid, NEW.content, NEW.tags);
 END;
+
+-- ============================================================================
+-- Conversational API Tables
+-- ============================================================================
+
+-- Conversation Sessions: Track multi-turn conversation state
+CREATE TABLE IF NOT EXISTS conversation_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,                       -- Optional user identifier
+  current_outcome_id TEXT REFERENCES outcomes(id) ON DELETE SET NULL,
+  context TEXT NOT NULL DEFAULT '{}', -- JSON object for session state
+  created_at INTEGER NOT NULL,
+  last_activity_at INTEGER NOT NULL,
+  expires_at INTEGER                  -- Optional expiration timestamp
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_sessions_user ON conversation_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_conv_sessions_outcome ON conversation_sessions(current_outcome_id);
+CREATE INDEX IF NOT EXISTS idx_conv_sessions_activity ON conversation_sessions(last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conv_sessions_expires ON conversation_sessions(expires_at) WHERE expires_at IS NOT NULL;
+
+-- Conversation Messages: Individual messages within a session
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES conversation_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,                 -- 'user' | 'assistant' | 'system'
+  content TEXT NOT NULL,              -- Message content
+  metadata TEXT NOT NULL DEFAULT '{}', -- JSON object for intent, actions, etc.
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_messages_session ON conversation_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_conv_messages_created ON conversation_messages(session_id, created_at);
 `;
 
 // ============================================================================

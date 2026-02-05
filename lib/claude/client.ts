@@ -24,6 +24,8 @@ export interface ClaudeOptions {
   maxTurns?: number;
   allowedTools?: string[];
   timeout?: number; // milliseconds
+  /** If true, Claude won't have access to native tools (file read, bash, etc.) */
+  disableNativeTools?: boolean;
   // Cost tracking context
   outcomeId?: string;
   workerId?: string;
@@ -56,6 +58,7 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
     maxTurns = 5, // Default to 5 turns for clarifications and tool use
     allowedTools,
     timeout = 120000, // 2 minutes default
+    disableNativeTools = false,
     outcomeId,
     workerId,
     taskId,
@@ -67,8 +70,14 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       '-p', prompt, // -p makes it non-interactive (print mode)
       '--output-format', 'json', // Always use JSON to get cost info
       '--max-turns', maxTurns.toString(),
-      '--dangerously-skip-permissions', // Skip permission prompts for automated use
     ];
+
+    // Only add --dangerously-skip-permissions if we want native tool access
+    // For pure text generation (like converse agent), we skip this to prevent
+    // Claude from using file/bash/web tools and wasting turns
+    if (!disableNativeTools) {
+      args.push('--dangerously-skip-permissions');
+    }
 
     // Add system prompt if provided
     if (systemPrompt) {

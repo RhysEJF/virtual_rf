@@ -213,49 +213,77 @@ Bot: 📬 Progress Update - Chrome Extension
 
 ## Current Implementation
 
-### `/api/converse` Endpoint
+### Two-Pass Architecture
+
+The conversational agent uses a **two-pass architecture** that separates tool selection from response formatting:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PASS 1: Tool Execution                                      │
+│  • Load skill file (role, tools, guidelines)                │
+│  • Inject session context                                    │
+│  • Claude outputs: TOOL_CALL: toolName(args)                │
+│  • Parse and execute tools via our TypeScript executors     │
+└─────────────────────────────────────────────────────────────┘
+                    │ tool results (JSON)
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  PASS 2: Formatting (only if tools were called)             │
+│  • User message + tool results JSON                         │
+│  • Formatting guidelines from skill file                     │
+│  • Claude outputs: Natural markdown response                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why two passes?**
+- Claude CLI in print mode can't see tool results mid-conversation
+- We must execute tools externally then send results back
+- Removes need for hardcoded formatters - Claude adapts naturally
+
+**Key files:**
+- `skills/converse-agent.md` - Single source of truth (role, tools, format guidelines)
+- `lib/converse/skill-loader.ts` - Parses skill file into sections
+- `lib/converse/prompt-builder.ts` - Builds prompts for Pass 1 and Pass 2
+- `lib/agents/converse-agent.ts` - Orchestrates two-pass execution
+
+### `/api/converse-agent` Endpoint
 
 The conversational API is implemented as a REST endpoint that handles all message types:
 
 ```typescript
-POST /api/converse
+POST /api/converse-agent
 {
   "message": "What outcomes are active?",
-  "session_id": "ses_abc123"  // Optional, for context persistence
+  "sessionId": "sess_abc123"  // Optional, for context persistence
 }
 ```
 
 **Response:**
 ```typescript
 {
-  "response": "You have 2 active outcomes...",
-  "session_id": "ses_abc123",
-  "intent": {
-    "type": "check_status",
-    "confidence": 0.9
-  }
+  "success": true,
+  "message": "**Active Outcomes** (2)\n- Landing Page (out_abc): 5/10 tasks done\n...",
+  "sessionId": "sess_abc123",
+  "toolCalls": [
+    { "name": "getActiveOutcomes", "success": true, "data": {...} }
+  ]
 }
 ```
 
-### Intent Types (15 Total)
+### Tool-Based Architecture (20+ Tools)
 
-| Intent | Description | Example Input |
-|--------|-------------|---------------|
-| `create_outcome` | Create new outcome | "Build a landing page" |
-| `check_status` | System/outcome status | "What's the status?" |
-| `start_worker` | Start worker | "Start working on it" |
-| `stop_worker` | Stop worker | "Pause the worker" |
-| `list_outcomes` | List outcomes | "Show all outcomes" |
-| `show_outcome` | Outcome details | "Tell me about the API project" |
-| `iterate_outcome` | Request changes | "Add dark mode support" |
-| `add_task` | Add task | "Add a task for testing" |
-| `check_escalations` | View escalations | "Any pending questions?" |
-| `answer_escalation` | Answer escalation | "Use option A" |
-| `dismiss_escalation` | Dismiss escalation | "Skip that question" |
-| `audit_outcome` | Technical validation | "Run typecheck and lint" |
-| `review_outcome` | Success criteria check | "Does it meet requirements?" |
-| `help` | Get help | "What can you do?" |
-| `general_query` | General questions | "How does this work?" |
+Instead of intent classification, the agent now uses Claude to select from 20+ tools:
+
+| Category | Tools | Example Usage |
+|----------|-------|---------------|
+| **Status** | `getSystemStatus`, `getActiveOutcomes`, `getAllOutcomes` | "What's running?" |
+| **Outcomes** | `getOutcome`, `getOutcomeTasks`, `getOutcomeWorkers`, `createOutcome`, `iterateOnOutcome` | "Show tasks for X" |
+| **Workers** | `getActiveWorkers`, `startWorker`, `stopWorker`, `getWorkerDetails`, `getWorkerProgress` | "Start a worker" |
+| **Escalations** | `getPendingEscalations`, `answerEscalation` | "Any questions?" |
+| **Tasks** | `getTask`, `addTask` | "Add a task to X" |
+| **HOMR** | `getHomrStatus`, `getHomrDashboard`, `runAutoResolve` | "HOMR status" |
+
+Claude decides which tool(s) to call based on the user's natural language query.
 
 ### Session Management
 
@@ -432,10 +460,12 @@ pm2 startup  # Auto-start on boot
 - [ ] "More context" expansion
 
 ### Phase 3: Natural Language (Complete)
-- [x] Intent classification (15 intent types)
-- [x] Outcome name extraction
+- [x] Tool-based agent (20+ tools, Claude selects)
+- [x] Two-pass architecture (tool execution + formatting)
+- [x] Skill file as single source of truth
 - [x] Context-aware responses (session management)
-- [x] Audit and review intents
+- [x] Pending action handling ("yes"/"no" follow-ups)
+- [x] No hardcoded formatters - Claude formats naturally
 
 ### Phase 4: Progress Updates (Not Started)
 - [ ] Configurable notifications
@@ -445,6 +475,7 @@ pm2 startup  # Auto-start on boot
 
 ### Phase 5: Full Conversational (Partial)
 - [x] Multi-turn conversations (via sessions)
+- [x] Entity tracking for pronoun resolution
 - [ ] Clarification questions
 - [ ] Voice message support (via transcription)
 
@@ -522,10 +553,11 @@ bot.launch();
 ## Success Criteria
 
 ### API Foundation (Complete)
-- [x] `/api/converse` endpoint with session management
-- [x] Intent classification (Claude-powered with heuristic fallback)
-- [x] All 15 intent types implemented
+- [x] `/api/converse-agent` endpoint with session management
+- [x] Two-pass architecture (tool selection + formatting)
+- [x] 20+ tools available via skill file
 - [x] Session persistence in database
+- [x] `disableNativeTools` option to prevent agentic loops
 
 ### Usability (Pending Telegram Bridge)
 - [ ] Can create outcome from Telegram in < 30 seconds

@@ -39,7 +39,8 @@ All AI capabilities come from Claude Code CLI. We don't use the API directly - w
 **Key behaviors:**
 - Safe execution (stdin disabled to prevent hangs)
 - Timeout handling (default 2 minutes)
-- Worker mode with `--dangerously-skip-permissions`
+- Worker mode with `--dangerously-skip-permissions` (for file/bash access)
+- Text-only mode with `disableNativeTools: true` (for pure reasoning, no agentic loops)
 
 ### Git Integration Philosophy
 

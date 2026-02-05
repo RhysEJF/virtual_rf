@@ -117,6 +117,14 @@ export interface Task {
   required_skills: string | null;
   task_intent: string | null;
   task_approach: string | null;
+  depends_on: string | null;  // JSON array of task IDs
+}
+
+// Extended task with parsed dependency info (returned by API)
+export interface TaskWithDependencies extends Task {
+  dependency_ids: string[];     // Parsed depends_on
+  blocked_by: string[];         // Task IDs that are blocking this task
+  blocks: string[];             // Task IDs that this task blocks
 }
 
 // Worker types

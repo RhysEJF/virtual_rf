@@ -282,6 +282,64 @@ Use 'flow start out_gQ7CClmB4h5' to start a new worker
 - Already completed: Shows warning with completion status
 - Already failed: Shows warning with failure status
 
+### `flow task`
+
+Manage individual tasks within outcomes.
+
+```bash
+# Show task details
+flow task show task_abc123
+flow task task_abc123  # Shorthand
+
+# Add a new task
+flow task add out_xyz789 "Implement login form"
+flow task add out_xyz789 "Add validation" --description "Validate email and password fields"
+flow task add out_xyz789 "Write tests" --priority 50 --depends-on task_abc123,task_def456
+
+# Update a task
+flow task update task_abc123 --status completed
+flow task update task_abc123 --title "New title"
+flow task update task_abc123 --priority 25
+flow task update task_abc123 --depends-on task_xyz789  # Set dependencies
+flow task update task_abc123 --depends-on ""           # Clear dependencies
+flow task update task_abc123 --description "New description" --optimize  # Optimize via Claude
+```
+
+**Task Add Options:**
+| Flag | Description |
+|------|-------------|
+| `--description <text>` | Task description |
+| `--priority <n>` | Priority 1-100 (lower runs first, default 100) |
+| `--depends-on <ids>` | Comma-separated task IDs this task depends on |
+
+**Task Update Options:**
+| Flag | Description |
+|------|-------------|
+| `--status <status>` | Set status: `pending`, `completed`, `failed` |
+| `--title <text>` | Update title |
+| `--description <text>` | Update description |
+| `--priority <n>` | Set priority (1-100, lower runs first) |
+| `--depends-on <ids>` | Set dependencies (comma-separated, or "" to clear) |
+| `--optimize` | Optimize description via Claude |
+| `--optimize-description` | Re-optimize existing description |
+
+**Example output (show):**
+```
+Task: task_abc123
+────────────────────────────────────────────────────────────
+
+Title:       Create sessions database table
+Status:      pending
+Priority:    10
+Phase:       execution
+Outcome:     out_xyz789
+Created:     5m ago
+
+Dependencies:
+  Blocked by: task_xyz (pending)
+  Blocks:     task_def, task_ghi
+```
+
 ## Common Workflows
 
 ### Create and start working on an outcome

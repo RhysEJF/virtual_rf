@@ -9,7 +9,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { api, ApiError, NetworkError, Task } from '../api.js';
+import { api, ApiError, NetworkError, Task, TaskWithDependencies } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 /**
@@ -77,7 +77,7 @@ addOutputFlags(showSubcommand);
 
 showSubcommand.action(async (taskId: string, options: OutputOptions) => {
   try {
-    const { task } = await api.tasks.get(taskId);
+    const { task } = await api.tasks.get(taskId) as { task: TaskWithDependencies };
 
     // Handle JSON/quiet output
     if (options.json || options.quiet) {
@@ -119,6 +119,20 @@ showSubcommand.action(async (taskId: string, options: OutputOptions) => {
       console.log(`Cap type:    ${chalk.magenta(task.capability_type)}`);
     }
 
+    // Display dependencies
+    const hasBlockedBy = task.blocked_by && task.blocked_by.length > 0;
+    const hasBlocks = task.blocks && task.blocks.length > 0;
+    if (hasBlockedBy || hasBlocks) {
+      console.log();
+      console.log(chalk.bold.cyan('Dependencies:'));
+      if (hasBlockedBy) {
+        console.log(`  ${chalk.red('Blocked by:')} ${task.blocked_by.join(', ')}`);
+      }
+      if (hasBlocks) {
+        console.log(`  ${chalk.yellow('Blocks:')} ${task.blocks.join(', ')}`);
+      }
+    }
+
     if (task.description) {
       console.log();
       console.log(chalk.bold.cyan('Description:'));
@@ -152,6 +166,7 @@ showSubcommand.action(async (taskId: string, options: OutputOptions) => {
 interface AddOptions extends OutputOptions {
   description?: string;
   priority?: string;
+  dependsOn?: string;
 }
 
 const addSubcommand = new Command('add')
@@ -159,14 +174,15 @@ const addSubcommand = new Command('add')
   .argument('<outcome-id>', 'Outcome ID to add task to')
   .argument('<title>', 'Task title')
   .option('--description <text>', 'Task description')
-  .option('--priority <n>', 'Priority (1-10, default 5)');
+  .option('--priority <n>', 'Priority (1-100, lower runs first)')
+  .option('--depends-on <task-ids>', 'Comma-separated task IDs this task depends on');
 
 addOutputFlags(addSubcommand);
 
 addSubcommand.action(async (outcomeId: string, title: string, options: AddOptions) => {
   try {
     // Prepare task data
-    const taskData: { title: string; description?: string; priority?: number } = {
+    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[] } = {
       title,
     };
 
@@ -176,11 +192,18 @@ addSubcommand.action(async (outcomeId: string, title: string, options: AddOption
 
     if (options.priority) {
       const priority = parseInt(options.priority, 10);
-      if (isNaN(priority) || priority < 1 || priority > 10) {
-        console.error(chalk.red('Error:'), 'Priority must be a number between 1 and 10');
+      if (isNaN(priority) || priority < 1 || priority > 100) {
+        console.error(chalk.red('Error:'), 'Priority must be a number between 1 and 100');
         process.exit(1);
       }
       taskData.priority = priority;
+    }
+
+    if (options.dependsOn) {
+      const dependsOn = options.dependsOn.split(',').map(id => id.trim()).filter(id => id.length > 0);
+      if (dependsOn.length > 0) {
+        taskData.depends_on = dependsOn;
+      }
     }
 
     // Create the task
@@ -200,6 +223,9 @@ addSubcommand.action(async (outcomeId: string, title: string, options: AddOption
     console.log(`  Priority: ${chalk.white(task.priority.toString())}`);
     if (task.description) {
       console.log(`  Description: ${chalk.gray(task.description.substring(0, 50))}${task.description.length > 50 ? '...' : ''}`);
+    }
+    if (taskData.depends_on && taskData.depends_on.length > 0) {
+      console.log(`  Depends on: ${chalk.yellow(taskData.depends_on.join(', '))}`);
     }
 
   } catch (error) {
@@ -226,6 +252,8 @@ interface UpdateOptions extends OutputOptions {
   status?: string;
   title?: string;
   description?: string;
+  priority?: string;
+  dependsOn?: string;
   optimize?: boolean;
   optimizeDescription?: boolean;
 }
@@ -242,6 +270,8 @@ const updateSubcommand = new Command('update')
   .option('--status <status>', 'Set status (pending|completed|failed)')
   .option('--title <text>', 'Update title')
   .option('--description <text>', 'Update description')
+  .option('--priority <n>', 'Set priority (1-100, lower runs first)')
+  .option('--depends-on <task-ids>', 'Set dependencies (comma-separated task IDs, or "" to clear)')
   .option('--optimize', 'Optimize description via Claude (use with --description)')
   .option('--optimize-description', 'Re-optimize existing description via Claude');
 
@@ -250,12 +280,12 @@ addOutputFlags(updateSubcommand);
 updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
   try {
     const validStatuses = ['pending', 'completed', 'failed'];
-    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize);
+    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize) || options.priority !== undefined || options.dependsOn !== undefined;
     const hasOptimizeDescription = (options.description && options.optimize) || options.optimizeDescription;
 
     // Validate at least one option is provided
     if (!hasBasicUpdate && !hasOptimizeDescription) {
-      console.error(chalk.red('Error:'), 'At least one option (--status, --title, --description, --optimize-description) is required');
+      console.error(chalk.red('Error:'), 'At least one option (--status, --title, --description, --priority, --depends-on, --optimize-description) is required');
       process.exit(1);
     }
 
@@ -266,20 +296,39 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
       process.exit(1);
     }
 
+    // Validate priority value
+    if (options.priority !== undefined) {
+      const priority = parseInt(options.priority, 10);
+      if (isNaN(priority) || priority < 1 || priority > 100) {
+        console.error(chalk.red('Error:'), 'Priority must be a number between 1 and 100');
+        process.exit(1);
+      }
+    }
+
     // Track what we're doing
     let task: Task | null = null;
     const results: Record<string, unknown> = {};
 
-    // Basic update (status, title, raw description)
+    // Basic update (status, title, raw description, priority, depends_on)
     if (hasBasicUpdate) {
       if (!options.json && !options.quiet) {
         console.log(chalk.gray('Updating task...'));
       }
 
-      const updatePayload: Record<string, string> = {};
+      const updatePayload: Record<string, string | number | string[]> = {};
       if (options.status) updatePayload.status = options.status;
       if (options.title) updatePayload.title = options.title;
       if (options.description && !options.optimize) updatePayload.description = options.description;
+      if (options.priority !== undefined) updatePayload.priority = parseInt(options.priority, 10);
+      if (options.dependsOn !== undefined) {
+        if (options.dependsOn === '' || options.dependsOn === '""') {
+          // Clear dependencies
+          updatePayload.depends_on = [];
+        } else {
+          // Set dependencies
+          updatePayload.depends_on = options.dependsOn.split(',').map(id => id.trim()).filter(id => id.length > 0);
+        }
+      }
 
       const response = await api.tasks.update(taskId, updatePayload);
       task = response.task;
@@ -352,11 +401,16 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
     if (results.updated) {
       console.log();
       console.log(chalk.bold.cyan('Updated fields:'));
-      const updated = results.updated as Record<string, string>;
+      const updated = results.updated as Record<string, string | number | string[]>;
       for (const [key, value] of Object.entries(updated)) {
-        const displayValue = typeof value === 'string' && value.length > 50
-          ? value.substring(0, 50) + '...'
-          : value;
+        let displayValue: string;
+        if (Array.isArray(value)) {
+          displayValue = value.length === 0 ? '(cleared)' : value.join(', ');
+        } else if (typeof value === 'string' && value.length > 50) {
+          displayValue = value.substring(0, 50) + '...';
+        } else {
+          displayValue = String(value);
+        }
         console.log(`  ${key}: ${chalk.white(displayValue)}`);
       }
     }

@@ -32,3 +32,4 @@ export { flowResumeCommand } from './flow-resume.js';
 export { flowLogsCommand } from './flow-logs.js';
 export { flowAuditCommand } from './flow-audit.js';
 export { converseCommand } from './converse.js';
+export { capabilityCommand } from './capability.js';

@@ -11,6 +11,7 @@ import * as workerTools from './tools/workers';
 import * as escalationTools from './tools/escalations';
 import * as taskTools from './tools/tasks';
 import * as homrTools from './tools/homr';
+import * as capabilityTools from './tools/capabilities';
 import type { OutcomeStatus } from '../db/schema';
 
 export interface ToolCall {
@@ -346,6 +347,76 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         return {
           success: result.success,
           data: result,
+          error: result.error,
+        };
+      }
+
+      // =====================================================================
+      // Capability Tools
+      // =====================================================================
+      case 'detectCapabilities': {
+        const text = args.text as string;
+        if (!text) {
+          return { success: false, error: 'text is required' };
+        }
+        const outcomeId = args.outcome_id as string | undefined;
+        const result = capabilityTools.detectCapabilitiesTool(text, outcomeId);
+        return {
+          success: result.success,
+          data: {
+            suggested: result.suggested,
+            existing: result.existing,
+            skillReferences: result.skillReferences,
+            summary: result.summary,
+          },
+          error: result.error,
+        };
+      }
+
+      case 'listCapabilities': {
+        const outcomeId = args.outcome_id as string | undefined;
+        const result = capabilityTools.listCapabilitiesTool(outcomeId);
+        return {
+          success: result.success,
+          data: {
+            globalSkills: result.globalSkills,
+            outcomeSkills: result.outcomeSkills,
+            outcomeTools: result.outcomeTools,
+            totalCount: result.totalCount,
+          },
+          error: result.error,
+        };
+      }
+
+      case 'createCapability': {
+        const type = args.type as 'skill' | 'tool';
+        const capName = args.name as string;
+        if (!type || !['skill', 'tool'].includes(type)) {
+          return { success: false, error: 'type must be "skill" or "tool"' };
+        }
+        if (!capName) {
+          return { success: false, error: 'name is required' };
+        }
+        const outcomeId = args.outcome_id as string | undefined;
+        const description = args.description as string | undefined;
+        const category = args.category as string | undefined;
+        const createFile = args.create_file as boolean | undefined;
+
+        const result = capabilityTools.createCapabilityTool(
+          type,
+          capName,
+          outcomeId,
+          description,
+          category,
+          createFile
+        );
+        return {
+          success: result.success,
+          data: {
+            taskId: result.taskId,
+            filePath: result.filePath,
+            message: result.message,
+          },
           error: result.error,
         };
       }

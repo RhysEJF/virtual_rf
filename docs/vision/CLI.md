@@ -79,9 +79,10 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Technical audit (`flow audit`) | Complete |
 | Success criteria review (`flow review`) | Complete |
 | Conversational REPL (`flow converse`) | Complete |
+| Capability management (`flow capability`, `skill new`, `tool new`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 33 commands implemented (full coverage)
+**Current:** 34 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -197,8 +198,26 @@ flow worker logs <id> [--tail=<n>] [--follow]
 ```bash
 flow skill list [--global] [--outcome=<id>]
 flow skill show <id-or-name>
-flow skill create --name="..." --content="..."
+flow skill new <name> [--category <cat>] [--description <desc>]  # Create skill template
+flow skill create --name="..." --content="..."                   # Legacy
 flow skill sync <id> --repo=<repo-id>
+```
+
+#### Tools
+```bash
+flow tool list [--outcome=<id>]
+flow tool show <name>
+flow tool new <name> --outcome <id> [--description <desc>]  # Create tool template
+```
+
+#### Capabilities (Unified)
+```bash
+flow capability detect <outcome-id>                         # Detect capabilities from approach
+flow capability detect <outcome-id> --text "..."            # Detect from custom text
+flow capability create <type> <name> --outcome <id>         # Create capability task
+flow capability create skill my-skill --outcome out_xxx     # Example: create skill task
+flow capability list [--outcome <id>]                       # List all capabilities
+flow cap list                                               # Alias
 ```
 
 #### HOMЯ (Orchestration)
@@ -404,10 +423,15 @@ RF_NO_COLOR=1
 ### Phase 4: Skills & Resources (Complete)
 - [x] `skills [--outcome=<id>]` - List skills
 - [x] `skill <name>` - Show skill content
+- [x] `skill new <name>` - Create skill template
 - [x] `tools [--outcome=<id>]` - List tools
 - [x] `tool <name>` - Show tool details
+- [x] `tool new <name> --outcome <id>` - Create tool template
 - [x] `outputs <outcome-id>` - List detected outputs
 - [x] `files <outcome-id>` - List workspace files
+- [x] `capability detect <outcome-id>` - Detect capabilities from approach
+- [x] `capability create <type> <name> --outcome <id>` - Create capability task
+- [x] `capability list [--outcome <id>]` - List all capabilities
 
 ### Phase 5: Management (Complete)
 - [x] `update <id> --name/--intent/--approach` - Update outcome

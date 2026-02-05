@@ -25,7 +25,7 @@ cli/
 ├── tsconfig.json          # TypeScript strict ES2022
 ├── README.md              # User documentation
 ├── src/
-│   ├── index.ts           # Entry point, Commander setup (30 commands)
+│   ├── index.ts           # Entry point, Commander setup (34 commands)
 │   ├── api.ts             # Typed API client (~800 lines)
 │   ├── utils/
 │   │   ├── index.ts       # Re-exports
@@ -54,9 +54,10 @@ cli/
 │       ├── dismiss.ts     # flow dismiss
 │       ├── chat.ts        # flow chat
 │       ├── skills.ts      # flow skills
-│       ├── skill.ts       # flow skill
+│       ├── skill.ts       # flow skill (show, new subcommands)
 │       ├── tools.ts       # flow tools
-│       ├── tool.ts        # flow tool
+│       ├── tool.ts        # flow tool (show, new subcommands)
+│       ├── capability.ts  # flow capability (detect, create, list)
 │       ├── outputs.ts     # flow outputs
 │       ├── files.ts       # flow files
 │       ├── config.ts      # flow config

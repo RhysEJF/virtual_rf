@@ -14,6 +14,9 @@
 | `lib/agents/skill-builder.ts` | Generate CLAUDE.md for building skills | ~6KB |
 | `lib/agents/skill-dependency-resolver.ts` | Ensure required skills exist | ~5KB |
 | `lib/db/skills.ts` | Skill database operations | ~4KB |
+| `lib/capabilities/detection.ts` | Unified capability detection service | ~15KB |
+| `lib/capabilities/creation.ts` | Unified capability creation service | ~8KB |
+| `lib/capabilities/index.ts` | Module exports | ~1KB |
 
 ---
 

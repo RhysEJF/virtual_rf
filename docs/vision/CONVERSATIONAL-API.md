@@ -280,8 +280,9 @@ Instead of intent classification, the agent now uses Claude to select from 20+ t
 | **Outcomes** | `getOutcome`, `getOutcomeTasks`, `getOutcomeWorkers`, `createOutcome`, `iterateOnOutcome` | "Show tasks for X" |
 | **Workers** | `getActiveWorkers`, `startWorker`, `stopWorker`, `getWorkerDetails`, `getWorkerProgress` | "Start a worker" |
 | **Escalations** | `getPendingEscalations`, `answerEscalation` | "Any questions?" |
-| **Tasks** | `getTask`, `addTask`, `updateTask` | "Add context to task", "Optimize task" |
+| **Tasks** | `getTask`, `addTask`, `updateTask`, `findTask` | "Add context to task", "Optimize task" |
 | **HOMR** | `getHomrStatus`, `getHomrDashboard`, `runAutoResolve` | "HOMR status" |
+| **Capabilities** | `detectCapabilities`, `listCapabilities`, `createCapability` | "We need a skill for X" |
 
 Claude decides which tool(s) to call based on the user's natural language query.
 
@@ -460,7 +461,7 @@ pm2 startup  # Auto-start on boot
 - [ ] "More context" expansion
 
 ### Phase 3: Natural Language (Complete)
-- [x] Tool-based agent (20+ tools, Claude selects)
+- [x] Tool-based agent (25+ tools, Claude selects)
 - [x] Two-pass architecture (tool execution + formatting)
 - [x] Skill file as single source of truth
 - [x] Context-aware responses (session management)
@@ -555,7 +556,7 @@ bot.launch();
 ### API Foundation (Complete)
 - [x] `/api/converse-agent` endpoint with session management
 - [x] Two-pass architecture (tool selection + formatting)
-- [x] 20+ tools available via skill file
+- [x] 25+ tools available via skill file (including capability tools)
 - [x] Session persistence in database
 - [x] `disableNativeTools` option to prevent agentic loops
 

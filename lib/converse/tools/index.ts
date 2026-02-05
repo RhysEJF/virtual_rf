@@ -384,6 +384,77 @@ export const converseTools: ToolDefinition[] = [
       },
     },
   },
+
+  // =========================================================================
+  // Capability Tools (Skills & Tools Management)
+  // =========================================================================
+  {
+    name: 'detectCapabilities',
+    description:
+      'Analyze text to detect mentioned skills and tools. Returns suggested capabilities to create and references to existing ones. Use when user mentions potential capabilities like "we need a skill for X", or when analyzing approach/task text for capability needs.',
+    parameters: {
+      text: {
+        type: 'string',
+        description: 'Text to analyze for capability mentions',
+        required: true,
+      },
+      outcome_id: {
+        type: 'string',
+        description: 'Optional outcome ID for context-specific detection',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'listCapabilities',
+    description:
+      'List all available capabilities (skills and tools). Shows global skills and outcome-specific skills/tools. Use for "what skills do we have?", "show capabilities", "list tools".',
+    parameters: {
+      outcome_id: {
+        type: 'string',
+        description: 'Optional outcome ID to include outcome-specific capabilities',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'createCapability',
+    description:
+      'Create a new capability (skill or tool). Creates a capability task for workers to build, or directly creates a template file. Use for "create a skill for X", "we need a tool for Y", "add a perplexity research skill".',
+    parameters: {
+      type: {
+        type: 'string',
+        description: 'Type of capability to create',
+        required: true,
+        enum: ['skill', 'tool'],
+      },
+      name: {
+        type: 'string',
+        description: 'Name of the capability',
+        required: true,
+      },
+      outcome_id: {
+        type: 'string',
+        description: 'Outcome ID (required for tools and capability tasks)',
+        required: false,
+      },
+      description: {
+        type: 'string',
+        description: 'Description of what the capability does',
+        required: false,
+      },
+      category: {
+        type: 'string',
+        description: 'Category for global skills (e.g., "research", "analysis")',
+        required: false,
+      },
+      create_file: {
+        type: 'boolean',
+        description: 'If true, create template file directly instead of capability task',
+        required: false,
+      },
+    },
+  },
 ];
 
 /**

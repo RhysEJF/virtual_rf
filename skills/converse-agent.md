@@ -239,6 +239,43 @@ Run auto-resolve on pending escalations for an outcome. The AI will try to answe
 - **Returns**: `{ resolved, deferred, details[] }`
 - **Use when**: "enable auto-resolve", "auto answer escalations", "yolo mode"
 
+### Capability Tools (Skills & Tools Management)
+
+#### detectCapabilities
+Analyze text to detect mentioned skills and tools. Returns suggested capabilities to create and references to existing ones.
+- **Parameters**:
+  - `text` (required) - Text to analyze for capability mentions
+  - `outcome_id` (optional) - Outcome ID for context-specific detection
+- **Returns**: `{ suggested[], existing[], skillReferences[], summary }`
+- **Use when**: User mentions potential capabilities like "we need a skill for X", or when analyzing approach/task text for capability needs
+
+#### listCapabilities
+List all available capabilities (skills and tools). Shows global skills and outcome-specific skills/tools.
+- **Parameters**:
+  - `outcome_id` (optional) - Outcome ID to include outcome-specific capabilities
+- **Returns**: `{ globalSkills[], outcomeSkills[], outcomeTools[], totalCount }`
+- **Use when**: "what skills do we have?", "show capabilities", "list tools", "what's available?"
+
+#### createCapability
+Create a new capability (skill or tool). Creates a capability task for workers to build, or directly creates a template file.
+- **Parameters**:
+  - `type` (required) - "skill" or "tool"
+  - `name` (required) - Name of the capability
+  - `outcome_id` (optional) - Outcome ID (required for tools and capability tasks)
+  - `description` (optional) - Description of what the capability does
+  - `category` (optional) - Category for global skills (e.g., "research", "analysis")
+  - `create_file` (optional) - If true, create template file directly instead of capability task
+- **Returns**: `{ taskId, filePath, message }`
+- **Use when**: "create a skill for X", "we need a tool for Y", "add a perplexity research skill"
+
+**Capability Creation Guidance:**
+- When user says "we need a skill for X" → use `createCapability(type="skill", name="X", outcome_id=...)`
+- When user says "create a tool for Y" → use `createCapability(type="tool", name="Y", outcome_id=...)`
+- For global skills (shared across outcomes), include a category
+- For outcome-specific capabilities, include the outcome_id
+- Default behavior creates a capability task for workers to build
+- Use `create_file=true` only if user explicitly wants a template file immediately
+
 <!-- END SECTION: TOOLS -->
 
 <!-- SECTION: FORMAT_GUIDELINES -->
@@ -403,3 +440,29 @@ TOOL_CALL: getWorkerDetails(worker_id="wrk_xyz")
 ```
 TOOL_CALL: getPendingEscalations()
 ```
+
+**User**: "What skills do we have?"
+```
+TOOL_CALL: listCapabilities()
+```
+
+**User**: "We need a skill for Perplexity research"
+```
+TOOL_CALL: createCapability(type="skill", name="Perplexity Research", outcome_id="out_abc123", description="Research using Perplexity API")
+```
+Response: "Created capability task for skill: Perplexity Research. Would you like me to start a worker to build it?"
+
+**User**: "Create a web scraper tool for the competitor analysis outcome"
+```
+TOOL_CALL: createCapability(type="tool", name="Web Scraper", outcome_id="out_xyz789", description="Scrape competitor websites for data")
+```
+
+**User**: "Check if the approach mentions any skills we need to create"
+```
+TOOL_CALL: detectCapabilities(text="We'll use a skills-based approach with skills/market-research.md and skills/competitor-analysis.md", outcome_id="out_abc123")
+```
+Response: "I found 2 skills mentioned that don't exist yet:
+- Market Research
+- Competitor Analysis
+
+Would you like me to create capability tasks for these?"

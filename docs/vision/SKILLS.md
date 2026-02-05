@@ -30,6 +30,10 @@ Think of skills as "employee training manuals" that workers read before starting
 | Repository sync (save targets) | Complete |
 | Sync status UI | Complete |
 | Manual promotion | Complete |
+| **Unified capability creation** | Complete |
+| - API endpoints (/api/capabilities/*) | Complete |
+| - CLI commands (flow capability, skill new, tool new) | Complete |
+| - Conversational API tools | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -102,6 +106,7 @@ Skills can declare what API keys they need via the `requires` field. The UI show
 4. **Key validation** - Skills with missing API keys are flagged in UI
 5. **Repository sync** - Skills can be synced to private/team repos for sharing
 6. **Auto-save** - If enabled, skills sync automatically when built
+7. **Unified creation** - Skills/tools can be created from any interface (UI, CLI, conversational API)
 
 ---
 

@@ -855,6 +855,110 @@ Priority: 1=critical, 2=important, 3=nice-to-have`;
   };
 }
 
+async function handleAuditOutcome(
+  classification: IntentClassification,
+  session: ParsedConversationSession,
+  enrichedContext?: EnrichedContext | null
+): Promise<{ message: string; actions: ActionTaken[]; data?: Record<string, unknown> }> {
+  let outcomeId = classification.entities.outcome_id || session.current_outcome_id;
+
+  // Check resolved entities from context if no outcome specified
+  if (!outcomeId && enrichedContext?.referencedEntities?.outcome?.id) {
+    outcomeId = enrichedContext.referencedEntities.outcome.id;
+  }
+
+  if (!outcomeId) {
+    return {
+      message: "I need to know which outcome to audit. Please specify an outcome or switch to one first.",
+      actions: [{ action: 'audit', success: false }],
+    };
+  }
+
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) {
+    return {
+      message: `Outcome ${outcomeId} not found.`,
+      actions: [{ action: 'audit', target: outcomeId, success: false }],
+    };
+  }
+
+  // Note: In a full implementation, this would call the audit API or run checks directly.
+  // For now, we provide guidance on using the CLI command.
+  return {
+    message: `To run technical checks on **${outcome.name}**, use the CLI command:\n\n\`\`\`\nflow audit --path workspaces/${outcomeId}\n\`\`\`\n\nThis will run typecheck, lint, and tests if available.`,
+    actions: [{ action: 'audit', target: outcomeId, result: 'Provided CLI command', success: true }],
+    data: { outcomeId, outcomeName: outcome.name },
+  };
+}
+
+async function handleReviewOutcome(
+  classification: IntentClassification,
+  session: ParsedConversationSession,
+  enrichedContext?: EnrichedContext | null
+): Promise<{ message: string; actions: ActionTaken[]; data?: Record<string, unknown> }> {
+  let outcomeId = classification.entities.outcome_id || session.current_outcome_id;
+
+  // Check resolved entities from context if no outcome specified
+  if (!outcomeId && enrichedContext?.referencedEntities?.outcome?.id) {
+    outcomeId = enrichedContext.referencedEntities.outcome.id;
+  }
+
+  if (!outcomeId) {
+    return {
+      message: "I need to know which outcome to review. Please specify an outcome or switch to one first.",
+      actions: [{ action: 'review', success: false }],
+    };
+  }
+
+  const outcome = getOutcomeById(outcomeId);
+  if (!outcome) {
+    return {
+      message: `Outcome ${outcomeId} not found.`,
+      actions: [{ action: 'review', target: outcomeId, success: false }],
+    };
+  }
+
+  // Call the review API
+  try {
+    const response = await fetch(`http://localhost:3000/api/outcomes/${outcomeId}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Review failed: ${response.status}`);
+    }
+
+    const reviewResult = await response.json() as {
+      issuesFound: number;
+      tasksCreated: number;
+      criteriaEvaluation?: {
+        allCriteriaPassed: boolean;
+        passedCriteria: number;
+        totalCriteria: number;
+      };
+    };
+
+    const criteriaInfo = reviewResult.criteriaEvaluation
+      ? `\n\n**Success Criteria:** ${reviewResult.criteriaEvaluation.passedCriteria}/${reviewResult.criteriaEvaluation.totalCriteria} passed`
+      : '';
+
+    const statusEmoji = reviewResult.issuesFound === 0 ? '✅' : '⚠️';
+
+    return {
+      message: `${statusEmoji} **Review Complete for "${outcome.name}"**${criteriaInfo}\n\n**Issues Found:** ${reviewResult.issuesFound}\n**Tasks Created:** ${reviewResult.tasksCreated}${reviewResult.issuesFound === 0 ? '\n\nNo issues found - the work meets the success criteria!' : '\n\nFix tasks have been created for the issues found.'}`,
+      actions: [{ action: 'review', target: outcomeId, result: `${reviewResult.issuesFound} issues`, success: true }],
+      data: { outcomeId, ...reviewResult },
+    };
+  } catch (error) {
+    return {
+      message: `Failed to run review: ${error instanceof Error ? error.message : 'Unknown error'}. You can try the CLI command:\n\n\`\`\`\nflow review ${outcomeId}\n\`\`\``,
+      actions: [{ action: 'review', target: outcomeId, success: false }],
+    };
+  }
+}
+
 async function handleHelp(): Promise<{ message: string; actions: ActionTaken[] }> {
   const message = `**Digital Twin - Conversational Interface**
 
@@ -1032,6 +1136,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ConverseR
         break;
       case 'iterate':
         result = await handleIterate(classification, session, enrichedContext);
+        break;
+      case 'audit_outcome':
+        result = await handleAuditOutcome(classification, session, enrichedContext);
+        break;
+      case 'review_outcome':
+        result = await handleReviewOutcome(classification, session, enrichedContext);
         break;
       case 'help':
         result = await handleHelp();

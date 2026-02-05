@@ -26,6 +26,8 @@ export type IntentType =
   | 'answer_escalation'   // User is answering an escalation question
   | 'show_escalations'    // User wants to see pending escalations
   | 'iterate'             // User wants to iterate/provide feedback on completed work
+  | 'audit_outcome'       // User wants to run technical checks (typecheck, lint, tests)
+  | 'review_outcome'      // User wants to review work against success criteria
   | 'help'                // User wants help with the system
   | 'general_query';      // General question or conversation
 
@@ -69,8 +71,10 @@ INTENTS:
 9. answer_escalation - User is answering a question/escalation (e.g., "use React for the frontend", direct answers to questions)
 10. show_escalations - User wants to see pending escalations (e.g., "any questions?", "what needs my input?", "show escalations")
 11. iterate - User wants to provide feedback/changes on completed work (e.g., "the button should be blue", "add validation")
-12. help - User wants help with the system (e.g., "help", "how do I use this?", "what can you do?")
-13. general_query - General questions or conversation (e.g., "what time is it?", "explain X")
+12. audit_outcome - User wants to run technical checks on code (e.g., "any TypeScript errors?", "run checks", "does it compile?", "run the tests")
+13. review_outcome - User wants to check work against success criteria (e.g., "review the work", "does it meet requirements?", "is it ready?", "check success criteria")
+14. help - User wants help with the system (e.g., "help", "how do I use this?", "what can you do?")
+15. general_query - General questions or conversation (e.g., "what time is it?", "explain X")
 
 Extract any entities mentioned:
 - outcome_id: IDs like "out_abc123" or outcome names
@@ -261,7 +265,8 @@ function normalizeClassification(
   const validTypes: IntentType[] = [
     'create_outcome', 'check_status', 'list_outcomes', 'show_outcome',
     'list_tasks', 'start_worker', 'stop_worker', 'pause_worker',
-    'answer_escalation', 'show_escalations', 'iterate', 'help', 'general_query'
+    'answer_escalation', 'show_escalations', 'iterate', 'audit_outcome',
+    'review_outcome', 'help', 'general_query'
   ];
 
   // Validate type
@@ -404,6 +409,21 @@ function classifyIntentHeuristically(message: string): IntentClassification {
     return { type: 'iterate', confidence: 0.7, entities };
   }
 
+  // Audit - technical validation patterns
+  if (lower.includes('typecheck') || lower.includes('type check') || lower.includes('typescript error') ||
+      lower.includes('compile') || lower.includes('lint') || lower.includes('run test') ||
+      lower.includes('any errors') || lower.includes('does it build') || lower.includes('run checks') ||
+      lower.includes('audit')) {
+    return { type: 'audit_outcome', confidence: 0.8, entities };
+  }
+
+  // Review - success criteria patterns
+  if (lower.includes('review') || lower.includes('success criteria') || lower.includes('requirements') ||
+      lower.includes('is it ready') || lower.includes('does it meet') || lower.includes('check the work') ||
+      lower.includes('evaluate') || lower.includes('criteria')) {
+    return { type: 'review_outcome', confidence: 0.8, entities };
+  }
+
   // Create outcome - imperative verb patterns
   const createPatterns = [
     /^(build|create|make|develop|implement|design|write|set up|setup)\s/i,
@@ -492,6 +512,8 @@ export function getIntentDescription(type: IntentType): string {
     answer_escalation: 'Answer a pending escalation',
     show_escalations: 'Show pending escalations',
     iterate: 'Provide feedback on completed work',
+    audit_outcome: 'Run technical checks (typecheck, lint, tests)',
+    review_outcome: 'Review work against success criteria',
     help: 'Get help with the system',
     general_query: 'General question or conversation',
   };

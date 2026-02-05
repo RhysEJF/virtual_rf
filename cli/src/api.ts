@@ -451,6 +451,8 @@ export type IntentType =
   | 'answer_escalation'
   | 'show_escalations'
   | 'iterate'
+  | 'audit_outcome'
+  | 'review_outcome'
   | 'help'
   | 'general_query';
 

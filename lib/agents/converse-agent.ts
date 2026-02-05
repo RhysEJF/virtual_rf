@@ -131,12 +131,83 @@ export async function runConverseAgent(
       };
     }
 
-    // Parse tool calls from response
-    const toolCalls = parseToolCalls(pass1Response.text);
+    // =========================================================================
+    // Iterative Tool Execution Loop
+    // =========================================================================
+    // Keep executing tools until Claude stops outputting TOOL_CALLs.
+    // This allows multi-step operations like: findTask → get ID → updateTask
+    const allToolCalls: ToolCall[] = [];
+    const allToolResults = new Map<string, ToolResult>();
+    let currentResponse = pass1Response.text;
+    let iterationCount = 0;
+    const maxIterations = 3; // Prevent infinite loops
 
-    // If no tools were called, return Pass 1 response directly
-    if (toolCalls.length === 0) {
-      // Strip any stray tool-call-like text that might confuse the user
+    while (iterationCount < maxIterations) {
+      iterationCount++;
+
+      // Parse tool calls from current response
+      const toolCalls = parseToolCalls(currentResponse);
+
+      // If no tools were called, we're done with the tool execution phase
+      if (toolCalls.length === 0) {
+        break;
+      }
+
+      // Execute the tools
+      for (const call of toolCalls) {
+        const result = await executeTool(call);
+        allToolCalls.push(call);
+        allToolResults.set(`${call.name}_${allToolCalls.length}`, result);
+
+        // If this tool failed, don't continue with dependent tools
+        if (!result.success) {
+          // Return error immediately
+          return {
+            success: false,
+            message: `I couldn't complete that request: ${result.error}`,
+            sessionId: session.id,
+            toolCalls: allToolCalls.map((tc, idx) => ({
+              name: tc.name,
+              success: allToolResults.get(`${tc.name}_${idx + 1}`)?.success ?? false,
+              data: allToolResults.get(`${tc.name}_${idx + 1}`)?.data,
+              error: allToolResults.get(`${tc.name}_${idx + 1}`)?.error,
+            })),
+          };
+        }
+      }
+
+      // Build a continuation prompt with the tool results
+      // Ask Claude if there are more tools to call
+      const toolResultsSummary = toolCalls.map((tc, idx) => {
+        const result = allToolResults.get(`${tc.name}_${allToolCalls.length - toolCalls.length + idx + 1}`);
+        return `Tool: ${tc.name}\nResult: ${JSON.stringify(result?.data, null, 2)}`;
+      }).join('\n\n');
+
+      const continuationPrompt = `Previous tool results:\n${toolResultsSummary}\n\nBased on these results, do you need to call any more tools to complete the user's request? If yes, output the TOOL_CALL. If no, just say "DONE" and I'll format the final response.`;
+
+      const continuationResponse = await claudeComplete({
+        prompt: continuationPrompt,
+        systemPrompt,
+        maxTurns: 2,
+        timeout: 30000,
+        disableNativeTools: true,
+        description: `Converse agent - Pass 1 continuation (iteration ${iterationCount})`,
+      });
+
+      if (!continuationResponse.success) {
+        break; // Move on to formatting
+      }
+
+      currentResponse = continuationResponse.text;
+
+      // If Claude says DONE, break out
+      if (currentResponse.toUpperCase().includes('DONE') && !currentResponse.includes('TOOL_CALL')) {
+        break;
+      }
+    }
+
+    // If no tools were called at all, return the original response
+    if (allToolCalls.length === 0) {
       const cleanedResponse = cleanResponseText(pass1Response.text);
       return {
         success: true,
@@ -146,47 +217,17 @@ export async function runConverseAgent(
       };
     }
 
-    // =========================================================================
-    // Execute Tools
-    // =========================================================================
-    const toolResults = new Map<string, ToolResult>();
-    for (const call of toolCalls) {
-      const result = await executeTool(call);
-      toolResults.set(call.name, result);
-    }
-
-    // Check for errors
-    const hasErrors = Array.from(toolResults.values()).some((r) => !r.success);
-    if (hasErrors) {
-      // Find first error and return it
-      for (const [name, result] of Array.from(toolResults.entries())) {
-        if (!result.success) {
-          return {
-            success: false,
-            message: `I couldn't complete that request: ${result.error}`,
-            sessionId: session.id,
-            toolCalls: toolCalls.map((tc) => ({
-              name: tc.name,
-              success: toolResults.get(tc.name)?.success ?? false,
-              data: toolResults.get(tc.name)?.data,
-              error: toolResults.get(tc.name)?.error,
-            })),
-          };
-        }
-      }
-    }
-
     // Update session context based on tool calls/results
-    updateSessionFromResponse(session.id, toolCalls, toolResults);
+    updateSessionFromResponse(session.id, allToolCalls, allToolResults);
 
     // =========================================================================
     // PASS 2: Formatting
     // =========================================================================
-    const toolResultSummaries: ToolResultSummary[] = toolCalls.map((tc) => ({
+    const toolResultSummaries: ToolResultSummary[] = allToolCalls.map((tc, idx) => ({
       toolName: tc.name,
-      success: toolResults.get(tc.name)?.success ?? false,
-      data: toolResults.get(tc.name)?.data,
-      error: toolResults.get(tc.name)?.error,
+      success: allToolResults.get(`${tc.name}_${idx + 1}`)?.success ?? false,
+      data: allToolResults.get(`${tc.name}_${idx + 1}`)?.data,
+      error: allToolResults.get(`${tc.name}_${idx + 1}`)?.error,
     }));
 
     const formattingPrompt = buildFormattingPrompt(
@@ -205,7 +246,7 @@ export async function runConverseAgent(
 
     if (!pass2Response.success) {
       // Fall back to raw data display if formatting fails
-      const fallbackMessage = buildFallbackResponse(toolCalls, toolResults);
+      const fallbackMessage = buildFallbackResponse(allToolCalls, allToolResults);
       return {
         success: true,
         message: fallbackMessage,
@@ -216,7 +257,7 @@ export async function runConverseAgent(
           data: tr.data,
           error: tr.error,
         })),
-        data: extractDataFromResults(toolResults),
+        data: extractDataFromResults(allToolResults),
       };
     }
 
@@ -233,7 +274,7 @@ export async function runConverseAgent(
         data: tr.data,
         error: tr.error,
       })),
-      data: extractDataFromResults(toolResults),
+      data: extractDataFromResults(allToolResults),
     };
   } catch (error) {
     return {

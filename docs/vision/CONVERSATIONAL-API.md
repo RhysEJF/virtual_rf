@@ -96,20 +96,28 @@ This is the feature that transforms Digital Twin from "a tool you use at your de
 #### 2. Natural Language (Intent Classification)
 ```
 "Build a landing page for my startup"
-  → Detected: new outcome request
+  → Detected: create_outcome
   → rf new "Build a landing page for my startup"
 
 "What's the status of the landing page?"
-  → Detected: status check
+  → Detected: check_status
   → rf show $(rf list --name="landing page" --format=id | head -1)
 
 "Add dark mode support"
-  → Detected: iterate request (context: current outcome)
+  → Detected: iterate_outcome
   → rf outcome iterate out_abc123 --feedback="Add dark mode support"
 
 "How's everything going?"
-  → Detected: general status
+  → Detected: check_status
   → rf status
+
+"Are there any typecheck errors?"
+  → Detected: audit_outcome
+  → rf audit
+
+"Does it meet the success criteria?"
+  → Detected: review_outcome
+  → rf review out_abc123
 ```
 
 #### 3. Quick Replies (For Escalations)
@@ -200,6 +208,65 @@ Bot: 📬 Progress Update - Chrome Extension
 
      [View Details] [Pause Worker]
 ```
+
+---
+
+## Current Implementation
+
+### `/api/converse` Endpoint
+
+The conversational API is implemented as a REST endpoint that handles all message types:
+
+```typescript
+POST /api/converse
+{
+  "message": "What outcomes are active?",
+  "session_id": "ses_abc123"  // Optional, for context persistence
+}
+```
+
+**Response:**
+```typescript
+{
+  "response": "You have 2 active outcomes...",
+  "session_id": "ses_abc123",
+  "intent": {
+    "type": "check_status",
+    "confidence": 0.9
+  }
+}
+```
+
+### Intent Types (15 Total)
+
+| Intent | Description | Example Input |
+|--------|-------------|---------------|
+| `create_outcome` | Create new outcome | "Build a landing page" |
+| `check_status` | System/outcome status | "What's the status?" |
+| `start_worker` | Start worker | "Start working on it" |
+| `stop_worker` | Stop worker | "Pause the worker" |
+| `list_outcomes` | List outcomes | "Show all outcomes" |
+| `show_outcome` | Outcome details | "Tell me about the API project" |
+| `iterate_outcome` | Request changes | "Add dark mode support" |
+| `add_task` | Add task | "Add a task for testing" |
+| `check_escalations` | View escalations | "Any pending questions?" |
+| `answer_escalation` | Answer escalation | "Use option A" |
+| `dismiss_escalation` | Dismiss escalation | "Skip that question" |
+| `audit_outcome` | Technical validation | "Run typecheck and lint" |
+| `review_outcome` | Success criteria check | "Does it meet requirements?" |
+| `help` | Get help | "What can you do?" |
+| `general_query` | General questions | "How does this work?" |
+
+### Session Management
+
+Conversations are persisted across messages:
+- `conversation_sessions` - Session metadata, current outcome context
+- `conversation_messages` - Message history per session
+
+Sessions track:
+- Current outcome (for contextual commands)
+- Message history (for multi-turn conversations)
+- Last activity (for session expiry)
 
 ---
 
@@ -350,35 +417,42 @@ pm2 startup  # Auto-start on boot
 
 ## Implementation Phases
 
-### Phase 1: Slash Commands
-- [ ] `/status` - System overview
-- [ ] `/list` - Active outcomes
-- [ ] `/show <id>` - Outcome details
-- [ ] `/start <id>` - Start worker
-- [ ] `/stop <id>` - Stop worker
-- [ ] `/help` - Available commands
+### Phase 1: Slash Commands (Complete via CLI)
+- [x] `/status` - System overview
+- [x] `/list` - Active outcomes
+- [x] `/show <id>` - Outcome details
+- [x] `/start <id>` - Start worker
+- [x] `/stop <id>` - Stop worker
+- [x] `/help` - Available commands
 
-### Phase 2: Escalation Handling
+### Phase 2: Escalation Handling (Partial)
 - [ ] Push notifications for escalations
-- [ ] Quick reply buttons (A/B/C/Skip)
-- [ ] Answer confirmation
+- [x] Quick reply buttons (answer/dismiss)
+- [x] Answer confirmation
 - [ ] "More context" expansion
 
-### Phase 3: Natural Language
-- [ ] Intent classification (create/check/modify)
-- [ ] Outcome name extraction
-- [ ] Context-aware responses (remember current outcome)
+### Phase 3: Natural Language (Complete)
+- [x] Intent classification (15 intent types)
+- [x] Outcome name extraction
+- [x] Context-aware responses (session management)
+- [x] Audit and review intents
 
-### Phase 4: Progress Updates
+### Phase 4: Progress Updates (Not Started)
 - [ ] Configurable notifications
 - [ ] Task completion batching
 - [ ] Quiet hours
 - [ ] Summary digests
 
-### Phase 5: Full Conversational
-- [ ] Multi-turn conversations
+### Phase 5: Full Conversational (Partial)
+- [x] Multi-turn conversations (via sessions)
 - [ ] Clarification questions
 - [ ] Voice message support (via transcription)
+
+### Phase 6: Telegram Bridge (Not Started)
+- [ ] Bot setup with Telegraf
+- [ ] Webhook integration
+- [ ] Push notifications
+- [ ] Mac Mini deployment
 
 ---
 
@@ -447,20 +521,26 @@ bot.launch();
 
 ## Success Criteria
 
-### Usability
+### API Foundation (Complete)
+- [x] `/api/converse` endpoint with session management
+- [x] Intent classification (Claude-powered with heuristic fallback)
+- [x] All 15 intent types implemented
+- [x] Session persistence in database
+
+### Usability (Pending Telegram Bridge)
 - [ ] Can create outcome from Telegram in < 30 seconds
 - [ ] Escalation response takes < 10 seconds
-- [ ] Status check returns in < 2 seconds
+- [x] Status check returns in < 2 seconds (via CLI/API)
 
 ### Reliability
 - [ ] 99.9% uptime on Mac Mini
-- [ ] Graceful handling of API unavailability
+- [x] Graceful handling of API unavailability
 - [ ] No lost messages during restarts
 
 ### Feature Parity
-- [ ] All critical operations available via chat
-- [ ] Escalations get immediate notifications
-- [ ] Can manage outcomes without ever opening web UI
+- [x] All critical operations available via API
+- [ ] Escalations get immediate push notifications
+- [x] Can manage outcomes without web UI (via CLI)
 
 ---
 

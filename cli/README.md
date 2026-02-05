@@ -340,6 +340,182 @@ Dependencies:
   Blocks:     task_def, task_ghi
 ```
 
+### `flow review <outcome-id>`
+
+Triggers the Reviewer agent to check outcome work against success criteria. Displays pass/fail results for each criterion.
+
+```bash
+# Run full review (evaluates criteria, creates tasks for issues)
+flow review out_xyz789
+
+# Only evaluate criteria (no task creation)
+flow review out_xyz789 --criteria-only
+
+# Show detailed evidence and notes
+flow review out_xyz789 --verbose
+
+# Output as JSON
+flow review out_xyz789 --json
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--criteria-only` | Only evaluate criteria, no issue tracking or task creation |
+| `--verbose` | Show detailed evidence and notes for each criterion |
+| `--json` | Output as JSON |
+| `--quiet` | Minimal output (ID only) |
+
+**Example output:**
+```
+Running review...
+
+CLI Review Command
+────────────────────────────────────────────────────────────
+
+✓ All criteria passed!
+
+Summary
+  Total Criteria:  5
+  Passed:          5
+  Failed:          0
+
+PRD Items
+  ✓ Create review CLI command [1]
+     ✓ Command accepts outcome ID argument
+     ✓ Calls review API endpoint
+     ✓ Displays pass/fail results
+
+Global Success Criteria
+  ✓ CLI follows existing command patterns
+  ✓ TypeScript builds without errors
+
+Review Results
+  ✓ No issues found
+  Review cycle: rev_abc123xyz
+
+Convergence
+  ✓ Work is converging
+  Clean reviews: 2/2
+  Total cycles: 3
+```
+
+### `flow audit`
+
+Runs technical validation checks on the current project or a specified directory. Automatically detects project type and runs appropriate checks.
+
+```bash
+# Run audit on current directory
+flow audit
+
+# Run on specific path
+flow audit --path /path/to/project
+
+# Show full output from each check
+flow audit --verbose
+
+# Output as JSON
+flow audit --json
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--path <dir>` | Directory to audit (defaults to current) |
+| `--verbose` | Show full output from each check |
+| `--json` | Output as JSON |
+| `--quiet` | Minimal output |
+
+**Detected Project Types:**
+- **Node.js/TypeScript**: Runs `npm run typecheck`, `npm run lint`, `npm run test`
+- **Python**: Runs `mypy`, `flake8`/`ruff`, `pytest`
+- **Go**: Runs `go build`, `golangci-lint`, `go test`
+- **Rust**: Runs `cargo check`, `cargo clippy`, `cargo test`
+
+**Example output:**
+```
+Running audit...
+
+Technical Audit
+────────────────────────────────────────────────────────────
+
+Project Type: Node.js/TypeScript
+
+✓ TypeScript Check
+  Status: passed
+  Command: npm run typecheck
+  Duration: 2.3s
+
+✓ Lint Check
+  Status: passed
+  Command: npm run lint
+  Duration: 1.1s
+
+✗ Tests
+  Status: failed
+  Command: npm run test
+  Duration: 5.2s
+  Error: 2 tests failed
+
+Summary
+  Passed: 2/3
+  Failed: 1/3
+```
+
+### `flow converse`
+
+Starts an interactive conversational REPL session for natural language interaction with Digital Twin.
+
+```bash
+# Start new conversation
+flow converse
+
+# Resume existing session
+flow converse --session ses_abc123xyz
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--session <id>` | Resume existing session by ID |
+
+**REPL Commands:**
+| Command | Description |
+|---------|-------------|
+| `/exit`, `/quit`, `/q` | Exit the conversation |
+| `/clear [new]` | Clear screen (add `new` to start fresh session) |
+| `/context` | Show current session context |
+| `/switch <outcome>` | Switch to a different outcome |
+| `/help` | Show available commands |
+
+**Example session:**
+```
+$ flow converse
+
+Digital Twin CLI v0.1.0
+Type your request, or use /help for commands
+
+> What outcomes are currently active?
+
+You have 2 active outcomes:
+  1. CLI Tool [5/8 tasks] - 1 worker running
+  2. API Refactoring [2/4 tasks] - dormant
+
+> Start a worker on the API Refactoring
+
+Starting worker for "API Refactoring"...
+✓ Worker started (wrk_xyz789)
+
+> Are there any typecheck errors?
+
+Running audit on API Refactoring workspace...
+✓ TypeScript check passed
+✓ No errors found
+
+> /quit
+Goodbye!
+```
+
 ## Common Workflows
 
 ### Create and start working on an outcome

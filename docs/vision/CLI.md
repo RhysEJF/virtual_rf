@@ -76,9 +76,12 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Configuration (`config`, `sync`) | Complete |
 | Output format flags (`--json`, `--quiet`) | Complete |
 | Supervise mode (`--supervise`, `--yolo` on homr) | Complete |
+| Technical audit (`flow audit`) | Complete |
+| Success criteria review (`flow review`) | Complete |
+| Conversational REPL (`flow converse`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 30 commands implemented (full coverage)
+**Current:** 33 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -216,6 +219,35 @@ flow dismiss <escalation-id>              # Dismiss escalation (Done)
 - Pending escalations count
 
 **YOLO Mode:** Auto-resolves escalations using AI confidence scoring, shows decisions made
+
+#### Validation & Review
+```bash
+flow audit [--path=<dir>]              # Run technical checks (typecheck, lint, tests)
+flow audit --verbose                   # Show full output from each check
+flow review <outcome-id>               # Check work against success criteria
+flow review <outcome-id> --verbose     # Show detailed evidence for each criterion
+flow review <outcome-id> --criteria-only  # Only evaluate criteria, no task creation
+```
+
+**Audit:** Detects project type (Node, Python, Go, Rust) and runs appropriate checks:
+- TypeScript: `npm run typecheck`
+- ESLint: `npm run lint`
+- Tests: `npm run test`
+
+**Review:** Triggers the Reviewer agent to check completed work against the success criteria defined in the outcome's intent. Creates fix tasks for any issues found.
+
+#### Conversational Interface
+```bash
+flow converse                          # Start interactive REPL session
+flow converse --session=<id>           # Resume existing session
+```
+
+**REPL Commands:**
+- `/exit`, `/quit`, `/q` - Exit conversation
+- `/clear [new]` - Clear screen (new = start fresh session)
+- `/context` - Show current session context
+- `/switch <outcome>` - Switch to different outcome
+- `/help` - Show available commands
 
 #### Git Operations
 ```bash

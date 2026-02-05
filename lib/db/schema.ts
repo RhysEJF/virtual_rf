@@ -67,6 +67,9 @@ export type SaveTarget = 'local' | 'repo' | 'inherit';
 // Sync status for item-to-repo relationships
 export type SyncStatus = 'synced' | 'failed' | 'stale';
 
+// Isolation mode for workspace boundaries
+export type IsolationMode = 'workspace' | 'codebase';
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -111,6 +114,8 @@ export interface Outcome {
   // HOMЯ Auto-resolve settings
   auto_resolve_mode: 'manual' | 'semi-auto' | 'full-auto';  // How to handle escalations
   auto_resolve_threshold: number;   // Confidence threshold for auto-resolution (0.0-1.0)
+  // Workspace isolation
+  isolation_mode: IsolationMode;    // 'workspace' = isolated, 'codebase' = can modify main
 }
 
 export interface DesignDoc {

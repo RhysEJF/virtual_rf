@@ -242,6 +242,7 @@ export interface DispatchInput {
   input: string;
   modeHint?: 'smart' | 'quick' | 'long';
   skipMatching?: boolean;
+  isolationMode?: IsolationMode;
 }
 
 // Supervisor types
@@ -504,6 +505,89 @@ export interface ConverseSessionResponse {
   messages: ConversationMessage[];
 }
 
+// System config types
+export type IsolationMode = 'workspace' | 'codebase';
+
+export interface SystemConfigResponse {
+  default_isolation_mode: IsolationMode;
+}
+
+export interface SystemConfigUpdate {
+  default_isolation_mode?: IsolationMode;
+}
+
+// Workspace server types
+export type AppType = 'node' | 'static';
+
+export interface DetectedApp {
+  id: string;
+  type: AppType;
+  name: string;
+  path: string;
+  absolutePath: string;
+  framework?: string;
+  entryPoint: string;
+  scripts?: {
+    dev?: boolean;
+    start?: boolean;
+    build?: boolean;
+  };
+}
+
+export interface RunningServer {
+  id: string;
+  outcomeId: string;
+  appId: string;
+  type: AppType;
+  pid: number;
+  port: number;
+  command: string;
+  url: string;
+  startedAt: number;
+  status: 'starting' | 'running' | 'stopped' | 'error';
+  error?: string;
+}
+
+export interface AppServerResponse {
+  outcomeId: string;
+  apps: DetectedApp[];
+  servers: RunningServer[];
+  hasRunningServers: boolean;
+}
+
+export interface StartServerResponse {
+  success: boolean;
+  server: RunningServer;
+  message: string;
+}
+
+export interface StopServerResponse {
+  success: boolean;
+  stopped: number;
+  message: string;
+}
+
+// Converse Agent API types (new agentic endpoint)
+export type ConverseAgentResponseType = 'action' | 'response' | 'error';
+
+export interface ConverseAgentToolCall {
+  name: string;
+  success: boolean;
+}
+
+export interface ConverseAgentRequest {
+  message: string;
+  session_id?: string;
+}
+
+export interface ConverseAgentResponse {
+  type: ConverseAgentResponseType;
+  message: string;
+  session_id: string;
+  tool_calls?: ConverseAgentToolCall[];
+  data?: Record<string, unknown>;
+}
+
 // Create/Update input types
 export interface CreateOutcomeInput {
   name: string;
@@ -758,14 +842,18 @@ export const api = {
   // Dispatch - smart request routing
   dispatch: {
     // Send a request to the dispatcher (smart routing)
-    send(input: string, options?: { modeHint?: 'smart' | 'quick' | 'long'; skipMatching?: boolean }): Promise<DispatchResponse> {
+    send(input: string, options?: { modeHint?: 'smart' | 'quick' | 'long'; skipMatching?: boolean; isolationMode?: IsolationMode }): Promise<DispatchResponse> {
       const body: DispatchInput = { input, ...options };
       return api.post<DispatchResponse>('/dispatch', body);
     },
 
     // Create new outcome (bypasses matching)
-    createNew(input: string, modeHint: 'long' | 'smart' = 'long'): Promise<DispatchResponse> {
-      return api.post<DispatchResponse>('/dispatch', { input, modeHint, skipMatching: true });
+    createNew(input: string, modeHint: 'long' | 'smart' = 'long', isolationMode?: IsolationMode): Promise<DispatchResponse> {
+      const body: DispatchInput = { input, modeHint, skipMatching: true };
+      if (isolationMode) {
+        body.isolationMode = isolationMode;
+      }
+      return api.post<DispatchResponse>('/dispatch', body);
     },
   },
 
@@ -830,7 +918,7 @@ export const api = {
 
   // Converse - Multi-turn conversational API
   converse: {
-    // Send a message to the conversational API
+    // Send a message to the conversational API (original intent-based)
     send(message: string, sessionId?: string): Promise<ConverseResponse> {
       const body: ConverseRequest = { message };
       if (sessionId) {
@@ -842,6 +930,55 @@ export const api = {
     // Get session info and message history
     session(sessionId: string): Promise<ConverseSessionResponse> {
       return api.get<ConverseSessionResponse>(`/converse?session_id=${encodeURIComponent(sessionId)}`);
+    },
+  },
+
+  // Converse Agent - Agentic conversational API with tools
+  converseAgent: {
+    // Send a message to the agentic conversational API
+    send(message: string, sessionId?: string): Promise<ConverseAgentResponse> {
+      const body: ConverseAgentRequest = { message };
+      if (sessionId) {
+        body.session_id = sessionId;
+      }
+      return api.post<ConverseAgentResponse>('/converse-agent', body);
+    },
+
+    // Get session info and message history (same endpoint as converse)
+    session(sessionId: string): Promise<ConverseSessionResponse> {
+      return api.get<ConverseSessionResponse>(`/converse-agent?session_id=${encodeURIComponent(sessionId)}`);
+    },
+  },
+
+  // System config - Global settings
+  config: {
+    // Get system configuration
+    get(): Promise<SystemConfigResponse> {
+      return api.get<SystemConfigResponse>('/config');
+    },
+
+    // Update system configuration
+    update(config: SystemConfigUpdate): Promise<SystemConfigResponse> {
+      return api.patch<SystemConfigResponse>('/config', config);
+    },
+  },
+
+  // Workspace servers - Dev server management for outcomes
+  servers: {
+    // Get apps and servers for an outcome
+    get(outcomeId: string): Promise<AppServerResponse> {
+      return api.get<AppServerResponse>(`/outcomes/${outcomeId}/server`);
+    },
+
+    // Start a server for an app
+    start(outcomeId: string, appId?: string): Promise<StartServerResponse> {
+      return api.post<StartServerResponse>(`/outcomes/${outcomeId}/server`, appId ? { appId } : undefined);
+    },
+
+    // Stop a server (specific or all for outcome)
+    stop(outcomeId: string, appId?: string): Promise<StopServerResponse> {
+      const query = appId ? `?appId=${encodeURIComponent(appId)}` : '';
+      return api.delete<StopServerResponse>(`/outcomes/${outcomeId}/server${query}`);
     },
   },
 };

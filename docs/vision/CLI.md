@@ -82,9 +82,11 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Capability management (`flow capability`, `skill new`, `tool new`) | Complete |
 | Dev server (`flow server`) | Complete |
 | Markdown rendering in REPL | Complete |
+| Workspace isolation (`--isolated`, `--allow-codebase`, `config isolation-mode`) | Complete |
+| Workspace app serving (`flow serve`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 35 commands implemented (full coverage)
+**Current:** 36 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -143,6 +145,8 @@ Examples:
 Shortcuts for frequent actions:
 ```bash
 flow new "..."        # alias for: flow dispatch --mode=long "..."
+flow new "..." --isolated        # Create in isolated workspace (default)
+flow new "..." --allow-codebase  # Allow modifying main codebase
 flow start <id>       # alias for: flow worker start --outcome=<id>
 flow stop <id>        # alias for: flow worker stop <id>
 ```
@@ -277,6 +281,14 @@ flow git commit <outcome-id> --message="..."
 flow git pr <outcome-id> [--title="..."] [--draft]
 ```
 
+#### Workspace Servers
+```bash
+flow serve <outcome-id>                    # List apps and servers for outcome
+flow serve list <outcome-id>               # Same as above
+flow serve start <outcome-id> [--app <id>] # Start dev server for an app
+flow serve stop <outcome-id> [--app <id>]  # Stop server (specific or all)
+```
+
 #### System
 ```bash
 flow supervisor status
@@ -284,6 +296,8 @@ flow supervisor alerts [--active] [--severity=<s>]
 flow supervisor acknowledge <alert-id>
 flow config show
 flow config set <key> <value>
+flow config isolation-mode                 # Show default isolation mode
+flow config isolation-mode <workspace|codebase>  # Set default
 ```
 
 ---
@@ -496,7 +510,8 @@ cli/
 │   │   ├── files.ts      # List workspace files
 │   │   ├── config.ts     # Configuration
 │   │   ├── sync.ts       # Sync to repository
-│   │   └── retro.ts      # Retrospective analysis
+│   │   ├── retro.ts      # Retrospective analysis
+│   │   └── serve.ts      # Workspace app server management
 │   └── utils/
 │       ├── index.ts      # Re-exports
 │       └── flags.ts      # Shared output flags (--json, --quiet)

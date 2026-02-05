@@ -24,8 +24,9 @@ import { OutcomeChat } from '@/app/components/OutcomeChat';
 import { CommitSettingsSection } from '@/app/components/CommitSettingsSection';
 import { HomrDashboard } from '@/app/components/HomrDashboard';
 import { CapabilitySuggestionBanner } from '@/app/components/CapabilitySuggestionBanner';
-import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget } from '@/lib/db/schema';
+import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget, IsolationMode } from '@/lib/db/schema';
 import type { CapabilityNeed } from '@/lib/agents/capability-planner';
+import { IsolationModeSection } from '@/app/components/IsolationModeSection';
 
 // Types
 interface OutcomeDetail {
@@ -57,6 +58,7 @@ interface OutcomeDetail {
   tool_target: SaveTarget;
   file_target: SaveTarget;
   auto_save: boolean;
+  isolation_mode: IsolationMode;
 }
 
 interface ChildOutcomeInfo {
@@ -1090,6 +1092,20 @@ export default function OutcomeDetailPage(): JSX.Element {
                       </div>
                     </>
                   )}
+                </CollapsibleSection>
+
+                {/* Workspace Isolation */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-isolation`}
+                  title="Workspace Isolation"
+                  defaultExpanded={false}
+                >
+                  <IsolationModeSection
+                    outcomeId={outcomeId}
+                    isolationMode={outcome.isolation_mode || 'workspace'}
+                    workingDirectory={outcome.working_directory}
+                    onUpdate={(mode) => setOutcome(prev => prev ? { ...prev, isolation_mode: mode } : prev)}
+                  />
                 </CollapsibleSection>
 
                 {/* Git & Commit Settings - Important to configure early */}

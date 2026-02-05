@@ -1,14 +1,20 @@
 /**
  * Server Management API Route
  *
- * GET /api/outcomes/[id]/server - Get server status
- * POST /api/outcomes/[id]/server - Start dev server
- * DELETE /api/outcomes/[id]/server - Stop dev server
+ * GET /api/outcomes/[id]/server - Get detected apps and running servers
+ * POST /api/outcomes/[id]/server - Start a server for an app
+ * DELETE /api/outcomes/[id]/server?appId=... - Stop a server (or all if no appId)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById } from '@/lib/db/outcomes';
-import { startServer, stopServer, getServerStatus } from '@/lib/workspace/server-manager';
+import { detectApps } from '@/lib/workspace/detector';
+import {
+  startAppServer,
+  stopServerById,
+  stopOutcomeServers,
+  getServersByOutcome,
+} from '@/lib/workspace/server-manager';
 
 export async function GET(
   request: NextRequest,
@@ -26,12 +32,17 @@ export async function GET(
       );
     }
 
-    const status = getServerStatus(id);
+    // Detect apps in workspace
+    const apps = detectApps(id);
+
+    // Get running servers
+    const servers = getServersByOutcome(id);
 
     return NextResponse.json({
       outcomeId: id,
-      running: status !== null && status.status === 'running',
-      server: status,
+      apps,
+      servers,
+      hasRunningServers: servers.some(s => s.status === 'running'),
     });
   } catch (error) {
     console.error('Error getting server status:', error);
@@ -58,19 +69,40 @@ export async function POST(
       );
     }
 
-    // Parse request body for optional script name
-    let script = 'dev';
+    // Parse request body
+    let appId: string | undefined;
     try {
       const body = await request.json();
-      if (body.script) {
-        script = body.script;
-      }
+      appId = body.appId;
     } catch {
-      // No body or invalid JSON, use default
+      // No body or invalid JSON
+    }
+
+    // Detect apps
+    const apps = detectApps(id);
+
+    if (apps.length === 0) {
+      return NextResponse.json(
+        { error: 'No apps found in workspace' },
+        { status: 400 }
+      );
+    }
+
+    // Find the app to start
+    let app = apps[0]; // Default to first app
+    if (appId) {
+      const found = apps.find(a => a.id === appId);
+      if (!found) {
+        return NextResponse.json(
+          { error: `App not found: ${appId}` },
+          { status: 400 }
+        );
+      }
+      app = found;
     }
 
     // Start the server
-    const serverInfo = await startServer(id, script);
+    const serverInfo = await startAppServer(id, app);
 
     return NextResponse.json({
       success: true,
@@ -106,11 +138,27 @@ export async function DELETE(
       );
     }
 
-    const stopped = stopServer(id);
+    // Check for appId query param
+    const url = new URL(request.url);
+    const appId = url.searchParams.get('appId');
+
+    let stopped: boolean | number;
+    let message: string;
+
+    if (appId) {
+      // Stop specific server
+      stopped = stopServerById(appId);
+      message = stopped ? `Server ${appId} stopped` : 'Server was not running';
+    } else {
+      // Stop all servers for outcome
+      stopped = stopOutcomeServers(id);
+      message = stopped > 0 ? `Stopped ${stopped} server(s)` : 'No servers were running';
+    }
 
     return NextResponse.json({
-      success: stopped,
-      message: stopped ? 'Server stopped' : 'No server was running',
+      success: typeof stopped === 'number' ? stopped > 0 : stopped,
+      stopped: typeof stopped === 'number' ? stopped : (stopped ? 1 : 0),
+      message,
     });
   } catch (error) {
     console.error('Error stopping server:', error);

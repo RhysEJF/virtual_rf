@@ -26,6 +26,8 @@ Digital Twin is API-first. Every interface - web UI, CLI, Telegram, future AR he
 | Tools API | Complete |
 | Repositories API | Complete |
 | Items API (sync management) | Complete |
+| System Config API | Complete |
+| Workspace Server API | Complete |
 | CLI thin client | In Progress |
 | Converse API (conversational) | Not Started |
 | Session/thread management | Not Started |

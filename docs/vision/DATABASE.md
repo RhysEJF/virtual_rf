@@ -28,6 +28,8 @@ All state in Digital Twin is persisted to SQLite. The database:
 | Orphan cleanup | Complete |
 | Task dependencies (depends_on) | Complete |
 | Dependency validation and cycle detection | Complete |
+| Workspace isolation mode (isolation_mode) | Complete |
+| System configuration (system_config) | Complete |
 
 **Overall:** Complete and production-ready (20+ tables)
 

@@ -217,6 +217,7 @@ Users can request changes after completion via the Iterate section:
 - `outcome_items` - Tracked files with sync status (skills, tools, outputs)
 - `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
 - `guard_blocks` - Blocked dangerous commands with context
+- `system_config` - Key-value store for global settings (e.g., default_isolation_mode)
 
 ## Requirements
 
@@ -248,7 +249,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-02-03)
+## Current Progress (Updated 2026-02-05)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -385,9 +386,26 @@ kill -9 <PID>
 - [x] Guard blocks logged to database (`lib/db/guard-blocks.ts`)
 - [x] Integration with Ralph worker execution
 
+### Workspace Isolation & App Serving (Complete)
+- [x] IsolationMode type (`'workspace' | 'codebase'`) in schema
+- [x] System config table for global settings (`lib/db/system-config.ts`)
+- [x] Per-outcome isolation mode with inheritance from system default
+- [x] Worker workspace boundary enforcement in CLAUDE.md generation
+- [x] IsolationModeSection UI component for per-outcome toggle
+- [x] Settings page isolation mode default toggle
+- [x] Config API (`/api/config`) for system settings
+- [x] Workspace app detection (`lib/workspace/detector.ts`)
+- [x] Port allocator for workspace servers (`lib/workspace/port-allocator.ts`, ports 3100-3199)
+- [x] Multi-app server management (`lib/workspace/server-manager.ts`)
+- [x] OutputsSection updated with Run/Stop buttons per detected app
+- [x] CLI: `flow new --isolated` and `--allow-codebase` flags
+- [x] CLI: `flow config isolation-mode` subcommand
+- [x] CLI: `flow serve` command for workspace app management
+- [x] Converse agent createOutcome tool accepts `isolation_mode` parameter
+
 ### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] 30 commands implemented (full API coverage)
+- [x] 36 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
 - [x] Task management: tasks, task (add/update)
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
@@ -395,6 +413,8 @@ kill -9 <PID>
 - [x] Resources: skills, skill, tools, tool, outputs, files
 - [x] Settings: config, sync, retro
 - [x] Chat/iterate: chat
+- [x] Workspace isolation: `new --isolated/--allow-codebase`, `config isolation-mode`
+- [x] Workspace servers: `serve`, `serve start`, `serve stop`, `serve list`
 - [x] Output flags: --json, --quiet on all commands
 - [ ] Interactive mode (REPL)
 

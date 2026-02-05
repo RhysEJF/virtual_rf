@@ -10,6 +10,7 @@ import { homedir } from 'os';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { api, ApiError, NetworkError } from '../api.js';
 
 const CONFIG_PATH = join(homedir(), '.flowconfig');
 
@@ -112,6 +113,78 @@ setCommand.action(async (key: string, value: string, options: OutputOptions) => 
 });
 
 command.addCommand(setCommand);
+
+// Subcommand: config isolation-mode [mode]
+const isolationModeCommand = new Command('isolation-mode')
+  .description('View or set the default isolation mode for new outcomes')
+  .argument('[mode]', 'Mode to set: "workspace" (isolated) or "codebase" (can modify main)');
+
+addOutputFlags(isolationModeCommand);
+
+isolationModeCommand.action(async (mode: string | undefined, options: OutputOptions) => {
+  try {
+    if (mode) {
+      // Setting the mode
+      if (mode !== 'workspace' && mode !== 'codebase') {
+        console.error(chalk.red('Error:'), 'Invalid mode. Must be "workspace" or "codebase"');
+        process.exit(1);
+      }
+
+      // Update via API
+      const result = await api.config.update({ default_isolation_mode: mode });
+
+      // Handle JSON output
+      if (handleOutput(result, options)) {
+        return;
+      }
+
+      const modeLabel = mode === 'workspace' ? 'Workspace (Isolated)' : 'Codebase';
+      const modeColor = mode === 'workspace' ? chalk.green : chalk.yellow;
+      console.log();
+      console.log(chalk.green('✓'), `Default isolation mode set to: ${modeColor(modeLabel)}`);
+      console.log();
+      console.log(chalk.gray('New outcomes will use this mode by default.'));
+      console.log(chalk.gray('Override per-outcome with: flow new --isolated or --allow-codebase'));
+      console.log();
+    } else {
+      // Getting the current mode
+      const config = await api.config.get();
+
+      // Handle JSON output
+      if (handleOutput(config, options)) {
+        return;
+      }
+
+      const currentMode = config.default_isolation_mode || 'workspace';
+      const modeLabel = currentMode === 'workspace' ? 'Workspace (Isolated)' : 'Codebase';
+      const modeColor = currentMode === 'workspace' ? chalk.green : chalk.yellow;
+
+      console.log();
+      console.log(chalk.bold('Default Isolation Mode'));
+      console.log();
+      console.log(`  Current: ${modeColor(modeLabel)}`);
+      console.log();
+      console.log(chalk.gray('Workspace:'), 'Outcomes work in isolated workspace directories');
+      console.log(chalk.gray('Codebase: '), 'Outcomes can modify the main codebase');
+      console.log();
+      console.log(chalk.gray('Set with: flow config isolation-mode <workspace|codebase>'));
+      console.log();
+    }
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.gray('Make sure the server is running (npm run dev)'));
+      process.exit(1);
+    }
+    if (error instanceof ApiError) {
+      console.error(chalk.red('API Error:'), error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
+});
+
+command.addCommand(isolationModeCommand);
 
 export const configCommand = command;
 export default configCommand;

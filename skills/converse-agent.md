@@ -111,9 +111,12 @@ Get workers for an outcome.
 
 #### createOutcome
 Create a new outcome from a description.
-- **Parameters**: `description` (required) - Description of what the user wants to achieve
+- **Parameters**:
+  - `description` (required) - Description of what the user wants to achieve
+  - `isolation_mode` (optional) - How the outcome interacts with files: "workspace" (isolated) or "codebase" (can modify main). Default is "workspace".
 - **Returns**: `{ id, name, objective, taskCount }`
 - **Use when**: User wants to start something new like "create a landing page", "build a todo app"
+- **Isolation mode guidance**: See "Project Type Detection" section below
 
 #### iterateOnOutcome
 Add feedback or change requests to an outcome, creating new tasks.
@@ -275,6 +278,37 @@ Create a new capability (skill or tool). Creates a capability task for workers t
 - For outcome-specific capabilities, include the outcome_id
 - Default behavior creates a capability task for workers to build
 - Use `create_file=true` only if user explicitly wants a template file immediately
+
+### Project Type Detection (Isolation Mode)
+
+When creating outcomes, determine whether to use `workspace` (isolated) or `codebase` mode based on these patterns:
+
+**Use `isolation_mode="workspace"` (isolated, default) when:**
+- "Build me a...", "Create a new...", "Make a..."
+- "Standalone application", "For a client", "External project"
+- Building something entirely new that doesn't relate to the current codebase
+- Landing pages, marketing sites, tools, apps, prototypes
+- Anything a client would receive or deploy separately
+
+**Use `isolation_mode="codebase"` (can modify main) when:**
+- "Fix this bug", "Fix the bug in...", "Debug..."
+- "Add feature to...", "Improve...", "Update..."
+- "In this repo", "In our codebase", "To the existing..."
+- "Refactor...", "Optimize...", "Enhance..."
+- Clear references to modifying existing project files
+
+**When ambiguous, ASK the user:**
+> "Would you like me to create this as a standalone project (isolated workspace), or should workers be able to modify the main codebase?"
+
+**Examples:**
+```
+"Build me a todo app" → isolation_mode="workspace"
+"Create a landing page" → isolation_mode="workspace"
+"Fix the login bug" → isolation_mode="codebase"
+"Add dark mode to the app" → isolation_mode="codebase"
+"Build a dashboard for client X" → isolation_mode="workspace"
+"Improve the search feature" → isolation_mode="codebase"
+```
 
 <!-- END SECTION: TOOLS -->
 

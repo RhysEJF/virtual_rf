@@ -3,17 +3,22 @@
  *
  * Manages running dev servers for app outputs.
  * Tracks which servers are running and their ports.
+ * Supports multiple apps per outcome.
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { getWorkspacePath } from './detector';
+import { getWorkspacePath, type DetectedApp } from './detector';
+import { allocatePort, releasePort, getPort } from './port-allocator';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface RunningServer {
+  id: string;            // Unique server ID (matches app.id)
   outcomeId: string;
+  appId: string;         // App identifier within the outcome
+  type: 'node' | 'static';
   pid: number;
   port: number;
   command: string;
@@ -27,50 +32,51 @@ export interface RunningServer {
 // In-Memory Server Registry
 // ============================================================================
 
+// Key: server ID (e.g., "out_xyz-root" or "out_xyz-task_1")
 const runningServers: Map<string, RunningServer & { process: ChildProcess }> = new Map();
-
-// Port allocation (start from 3100 to avoid conflicts)
-let nextPort = 3100;
-
-function allocatePort(): number {
-  const port = nextPort;
-  nextPort++;
-  if (nextPort > 3199) nextPort = 3100; // Wrap around
-  return port;
-}
 
 // ============================================================================
 // Server Management
 // ============================================================================
 
 /**
- * Start a dev server for an outcome
+ * Start a server for a detected app
  */
-export async function startServer(outcomeId: string, script: string = 'dev'): Promise<RunningServer> {
+export async function startAppServer(outcomeId: string, app: DetectedApp): Promise<RunningServer> {
+  const serverId = app.id;
+
   // Check if already running
-  const existing = runningServers.get(outcomeId);
-  if (existing && existing.status === 'running') {
-    return {
-      outcomeId: existing.outcomeId,
-      pid: existing.pid,
-      port: existing.port,
-      command: existing.command,
-      url: existing.url,
-      startedAt: existing.startedAt,
-      status: existing.status,
-    };
+  const existing = runningServers.get(serverId);
+  if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+    return serverToPublic(existing);
   }
 
-  const workspacePath = getWorkspacePath(outcomeId);
-  const port = allocatePort();
-  const command = `npm run ${script}`;
+  const port = allocatePort(outcomeId, app.id);
+  const appPath = app.absolutePath;
+
+  let command: string;
+  let args: string[];
+
+  if (app.type === 'static') {
+    // Use npx serve for static sites
+    command = 'npx';
+    args = ['serve', '-l', port.toString(), '-s'];
+  } else {
+    // Node.js app
+    const script = app.scripts?.dev ? 'dev' : app.scripts?.start ? 'start' : 'dev';
+    command = 'npm';
+    args = ['run', script];
+  }
 
   // Create the server record
-  const serverInfo: RunningServer = {
+  const serverInfo: RunningServer & { process?: ChildProcess } = {
+    id: serverId,
     outcomeId,
+    appId: app.id,
+    type: app.type,
     pid: 0,
     port,
-    command,
+    command: `${command} ${args.join(' ')}`,
     url: `http://localhost:${port}`,
     startedAt: Date.now(),
     status: 'starting',
@@ -78,8 +84,8 @@ export async function startServer(outcomeId: string, script: string = 'dev'): Pr
 
   try {
     // Spawn the process with PORT environment variable
-    const proc = spawn('npm', ['run', script], {
-      cwd: workspacePath,
+    const proc = spawn(command, args, {
+      cwd: appPath,
       env: {
         ...process.env,
         PORT: port.toString(),
@@ -88,23 +94,25 @@ export async function startServer(outcomeId: string, script: string = 'dev'): Pr
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
+      shell: true,
     });
 
     serverInfo.pid = proc.pid || 0;
+    serverInfo.process = proc;
 
     // Store in registry
-    runningServers.set(outcomeId, { ...serverInfo, process: proc });
+    runningServers.set(serverId, serverInfo as RunningServer & { process: ChildProcess });
 
     // Handle process output
     let outputBuffer = '';
 
     proc.stdout?.on('data', (data: Buffer) => {
       outputBuffer += data.toString();
-      console.log(`[Server ${outcomeId}] ${data.toString().trim()}`);
+      console.log(`[Server ${serverId}] ${data.toString().trim()}`);
 
       // Detect when server is ready
-      if (outputBuffer.includes('ready') || outputBuffer.includes('started') || outputBuffer.includes('localhost')) {
-        const entry = runningServers.get(outcomeId);
+      if (outputBuffer.includes('ready') || outputBuffer.includes('started') || outputBuffer.includes('localhost') || outputBuffer.includes('Serving!')) {
+        const entry = runningServers.get(serverId);
         if (entry && entry.status === 'starting') {
           entry.status = 'running';
         }
@@ -112,20 +120,21 @@ export async function startServer(outcomeId: string, script: string = 'dev'): Pr
     });
 
     proc.stderr?.on('data', (data: Buffer) => {
-      console.error(`[Server ${outcomeId}] ${data.toString().trim()}`);
+      console.error(`[Server ${serverId}] ${data.toString().trim()}`);
     });
 
     proc.on('close', (code) => {
-      console.log(`[Server ${outcomeId}] Process exited with code ${code}`);
-      const entry = runningServers.get(outcomeId);
+      console.log(`[Server ${serverId}] Process exited with code ${code}`);
+      const entry = runningServers.get(serverId);
       if (entry) {
         entry.status = 'stopped';
+        releasePort(outcomeId, app.id);
       }
     });
 
     proc.on('error', (err) => {
-      console.error(`[Server ${outcomeId}] Error:`, err);
-      const entry = runningServers.get(outcomeId);
+      console.error(`[Server ${serverId}] Error:`, err);
+      const entry = runningServers.get(serverId);
       if (entry) {
         entry.status = 'error';
         entry.error = err.message;
@@ -136,51 +145,45 @@ export async function startServer(outcomeId: string, script: string = 'dev'): Pr
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Return current status
-    const current = runningServers.get(outcomeId);
-    return {
-      outcomeId: current?.outcomeId || outcomeId,
-      pid: current?.pid || 0,
-      port: current?.port || port,
-      command: current?.command || command,
-      url: current?.url || `http://localhost:${port}`,
-      startedAt: current?.startedAt || serverInfo.startedAt,
-      status: current?.status || 'starting',
-      error: current?.error,
-    };
+    const current = runningServers.get(serverId);
+    return current ? serverToPublic(current) : serverInfo;
   } catch (error) {
     serverInfo.status = 'error';
     serverInfo.error = error instanceof Error ? error.message : 'Failed to start server';
+    releasePort(outcomeId, app.id);
     return serverInfo;
   }
 }
 
 /**
- * Stop a running server
+ * Legacy start server (backwards compatible)
+ * @deprecated Use startAppServer instead
  */
-export function stopServer(outcomeId: string): boolean {
-  const server = runningServers.get(outcomeId);
-  if (!server) return false;
-
-  try {
-    server.process.kill('SIGTERM');
-    server.status = 'stopped';
-    runningServers.delete(outcomeId);
-    return true;
-  } catch (error) {
-    console.error(`[Server ${outcomeId}] Failed to stop:`, error);
-    return false;
-  }
+export async function startServer(outcomeId: string, script: string = 'dev'): Promise<RunningServer> {
+  const app: DetectedApp = {
+    id: `${outcomeId}-root`,
+    type: 'node',
+    name: 'Application',
+    path: '.',
+    absolutePath: getWorkspacePath(outcomeId),
+    entryPoint: `npm run ${script}`,
+    scripts: {
+      dev: script === 'dev',
+      start: script === 'start',
+    },
+  };
+  return startAppServer(outcomeId, app);
 }
 
 /**
- * Get server status
+ * Convert internal server record to public API
  */
-export function getServerStatus(outcomeId: string): RunningServer | null {
-  const server = runningServers.get(outcomeId);
-  if (!server) return null;
-
+function serverToPublic(server: RunningServer & { process?: ChildProcess }): RunningServer {
   return {
+    id: server.id,
     outcomeId: server.outcomeId,
+    appId: server.appId,
+    type: server.type,
     pid: server.pid,
     port: server.port,
     command: server.command,
@@ -192,28 +195,94 @@ export function getServerStatus(outcomeId: string): RunningServer | null {
 }
 
 /**
+ * Stop a running server by its ID
+ */
+export function stopServerById(serverId: string): boolean {
+  const server = runningServers.get(serverId);
+  if (!server) return false;
+
+  try {
+    server.process.kill('SIGTERM');
+    server.status = 'stopped';
+    releasePort(server.outcomeId, server.appId);
+    runningServers.delete(serverId);
+    return true;
+  } catch (error) {
+    console.error(`[Server ${serverId}] Failed to stop:`, error);
+    return false;
+  }
+}
+
+/**
+ * Stop a running server (legacy, backwards compatible)
+ * @deprecated Use stopServerById instead
+ */
+export function stopServer(outcomeId: string): boolean {
+  // Try to find server by outcome ID (legacy behavior)
+  const serverId = `${outcomeId}-root`;
+  return stopServerById(serverId);
+}
+
+/**
+ * Stop all servers for an outcome
+ */
+export function stopOutcomeServers(outcomeId: string): number {
+  let stopped = 0;
+  const entries = Array.from(runningServers.entries());
+  for (const [serverId, server] of entries) {
+    if (server.outcomeId === outcomeId) {
+      if (stopServerById(serverId)) {
+        stopped++;
+      }
+    }
+  }
+  return stopped;
+}
+
+/**
+ * Get server status by ID
+ */
+export function getServerStatusById(serverId: string): RunningServer | null {
+  const server = runningServers.get(serverId);
+  return server ? serverToPublic(server) : null;
+}
+
+/**
+ * Get server status (legacy)
+ * @deprecated Use getServerStatusById instead
+ */
+export function getServerStatus(outcomeId: string): RunningServer | null {
+  return getServerStatusById(`${outcomeId}-root`);
+}
+
+/**
+ * Get all servers for an outcome
+ */
+export function getServersByOutcome(outcomeId: string): RunningServer[] {
+  const servers: RunningServer[] = [];
+  const allServers = Array.from(runningServers.values());
+  for (const server of allServers) {
+    if (server.outcomeId === outcomeId) {
+      servers.push(serverToPublic(server));
+    }
+  }
+  return servers;
+}
+
+/**
  * Get all running servers
  */
 export function getAllRunningServers(): RunningServer[] {
-  return Array.from(runningServers.values()).map(server => ({
-    outcomeId: server.outcomeId,
-    pid: server.pid,
-    port: server.port,
-    command: server.command,
-    url: server.url,
-    startedAt: server.startedAt,
-    status: server.status,
-    error: server.error,
-  }));
+  return Array.from(runningServers.values()).map(serverToPublic);
 }
 
 /**
  * Stop all servers (cleanup on shutdown)
  */
 export function stopAllServers(): void {
-  const outcomeIds = Array.from(runningServers.keys());
-  for (const outcomeId of outcomeIds) {
-    stopServer(outcomeId);
+  const serverIds = Array.from(runningServers.keys());
+  for (const serverId of serverIds) {
+    stopServerById(serverId);
   }
 }
 

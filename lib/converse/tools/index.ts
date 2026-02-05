@@ -108,6 +108,12 @@ export const converseTools: ToolDefinition[] = [
         description: 'Description of what the user wants to achieve',
         required: true,
       },
+      isolation_mode: {
+        type: 'string',
+        description: 'How the outcome should interact with files. Use "workspace" for external/standalone projects (isolated workspace), "codebase" for improvements to this repo. Default is "workspace".',
+        required: false,
+        enum: ['workspace', 'codebase'],
+      },
     },
   },
   {

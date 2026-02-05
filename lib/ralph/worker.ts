@@ -35,7 +35,7 @@ import {
   releaseTask,
   updateTask as updateTaskDb,
 } from '../db/tasks';
-import type { Task, Intent, TaskPhase } from '../db/schema';
+import type { Task, Intent, TaskPhase, IsolationMode } from '../db/schema';
 import { getOutcomeById } from '../db/outcomes';
 import { createProgressEntry } from '../db/progress';
 import {
@@ -671,7 +671,9 @@ function generateTaskInstructions(
   task: Task,
   additionalSkillContext?: string,
   outcomeId?: string,
-  gitConfig?: GitConfig
+  gitConfig?: GitConfig,
+  isolationMode?: IsolationMode,
+  workspacePath?: string
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
@@ -705,13 +707,41 @@ ${gitConfig.autoCommit ? '- Auto-commit is enabled: commit when making significa
 `;
   }
 
+  // Build workspace isolation instructions
+  let isolationInstructions = '';
+  if (isolationMode === 'workspace' && workspacePath) {
+    isolationInstructions = `
+## Workspace Boundary
+
+**CRITICAL:** This outcome operates in ISOLATED mode.
+- Only create/modify files within: \`${workspacePath}/\`
+- Do NOT modify files in app/, lib/, or other main codebase directories
+- Do NOT access sensitive files (~/.ssh, ~/.aws, .env, credentials, etc.)
+- All paths should be relative to workspace or absolute paths within it
+- If a task requires files outside workspace, report as ERROR in progress.txt
+
+This isolation protects the main codebase. Violations will be flagged.
+
+`;
+  } else if (isolationMode === 'codebase') {
+    isolationInstructions = `
+## Codebase Access Mode
+
+This outcome has **codebase access** - you may modify files in the main codebase.
+- Use this power responsibly - follow existing patterns and conventions
+- Do NOT access sensitive files (~/.ssh, ~/.aws, .env, credentials, etc.)
+- Prefer focused, minimal changes over broad refactoring
+
+`;
+  }
+
   return `# Current Task
 
 ## Outcome: ${outcomeName}
 ${intentSummary}
 
 ---
-${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
+${isolationInstructions}${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
 ## Your Current Task
 
 **ID:** ${task.id}
@@ -1135,7 +1165,16 @@ export async function startRalphWorker(
 
         // Write CLAUDE.md and progress.txt
         const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
-        writeFileSync(claudeMdPath, generateTaskInstructions(outcome.name, intent, task, undefined, outcomeId, gitConfig));
+        writeFileSync(claudeMdPath, generateTaskInstructions(
+          outcome.name,
+          intent,
+          task,
+          undefined,
+          outcomeId,
+          gitConfig,
+          outcome.isolation_mode || 'workspace',
+          outcomeWorkspace
+        ));
 
         const progressPath = join(taskWorkspace, 'progress.txt');
         writeFileSync(progressPath, generateInitialProgress(task));
@@ -1989,7 +2028,16 @@ export async function runWorkerLoop(
     const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
     writeFileSync(
       claudeMdPath,
-      generateTaskInstructions(outcome.name, intent, task, skillContext, outcomeId, gitConfig)
+      generateTaskInstructions(
+        outcome.name,
+        intent,
+        task,
+        skillContext,
+        outcomeId,
+        gitConfig,
+        outcome.isolation_mode || 'workspace',
+        outcomeWorkspace
+      )
     );
 
     const progressPath = join(taskWorkspace, 'progress.txt');

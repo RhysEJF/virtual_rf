@@ -16,6 +16,7 @@ import { isClaudeAvailable, claudeComplete } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
 import { createOutcome, getActiveOutcomes } from '@/lib/db/outcomes';
 import { logOutcomeCreated } from '@/lib/db/activity';
+import type { IsolationMode } from '@/lib/db/schema';
 
 type ModeHint = 'smart' | 'quick' | 'long';
 
@@ -24,6 +25,7 @@ interface DispatchRequest {
   modeHint?: ModeHint; // User can override AI classification
   projectContext?: string; // For interventions on existing projects
   skipMatching?: boolean; // Skip outcome matching (user explicitly wants new)
+  isolationMode?: IsolationMode; // 'workspace' (isolated) or 'codebase' (can modify main)
 }
 
 interface MatchedOutcome {
@@ -139,7 +141,7 @@ Return empty matches array [] if no clear relationship exists.`;
 export async function POST(request: NextRequest): Promise<NextResponse<DispatchResponse>> {
   try {
     const body = (await request.json()) as DispatchRequest;
-    const { input, modeHint, skipMatching } = body;
+    const { input, modeHint, skipMatching, isolationMode } = body;
 
     if (!input || typeof input !== 'string') {
       return NextResponse.json(
@@ -255,6 +257,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
             })),
             success_criteria: brief.deliverables,
           }),
+          isolation_mode: isolationMode, // Pass through isolation mode (undefined = use default)
         });
 
         const outcomeId = outcome.id;

@@ -34,3 +34,4 @@ export { flowAuditCommand } from './flow-audit.js';
 export { converseCommand } from './converse.js';
 export { capabilityCommand } from './capability.js';
 export { serverCommand } from './server.js';
+export { serveCommand } from './serve.js';

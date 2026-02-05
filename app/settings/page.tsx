@@ -40,6 +40,8 @@ interface Repository {
   status?: RepositoryStatus;
 }
 
+type IsolationMode = 'workspace' | 'codebase';
+
 // Wrapper component to handle useSearchParams
 function SettingsContent(): JSX.Element {
   const router = useRouter();
@@ -50,6 +52,11 @@ function SettingsContent(): JSX.Element {
   const showMissingParam = searchParams.get('showMissing');
   const highlightKeysParam = searchParams.get('highlight');
   const highlightKeys = highlightKeysParam ? highlightKeysParam.split(',') : [];
+
+  // System config state
+  const [defaultIsolationMode, setDefaultIsolationMode] = useState<IsolationMode>('workspace');
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [savingConfig, setSavingConfig] = useState(false);
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -108,6 +115,41 @@ function SettingsContent(): JSX.Element {
       setLoadingRepos(false);
     }
   }, []);
+
+  const fetchSystemConfig = useCallback(async () => {
+    try {
+      const response = await fetch('/api/config');
+      const data = await response.json();
+      setDefaultIsolationMode(data.config?.default_isolation_mode || 'workspace');
+    } catch (error) {
+      console.error('Failed to fetch system config:', error);
+    } finally {
+      setLoadingConfig(false);
+    }
+  }, []);
+
+  const updateIsolationMode = async (mode: IsolationMode) => {
+    setSavingConfig(true);
+    try {
+      const response = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_isolation_mode: mode }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setDefaultIsolationMode(mode);
+        toast({ type: 'success', message: 'Default isolation mode updated' });
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to update config' });
+      }
+    } catch (error) {
+      console.error('Failed to update isolation mode:', error);
+      toast({ type: 'error', message: 'Failed to update config' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   // GitHub auth code state
   const [authCode, setAuthCode] = useState<string | null>(null);
@@ -187,7 +229,8 @@ function SettingsContent(): JSX.Element {
     fetchApiKeys();
     fetchGithubAuth();
     fetchRepositories();
-  }, [fetchApiKeys, fetchGithubAuth, fetchRepositories]);
+    fetchSystemConfig();
+  }, [fetchApiKeys, fetchGithubAuth, fetchRepositories, fetchSystemConfig]);
 
   const saveApiKey = async (name: string, value: string) => {
     setSavingKey(true);
@@ -549,6 +592,96 @@ function SettingsContent(): JSX.Element {
                     ? 'No API keys configured yet. Click "Show Suggestions" to see common keys or add a custom key.'
                     : 'No configured keys to show.'}
                 </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Workspace Isolation */}
+      <Card padding="md" className="mb-6">
+        <CardHeader>
+          <div>
+            <CardTitle>Workspace Isolation</CardTitle>
+            <p className="text-text-tertiary text-sm mt-1">
+              Default isolation mode for new outcomes
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingConfig ? (
+            <p className="text-text-tertiary text-sm">Loading settings...</p>
+          ) : (
+            <div className="space-y-3">
+              {/* Info Notice */}
+              <div className="p-3 bg-bg-secondary rounded-lg border border-border">
+                <div className="flex items-start gap-2">
+                  <span className="text-accent">🔒</span>
+                  <div className="text-sm">
+                    <p className="text-text-secondary">
+                      Isolation controls where workers can create and modify files.
+                    </p>
+                    <p className="text-text-tertiary text-xs mt-1">
+                      Individual outcomes can override this default on their detail page.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mode Selection */}
+              <div className="space-y-2">
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer hover:bg-bg-tertiary transition-colors">
+                  <input
+                    type="radio"
+                    name="defaultIsolationMode"
+                    value="workspace"
+                    checked={defaultIsolationMode === 'workspace'}
+                    onChange={() => updateIsolationMode('workspace')}
+                    disabled={savingConfig}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-text-primary">
+                        Isolated Workspace
+                      </span>
+                      <Badge variant="success" className="text-[10px]">Recommended</Badge>
+                    </div>
+                    <p className="text-xs text-text-tertiary mt-1">
+                      Workers can only create/modify files within{' '}
+                      <code className="text-accent">workspaces/{'{outcomeId}'}/</code>.
+                      Safe for building external projects, client work, or experiments.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer hover:bg-bg-tertiary transition-colors">
+                  <input
+                    type="radio"
+                    name="defaultIsolationMode"
+                    value="codebase"
+                    checked={defaultIsolationMode === 'codebase'}
+                    onChange={() => updateIsolationMode('codebase')}
+                    disabled={savingConfig}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-text-primary">
+                        Codebase Access
+                      </span>
+                      <Badge variant="warning" className="text-[10px]">Advanced</Badge>
+                    </div>
+                    <p className="text-xs text-text-tertiary mt-1">
+                      Workers can modify files in the main codebase (app/, lib/, etc.).
+                      Use for self-improvement outcomes or internal features.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {savingConfig && (
+                <p className="text-xs text-text-tertiary">Saving...</p>
               )}
             </div>
           )}

@@ -15,7 +15,7 @@ import { getWorkersByOutcome } from '../../db/workers';
 import { getPendingEscalations } from '../../db/homr';
 import { generateBrief } from '../../agents/briefer';
 import { claudeComplete } from '../../claude/client';
-import type { Outcome, Task, Worker } from '../../db/schema';
+import type { Outcome, Task, Worker, IsolationMode } from '../../db/schema';
 
 export interface OutcomeResult {
   found: boolean;
@@ -219,7 +219,8 @@ export interface CreateOutcomeResult {
  * Create a new outcome from a description
  */
 export async function createOutcome(
-  description: string
+  description: string,
+  isolationMode?: IsolationMode
 ): Promise<CreateOutcomeResult> {
   try {
     // Use briefer to generate outcome structure
@@ -249,6 +250,7 @@ export async function createOutcome(
         })),
         success_criteria: brief.deliverables,
       }),
+      isolation_mode: isolationMode, // Pass through isolation mode (undefined = use system default)
     });
 
     // Create tasks from PRD items

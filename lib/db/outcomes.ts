@@ -18,7 +18,9 @@ import type {
   ReviewCycle,
   GitMode,
   SaveTarget,
+  IsolationMode,
 } from './schema';
+import { getDefaultIsolationMode } from './system-config';
 
 // ============================================================================
 // Create
@@ -39,6 +41,8 @@ export interface CreateOutcomeInput {
   work_branch?: string;
   auto_commit?: boolean;
   create_pr_on_complete?: boolean;
+  // Workspace isolation
+  isolation_mode?: IsolationMode;
 }
 
 export function createOutcome(input: CreateOutcomeInput): Outcome {
@@ -55,14 +59,18 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
     }
   }
 
+  // Determine isolation mode: use provided, or get system default
+  const isolationMode = input.isolation_mode || getDefaultIsolationMode();
+
   const stmt = db.prepare(`
     INSERT INTO outcomes (
       id, name, status, is_ongoing, brief, intent, timeline,
       parent_id, depth,
       working_directory, git_mode, base_branch, work_branch, auto_commit, create_pr_on_complete,
+      isolation_mode,
       created_at, updated_at, last_activity_at
     )
-    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -80,6 +88,7 @@ export function createOutcome(input: CreateOutcomeInput): Outcome {
     input.work_branch || null,
     input.auto_commit ? 1 : 0,
     input.create_pr_on_complete ? 1 : 0,
+    isolationMode,
     timestamp,
     timestamp,
     timestamp
@@ -113,6 +122,7 @@ function mapOutcomeRow(row: Outcome): Outcome {
     git_mode: (row.git_mode || 'none') as GitMode,
     parent_id: row.parent_id || null,
     depth: row.depth ?? 0,
+    isolation_mode: (row.isolation_mode || 'workspace') as IsolationMode,
   };
 }
 
@@ -282,6 +292,8 @@ export interface UpdateOutcomeInput {
   // Auto-resolve settings
   auto_resolve_mode?: 'manual' | 'semi-auto' | 'full-auto';
   auto_resolve_threshold?: number;
+  // Workspace isolation
+  isolation_mode?: IsolationMode;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {
@@ -388,6 +400,11 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.auto_resolve_threshold !== undefined) {
     updates.push('auto_resolve_threshold = ?');
     values.push(input.auto_resolve_threshold);
+  }
+  // Workspace isolation
+  if (input.isolation_mode !== undefined) {
+    updates.push('isolation_mode = ?');
+    values.push(input.isolation_mode);
   }
 
   values.push(id);

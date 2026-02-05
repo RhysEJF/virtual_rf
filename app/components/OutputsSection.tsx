@@ -28,8 +28,26 @@ interface DetectedOutput {
   metadata: Record<string, unknown>;
 }
 
-interface ServerStatus {
+interface DetectedApp {
+  id: string;
+  type: 'node' | 'static';
+  name: string;
+  path: string;
+  absolutePath: string;
+  framework?: string;
+  entryPoint: string;
+  scripts?: {
+    dev?: boolean;
+    start?: boolean;
+    build?: boolean;
+  };
+}
+
+interface RunningServer {
+  id: string;
   outcomeId: string;
+  appId: string;
+  type: 'node' | 'static';
   pid: number;
   port: number;
   url: string;
@@ -49,7 +67,13 @@ interface OutputsData {
     path: string;
     exists: boolean;
   };
-  server: ServerStatus | null;
+  server: RunningServer | null; // Legacy
+}
+
+interface AppServerData {
+  apps: DetectedApp[];
+  servers: RunningServer[];
+  hasRunningServers: boolean;
 }
 
 // ============================================================================
@@ -63,9 +87,10 @@ interface OutputsSectionProps {
 export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element | null {
   const { toast } = useToast();
   const [data, setData] = useState<OutputsData | null>(null);
+  const [appData, setAppData] = useState<AppServerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingFile, setViewingFile] = useState<{ name: string; content: string } | null>(null);
-  const [serverLoading, setServerLoading] = useState(false);
+  const [serverLoading, setServerLoading] = useState<string | boolean>(false);
 
   // Fetch outputs
   const fetchOutputs = useCallback(async () => {
@@ -82,12 +107,29 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
     }
   }, [outcomeId]);
 
+  // Fetch apps and servers
+  const fetchApps = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/server`);
+      if (response.ok) {
+        const result = await response.json();
+        setAppData(result);
+      }
+    } catch (error) {
+      console.error('Failed to fetch apps:', error);
+    }
+  }, [outcomeId]);
+
   useEffect(() => {
     fetchOutputs();
+    fetchApps();
     // Poll for updates (especially for server status)
-    const interval = setInterval(fetchOutputs, 10000);
+    const interval = setInterval(() => {
+      fetchOutputs();
+      fetchApps();
+    }, 10000);
     return () => clearInterval(interval);
-  }, [fetchOutputs]);
+  }, [fetchOutputs, fetchApps]);
 
   // Handle view action
   const handleView = async (output: DetectedOutput) => {
@@ -107,18 +149,20 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
     }
   };
 
-  // Handle run server
-  const handleRunServer = async () => {
-    setServerLoading(true);
+  // Handle run server for a specific app
+  const handleRunServer = async (appId?: string) => {
+    setServerLoading(appId || true);
     try {
       const response = await fetch(`/api/outcomes/${outcomeId}/server`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: appId ? JSON.stringify({ appId }) : undefined,
       });
       const result = await response.json();
 
       if (result.success) {
         toast({ type: 'success', message: result.message });
-        fetchOutputs();
+        fetchApps();
       } else {
         toast({ type: 'error', message: result.error || 'Failed to start server' });
       }
@@ -130,23 +174,29 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
   };
 
   // Handle stop server
-  const handleStopServer = async () => {
-    setServerLoading(true);
+  const handleStopServer = async (serverId?: string) => {
+    setServerLoading(serverId || true);
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/server`, {
-        method: 'DELETE',
-      });
+      const url = serverId
+        ? `/api/outcomes/${outcomeId}/server?appId=${encodeURIComponent(serverId)}`
+        : `/api/outcomes/${outcomeId}/server`;
+      const response = await fetch(url, { method: 'DELETE' });
       const result = await response.json();
 
       if (result.success) {
-        toast({ type: 'info', message: 'Server stopped' });
-        fetchOutputs();
+        toast({ type: 'info', message: result.message || 'Server stopped' });
+        fetchApps();
       }
     } catch {
       toast({ type: 'error', message: 'Failed to stop server' });
     } finally {
       setServerLoading(false);
     }
+  };
+
+  // Get server for a specific app
+  const getServerForApp = (appId: string): RunningServer | undefined => {
+    return appData?.servers.find(s => s.id === appId && (s.status === 'running' || s.status === 'starting'));
   };
 
   // Handle open in finder (using a workaround since we can't directly open folders)
@@ -293,36 +343,79 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
           </div>
         </CardHeader>
         <CardContent>
-          {/* Server Status */}
-          {data?.server && (
-            <div className="mb-4 p-3 bg-bg-secondary rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Badge
-                    variant={data.server.status === 'running' ? 'success' : data.server.status === 'starting' ? 'warning' : 'default'}
-                    className="text-xs"
-                  >
-                    {data.server.status}
-                  </Badge>
-                  {data.server.status === 'running' && (
-                    <a
-                      href={data.server.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-2 text-sm text-accent hover:text-accent-hover"
-                    >
-                      {data.server.url}
-                    </a>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleStopServer}
-                  disabled={serverLoading}
-                >
-                  Stop
-                </Button>
+          {/* Detected Apps */}
+          {appData && appData.apps.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2">
+                Apps ({appData.apps.length})
+              </h4>
+              <div className="space-y-2">
+                {appData.apps.map((app) => {
+                  const server = getServerForApp(app.id);
+                  const isLoading = serverLoading === app.id || serverLoading === true;
+
+                  return (
+                    <div key={app.id} className="p-3 bg-bg-secondary rounded-lg">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-text-primary text-sm font-medium">
+                              {app.name}
+                            </span>
+                            <Badge
+                              variant={app.type === 'node' ? 'info' : 'default'}
+                              className="text-[10px]"
+                            >
+                              {app.framework || app.type}
+                            </Badge>
+                            {server && (
+                              <Badge
+                                variant={server.status === 'running' ? 'success' : 'warning'}
+                                className="text-[10px]"
+                              >
+                                {server.status}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-text-tertiary text-xs mt-1">
+                            {app.path === '.' ? 'Root app' : app.path}
+                          </p>
+                          {server?.status === 'running' && (
+                            <a
+                              href={server.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block mt-1 text-sm text-accent hover:text-accent-hover font-medium"
+                            >
+                              {server.url} &rarr;
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex-shrink-0">
+                          {server ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleStopServer(server.id)}
+                              disabled={isLoading}
+                            >
+                              {isLoading ? 'Stopping...' : 'Stop'}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => handleRunServer(app.id)}
+                              disabled={isLoading}
+                            >
+                              {isLoading ? 'Starting...' : 'Run'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -353,16 +446,6 @@ export function OutputsSection({ outcomeId }: OutputsSectionProps): JSX.Element 
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {output.type === 'app' && !data.server && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleRunServer}
-                      disabled={serverLoading}
-                    >
-                      {serverLoading ? 'Starting...' : 'Run'}
-                    </Button>
-                  )}
                   {output.actions.find(a => a.type === 'view') && (
                     <>
                       <Button

@@ -45,6 +45,9 @@ The UI is the user's window into Digital Twin. It provides:
 | Improvement preview modal | Complete |
 | Background analysis with polling | Complete |
 | Actionable toast notifications | Complete |
+| Workspace isolation toggle (per-outcome) | Complete |
+| Workspace isolation default (settings) | Complete |
+| Workspace app server management | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 
@@ -145,6 +148,24 @@ Improvement analysis can take several minutes. The UI handles this gracefully:
 3. **Toast on close** - Informs user analysis continues
 4. **Toast on complete** - Notification with "View Results" action
 5. **Status indicator** - Optional header indicator (AnalysisStatusIndicator component)
+
+### Workspace Isolation Toggle
+
+Outcomes can run in two modes:
+- **Workspace** (default) - Workers only modify files in isolated workspace
+- **Codebase** - Workers can modify the main project files
+
+UI components:
+- **IsolationModeSection** - Per-outcome toggle on outcome detail page
+- **Settings Page** - System-wide default isolation mode
+
+### Workspace App Servers
+
+OutputsSection now detects and serves apps from workspaces:
+- **App Detection** - Finds Node.js apps (package.json) and static sites (index.html)
+- **Per-App Controls** - Run/Stop buttons for each detected app
+- **Live URLs** - Shows clickable URL when server is running
+- **Port Allocation** - Uses ports 3100-3199 to avoid conflicts
 
 ### Intervention System
 

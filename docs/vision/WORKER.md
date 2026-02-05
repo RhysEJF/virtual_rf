@@ -37,6 +37,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Destructive command guard | Complete |
 | Capability dependency checking | Complete |
 | Dynamic capability task creation | Complete |
+| Workspace isolation enforcement | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -161,6 +162,28 @@ Workers now check capability dependencies before claiming tasks:
 5. **Phase Ordering** - Capability tasks run before execution tasks (priority-based)
 
 This enables just-in-time capability building without requiring all capabilities upfront.
+
+### Workspace Isolation Enforcement
+
+Outcomes can run in two isolation modes:
+
+1. **Workspace Mode** (`isolation_mode='workspace'`) - Default, safe mode
+   - Workers ONLY create/modify files within `workspaces/{outcomeId}/`
+   - Cannot access main codebase, sensitive directories, or system files
+   - CLAUDE.md includes explicit workspace boundary instructions
+   - Ideal for external projects, client work, prototypes
+
+2. **Codebase Mode** (`isolation_mode='codebase'`)
+   - Workers can modify the main project files
+   - Used for bug fixes, feature additions, improvements to the repo
+   - CLAUDE.md does NOT include workspace restrictions
+
+The isolation mode is set per-outcome (with a system-wide default). When in workspace mode, the generated CLAUDE.md file includes:
+- Explicit workspace path boundary
+- Instructions to ONLY work within that directory
+- Warnings about restricted areas (`.env`, `.ssh`, credentials)
+
+This provides defense-in-depth alongside the destructive command guard.
 
 ---
 

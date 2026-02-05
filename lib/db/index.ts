@@ -335,6 +335,23 @@ function runMigrations(database: Database.Database): void {
     console.log(`[DB Migration] Added escalation incorporation tracking columns`);
   }
 
+  // Add isolation_mode column to outcomes for workspace isolation
+  const outcomesColsIsolation = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  const hasIsolationMode = outcomesColsIsolation.some(c => c.name === 'isolation_mode');
+  if (!hasIsolationMode) {
+    database.exec(`ALTER TABLE outcomes ADD COLUMN isolation_mode TEXT NOT NULL DEFAULT 'workspace'`);
+    console.log(`[DB Migration] Added isolation_mode column to outcomes`);
+  }
+
+  // Create system_config table for system-wide settings
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS system_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
   // Add required_capabilities column to tasks for capability dependency tracking
   const tasksReqCapCols = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
   const hasRequiredCapabilities = tasksReqCapCols.some(c => c.name === 'required_capabilities');

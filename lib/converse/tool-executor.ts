@@ -12,7 +12,7 @@ import * as escalationTools from './tools/escalations';
 import * as taskTools from './tools/tasks';
 import * as homrTools from './tools/homr';
 import * as capabilityTools from './tools/capabilities';
-import type { OutcomeStatus } from '../db/schema';
+import type { OutcomeStatus, IsolationMode } from '../db/schema';
 
 export interface ToolCall {
   name: string;
@@ -98,7 +98,8 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         if (!description) {
           return { success: false, error: 'description is required' };
         }
-        const result = await outcomeTools.createOutcome(description);
+        const isolationMode = args.isolation_mode as IsolationMode | undefined;
+        const result = await outcomeTools.createOutcome(description, isolationMode);
         return {
           success: result.success,
           data: result.outcome,

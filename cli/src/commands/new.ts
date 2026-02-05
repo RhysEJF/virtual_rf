@@ -8,13 +8,15 @@
 import { Command } from 'commander';
 import { input, editor, confirm, select } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { api, ApiError, NetworkError, DispatchResponse, MatchedOutcome } from '../api.js';
+import { api, ApiError, NetworkError, DispatchResponse, MatchedOutcome, IsolationMode } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 interface NewCommandOptions extends OutputOptions {
   quick?: boolean;
   skipMatching?: boolean;
   interactive?: boolean;
+  isolated?: boolean;
+  allowCodebase?: boolean;
 }
 
 /**
@@ -220,7 +222,9 @@ const command = new Command('new')
   .argument('[description...]', 'Description of what you want to achieve')
   .option('-q, --quick', 'Request quick mode (immediate response, no outcome)')
   .option('-s, --skip-matching', 'Skip matching against existing outcomes')
-  .option('-i, --interactive', 'Force interactive mode to enter description');
+  .option('-i, --interactive', 'Force interactive mode to enter description')
+  .option('--isolated', 'Create outcome in isolated workspace (default)')
+  .option('--allow-codebase', 'Allow outcome to modify main codebase');
 
 addOutputFlags(command);
 
@@ -268,15 +272,29 @@ export const newCommand = command
         process.exit(1);
       }
 
+      // Determine isolation mode from flags
+      let isolationMode: IsolationMode | undefined;
+      if (options.isolated) {
+        isolationMode = 'workspace';
+      } else if (options.allowCodebase) {
+        isolationMode = 'codebase';
+      }
+      // If neither flag specified, the server will use the default
+
       // Send to dispatch API
       if (!options.json && !options.quiet) {
         console.log();
         console.log(chalk.gray('Processing request...'));
+        if (isolationMode) {
+          const modeLabel = isolationMode === 'workspace' ? 'isolated workspace' : 'codebase access';
+          console.log(chalk.gray(`Mode: ${modeLabel}`));
+        }
       }
 
       const response = await api.dispatch.send(description, {
         modeHint: options.quick ? 'quick' : 'smart',
         skipMatching: options.skipMatching,
+        isolationMode,
       });
 
       // Handle JSON/quiet output

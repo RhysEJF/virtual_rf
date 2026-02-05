@@ -52,6 +52,7 @@ data/twin.db-shm  # Shared memory
 | `lib/db/activity.ts` | activity_log | Event feed |
 | `lib/db/homr.ts` | homr_* tables | HOMЯ Protocol |
 | `lib/db/repositories.ts` | repositories, outcome_items | Repository sync |
+| `lib/db/system-config.ts` | system_config | Global system settings |
 
 ---
 
@@ -87,6 +88,7 @@ CREATE TABLE outcomes (
   tool_target TEXT DEFAULT 'local',     -- local/repo/inherit
   file_target TEXT DEFAULT 'local',     -- local/repo/inherit
   auto_save TEXT DEFAULT '0',           -- 0/1/inherit
+  isolation_mode TEXT DEFAULT 'workspace',  -- workspace/codebase
   created_at TEXT,
   updated_at TEXT,
   last_activity_at TEXT,
@@ -260,6 +262,19 @@ CREATE TABLE repositories (
 ```
 
 **Note:** Repositories are no longer typed as "private" or "team". Instead, each outcome specifies its own repository via `repository_id`, with inheritance through the parent chain.
+
+### system_config
+
+```sql
+CREATE TABLE system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+```
+
+**Used for global settings like:**
+- `default_isolation_mode` - Default workspace isolation mode for new outcomes (`workspace` or `codebase`)
 
 ### outcome_items
 

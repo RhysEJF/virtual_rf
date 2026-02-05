@@ -14,6 +14,23 @@ import path from 'path';
 
 export type OutputType = 'app' | 'research' | 'document' | 'data' | 'asset' | 'unknown';
 
+export type AppType = 'node' | 'static';
+
+export interface DetectedApp {
+  id: string;
+  type: AppType;
+  name: string;
+  path: string;           // Relative to workspace
+  absolutePath: string;   // Full system path
+  framework?: string;     // e.g., 'Next.js', 'React', 'Express'
+  entryPoint: string;     // e.g., 'npm run dev' or 'index.html'
+  scripts?: {
+    dev?: boolean;
+    start?: boolean;
+    build?: boolean;
+  };
+}
+
 export interface DetectedOutput {
   id: string;
   type: OutputType;
@@ -467,6 +484,141 @@ function detectTaskDirectories(workspacePath: string, outcomeId: string): Detect
   }
 
   return outputs;
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+// ============================================================================
+// App Detection
+// ============================================================================
+
+/**
+ * Detect all runnable apps in a workspace
+ * Checks for:
+ * 1. Node.js apps (package.json at root or in app/ subdirectories)
+ * 2. Static sites (index.html in task_* directories)
+ */
+export function detectApps(outcomeId: string): DetectedApp[] {
+  const workspacePath = getWorkspacePath(outcomeId);
+
+  if (!fs.existsSync(workspacePath)) {
+    return [];
+  }
+
+  const apps: DetectedApp[] = [];
+
+  // 1. Check for Node.js app at workspace root
+  const rootPackageJson = path.join(workspacePath, 'package.json');
+  if (fs.existsSync(rootPackageJson)) {
+    const app = detectNodeAppDetails(workspacePath, outcomeId, 'root');
+    if (app) apps.push(app);
+  }
+
+  // 2. Check for apps in app/ subdirectory (common pattern)
+  const appDir = path.join(workspacePath, 'app');
+  if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
+    const entries = fs.readdirSync(appDir);
+    for (const entry of entries) {
+      const entryPath = path.join(appDir, entry);
+      if (fs.statSync(entryPath).isDirectory()) {
+        const packageJsonPath = path.join(entryPath, 'package.json');
+        if (fs.existsSync(packageJsonPath)) {
+          const app = detectNodeAppDetails(entryPath, outcomeId, `app-${entry}`);
+          if (app) apps.push(app);
+        }
+      }
+    }
+  }
+
+  // 3. Check for static sites in task_* directories
+  try {
+    const entries = fs.readdirSync(workspacePath);
+    const taskDirs = entries.filter(e => {
+      const fullPath = path.join(workspacePath, e);
+      return e.startsWith('task_') && fs.statSync(fullPath).isDirectory();
+    });
+
+    for (const taskDir of taskDirs) {
+      const taskPath = path.join(workspacePath, taskDir);
+
+      // Check for package.json (Node app in task dir)
+      const packageJsonPath = path.join(taskPath, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const app = detectNodeAppDetails(taskPath, outcomeId, taskDir);
+        if (app) apps.push(app);
+        continue;
+      }
+
+      // Check for index.html (static site)
+      const indexHtmlPath = path.join(taskPath, 'index.html');
+      if (fs.existsSync(indexHtmlPath)) {
+        apps.push({
+          id: `${outcomeId}-${taskDir}-static`,
+          type: 'static',
+          name: taskDir.replace('task_', 'Task '),
+          path: taskDir,
+          absolutePath: taskPath,
+          entryPoint: 'index.html',
+        });
+      }
+    }
+  } catch {
+    // Ignore directory read errors
+  }
+
+  return apps;
+}
+
+/**
+ * Detect Node.js app details from a directory
+ */
+function detectNodeAppDetails(
+  appPath: string,
+  outcomeId: string,
+  appId: string
+): DetectedApp | null {
+  const packageJsonPath = path.join(appPath, 'package.json');
+
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const scripts = packageJson.scripts || {};
+
+    const hasDev = 'dev' in scripts;
+    const hasStart = 'start' in scripts;
+    const hasBuild = 'build' in scripts;
+
+    // Detect framework
+    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+    let framework = 'Node.js';
+    if (deps['next']) framework = 'Next.js';
+    else if (deps['react']) framework = 'React';
+    else if (deps['vue']) framework = 'Vue';
+    else if (deps['svelte'] || deps['@sveltejs/kit']) framework = 'Svelte';
+    else if (deps['express']) framework = 'Express';
+    else if (deps['fastify']) framework = 'Fastify';
+
+    // Determine entry point
+    const entryPoint = hasDev ? 'npm run dev' : hasStart ? 'npm start' : 'npm run dev';
+
+    return {
+      id: `${outcomeId}-${appId}`,
+      type: 'node',
+      name: packageJson.name || appId,
+      path: path.relative(getWorkspacePath(outcomeId), appPath) || '.',
+      absolutePath: appPath,
+      framework,
+      entryPoint,
+      scripts: {
+        dev: hasDev,
+        start: hasStart,
+        build: hasBuild,
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================

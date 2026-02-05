@@ -72,7 +72,7 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Resource viewing (`files`, `outputs`) | Complete |
 | Outcome updates (`update`, `archive`) | Complete |
 | Chat/iterate (`chat`) | Complete |
-| Retrospective (`retro`) | Complete |
+| Retrospective (`retro`, `retro show`, `retro history`, `retro create`) | Complete |
 | Configuration (`config`, `sync`) | Complete |
 | Output format flags (`--json`, `--quiet`) | Complete |
 | Supervise mode (`--supervise`, `--yolo` on homr) | Complete |
@@ -244,6 +244,19 @@ flow dismiss <escalation-id>              # Dismiss escalation (Done)
 - Pending escalations count
 
 **YOLO Mode:** Auto-resolves escalations using AI confidence scoring, shows decisions made
+
+#### Retrospective Analysis
+```bash
+flow retro <outcome-id>                          # Trigger retro analysis
+flow retro status                                # Show active analysis jobs
+flow retro history [--limit <n>]                 # Show recent jobs (completed/failed)
+flow retro show <job-id>                         # Show job details with numbered proposals
+flow retro create <job-id> <num>                 # Create outcome from proposal #num
+flow retro create <job-id> --consolidated        # Create one outcome from all proposals
+flow retro create <job-id> --consolidated 1,3    # Create consolidated from specific proposals
+flow retro create <job-id> 1 --start             # Create and start worker immediately
+flow retro create <job-id> 1 --open              # Create and open in browser
+```
 
 #### Validation & Review
 ```bash

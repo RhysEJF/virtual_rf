@@ -62,7 +62,7 @@ cli/
 │       ├── files.ts       # flow files
 │       ├── config.ts      # flow config
 │       ├── sync.ts        # flow sync
-│       ├── retro.ts       # flow retro
+│       ├── retro.ts       # flow retro (trigger, status, history, show, create)
 │       ├── converse.ts    # flow converse/talk (markdown rendering)
 │       └── server.ts      # flow server (start dev server)
 │   └── types/

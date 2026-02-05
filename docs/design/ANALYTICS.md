@@ -25,6 +25,8 @@
 | `app/api/improvements/create-consolidated/route.ts` | Create consolidated outcomes | ~8KB |
 | `app/api/improvements/jobs/[jobId]/route.ts` | Job status endpoint | ~2KB |
 | `app/api/improvements/jobs/active/route.ts` | Active jobs list | ~1KB |
+| `app/api/improvements/jobs/recent/route.ts` | Recent jobs list (incl. completed) | ~1KB |
+| `app/api/improvements/create-from-proposals/route.ts` | Create outcomes from proposals | ~8KB |
 
 ---
 
@@ -390,6 +392,78 @@ List all active (running/pending) analysis jobs.
   ]
 }
 ```
+
+### GET /api/improvements/jobs/recent
+
+List recent analysis jobs (including completed/failed).
+
+**Query Parameters:**
+- `limit`: Max jobs to return (default: 10)
+
+**Response:**
+```json
+{
+  "success": true,
+  "jobs": [
+    {
+      "id": "uuid",
+      "outcomeId": "out_xxx",
+      "jobType": "improvement_analysis",
+      "status": "completed",
+      "progressMessage": "Analysis complete",
+      "result": { "escalationsAnalyzed": 5, "proposals": [...] },
+      "error": null,
+      "createdAt": 1706745600000,
+      "startedAt": 1706745601000,
+      "completedAt": 1706745700000
+    }
+  ]
+}
+```
+
+### POST /api/improvements/create-from-proposals
+
+Create outcomes from analysis proposals (supports individual and consolidated creation).
+
+**Request:**
+```json
+{
+  "proposals": [
+    {
+      "clusterId": "cluster-1",
+      "rootCause": "Missing retry logic",
+      "escalationCount": 3,
+      "problemSummary": "Workers fail on transient errors",
+      "outcomeName": "Add Retry Logic",
+      "proposedTasks": [
+        { "title": "Implement retry", "description": "...", "priority": 10 }
+      ],
+      "intent": { "summary": "...", "itemCount": 2, "successCriteria": [...] },
+      "approach": { "summary": "...", "stepCount": 3, "risks": [...] }
+    }
+  ],
+  "consolidated": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "parentOutcomeId": "out_self_improvement",
+  "outcomes": [
+    {
+      "id": "out_new123",
+      "name": "Add Retry Logic",
+      "taskCount": 4,
+      "rootCause": "Missing retry logic"
+    }
+  ],
+  "message": "Created 1 outcome(s) with 4 total tasks"
+}
+```
+
+When `consolidated: true`, multiple proposals are merged into a single outcome.
 
 ---
 

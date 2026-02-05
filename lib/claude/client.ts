@@ -89,9 +89,6 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       args.push('--allowedTools', allowedTools.join(' '));
     }
 
-    // Log the command for debugging
-    console.log('[Claude CLI] Running:', 'claude', args.join(' ').substring(0, 100) + '...');
-
     const claude = spawn('claude', args, {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, pipe stdout/stderr
@@ -123,17 +120,12 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
       if (code === 0) {
         try {
-          // Debug: log raw stdout
-          console.log('[Claude CLI] Raw stdout length:', stdout.length);
-          console.log('[Claude CLI] Raw stdout (first 500 chars):', stdout.substring(0, 500));
-
           // The CLI may output multiple JSON lines (streaming), find the result message
           let jsonResponse: ClaudeJSONResponse | null = null;
           const lines = stdout.trim().split('\n').filter(l => l.trim());
 
           if (lines.length > 1) {
             // Multiple JSON lines - find the final result
-            console.log('[Claude CLI] Found', lines.length, 'JSON lines');
             for (let i = lines.length - 1; i >= 0; i--) {
               try {
                 const parsed = JSON.parse(lines[i]);
@@ -157,17 +149,6 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
             throw new Error('Failed to parse JSON response');
           }
 
-          // Debug: log parsed response keys
-          console.log('[Claude CLI] Parsed response keys:', Object.keys(jsonResponse));
-          console.log('[Claude CLI] Result field type:', typeof jsonResponse.result);
-          console.log('[Claude CLI] Result field length:', jsonResponse.result?.length || 0);
-          console.log('[Claude CLI] Subtype:', jsonResponse.subtype);
-
-          // Handle max_turns error - CLI ran out of turns before completing
-          if (jsonResponse.subtype === 'error_max_turns') {
-            console.warn('[Claude CLI] Hit max turns limit - consider increasing maxTurns');
-          }
-
           const cost = jsonResponse.total_cost_usd || 0;
           // Try different possible field names for the response text
           const responseAny = jsonResponse as unknown as Record<string, unknown>;
@@ -180,14 +161,9 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
             ''
           ) as string;
 
-          if (!text && stdout.length > 0) {
-            console.log('[Claude CLI] Warning: No text found in response, full response:', JSON.stringify(jsonResponse).substring(0, 1000));
-          }
           const durationMs = jsonResponse.duration_ms;
           const inputTokens = jsonResponse.usage?.input_tokens;
           const outputTokens = jsonResponse.usage?.output_tokens;
-
-          console.log('[Claude CLI] Success, cost: $' + cost.toFixed(4) + ', duration: ' + durationMs + 'ms');
 
           // Log cost to database
           if (cost > 0) {
@@ -198,8 +174,8 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
                 amount: cost,
                 description: description || `Claude CLI call (${inputTokens || 0} in, ${outputTokens || 0} out)`,
               });
-            } catch (logError) {
-              console.error('[Claude CLI] Failed to log cost:', logError);
+            } catch {
+              // Cost logging failed - non-critical, continue
             }
           }
 
@@ -211,17 +187,14 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
             inputTokens,
             outputTokens,
           });
-        } catch (parseError) {
+        } catch {
           // If JSON parsing fails, treat stdout as plain text
-          console.log('[Claude CLI] Success (non-JSON response), length:', stdout.length);
           resolve({
             text: stdout.trim(),
             success: true,
           });
         }
       } else {
-        console.error('[Claude CLI] Failed with code:', code);
-        console.error('[Claude CLI] stderr:', stderr.substring(0, 500));
         resolve({
           text: stdout.trim(),
           success: false,

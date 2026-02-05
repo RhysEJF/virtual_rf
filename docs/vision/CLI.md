@@ -78,11 +78,13 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Supervise mode (`--supervise`, `--yolo` on homr) | Complete |
 | Technical audit (`flow audit`) | Complete |
 | Success criteria review (`flow review`) | Complete |
-| Conversational REPL (`flow converse`) | Complete |
+| Conversational REPL (`flow converse`, `flow talk`) | Complete |
 | Capability management (`flow capability`, `skill new`, `tool new`) | Complete |
+| Dev server (`flow server`) | Complete |
+| Markdown rendering in REPL | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 34 commands implemented (full coverage)
+**Current:** 35 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---

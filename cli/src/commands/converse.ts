@@ -3,13 +3,56 @@
  *
  * Interactive REPL for natural language conversation with Digital Twin.
  * Creates a session on start and maintains context across messages.
- * Uses the /api/converse endpoint with intent classification.
+ * Uses the /api/converse-agent endpoint with Claude as an agent with tools.
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as readline from 'readline';
-import { api, ApiError, NetworkError, ConverseResponse } from '../api.js';
+import { marked } from 'marked';
+import { markedTerminal } from 'marked-terminal';
+import { api, ApiError, NetworkError, ConverseResponse, ConverseAgentResponse } from '../api.js';
+
+// Get terminal width, with sensible bounds
+function getTerminalWidth(): number {
+  const cols = process.stdout.columns || 80;
+  // Clamp between 60 and 120 to avoid mangled tables
+  return Math.max(60, Math.min(cols - 2, 120));
+}
+
+// Configure marked with terminal renderer
+marked.use(markedTerminal({
+  // Styling options
+  reflowText: true,
+  width: getTerminalWidth(),
+  // Table styling - use simpler ASCII for better compatibility
+  tableOptions: {
+    chars: {
+      'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
+      'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
+      'left': '│', 'left-mid': '├', 'mid': '─', 'mid-mid': '┼',
+      'right': '│', 'right-mid': '┤', 'middle': '│'
+    },
+    style: { head: ['bold'] }
+  }
+}));
+
+/**
+ * Render markdown to styled terminal output
+ */
+function renderMarkdown(text: string): string {
+  try {
+    const rendered = marked.parse(text);
+    // marked.parse returns string | Promise<string>, but with our sync setup it's string
+    return (typeof rendered === 'string' ? rendered : text).trim();
+  } catch {
+    // If rendering fails, return original text
+    return text;
+  }
+}
+
+// Mode flag - use the agentic endpoint by default
+let useAgentMode = true;
 
 /**
  * REPL state that tracks session info and context
@@ -21,18 +64,19 @@ interface ReplState {
 }
 
 /**
- * Format the assistant's response with appropriate styling
+ * Format the assistant's response with appropriate styling (intent-based mode)
  */
-function formatResponse(response: ConverseResponse): void {
+function formatIntentResponse(response: ConverseResponse): void {
   // Show intent classification in debug-like style (subtle)
   if (response.intent) {
     const confidence = Math.round(response.intent.confidence * 100);
     console.log(chalk.gray(`[${response.intent.type} • ${confidence}% confidence]`));
   }
 
-  // Main response message
+  // Main response message - render markdown for terminal
   console.log();
-  console.log(chalk.cyan('Assistant:'), response.message);
+  console.log(chalk.cyan('Assistant:'));
+  console.log(renderMarkdown(response.message));
 
   // Show actions taken if any
   if (response.actions_taken && response.actions_taken.length > 0) {
@@ -61,13 +105,36 @@ function formatResponse(response: ConverseResponse): void {
 }
 
 /**
+ * Format the assistant's response with appropriate styling (agent mode)
+ */
+function formatAgentResponse(response: ConverseAgentResponse): void {
+  // Main response message - render markdown for terminal
+  console.log();
+  console.log(chalk.cyan('Assistant:'));
+  console.log(renderMarkdown(response.message));
+
+  // Show tool call results if any
+  if (response.tool_calls && response.tool_calls.length > 0) {
+    console.log();
+    console.log(chalk.gray('Tools used:'));
+    for (const toolCall of response.tool_calls) {
+      const icon = toolCall.success ? chalk.green('✓') : chalk.red('✗');
+      console.log(`  ${icon} ${toolCall.name}`);
+    }
+  }
+
+  console.log();
+}
+
+/**
  * Display welcome message when starting the REPL
  */
 function displayWelcome(state: ReplState): void {
   console.log();
-  console.log(chalk.bold.cyan('Digital Twin Conversation'));
+  console.log(chalk.bold.cyan('Flow Conversation Mode'));
   console.log(chalk.gray('─'.repeat(40)));
   console.log(chalk.gray(`Session: ${state.sessionId}`));
+  console.log(chalk.gray(`Mode: ${useAgentMode ? 'Agent (tools)' : 'Intent (classification)'}`));
   if (state.currentOutcomeId) {
     console.log(chalk.gray(`Outcome: ${state.currentOutcomeId}`));
   }
@@ -77,10 +144,11 @@ function displayWelcome(state: ReplState): void {
   console.log(chalk.gray('  /clear [new]        - Clear screen (new = start new session)'));
   console.log(chalk.gray('  /context            - Show current session context'));
   console.log(chalk.gray('  /switch <outcome>   - Switch to a different outcome'));
+  console.log(chalk.gray('  /mode               - Toggle between agent/intent mode'));
   console.log(chalk.gray('  /help               - Show available commands'));
   console.log(chalk.gray('  Ctrl+C              - Exit'));
   console.log();
-  console.log(chalk.gray('Start chatting to interact with your Digital Twin.'));
+  console.log(chalk.gray('Start chatting to stay in flow.'));
   console.log();
 }
 
@@ -264,6 +332,15 @@ async function handleSpecialCommand(
     return true;
   }
 
+  // /mode - Toggle between agent and intent mode
+  if (cmd === '/mode') {
+    useAgentMode = !useAgentMode;
+    console.log();
+    console.log(chalk.green('✓'), `Switched to ${useAgentMode ? 'Agent (tools)' : 'Intent (classification)'} mode`);
+    console.log();
+    return true;
+  }
+
   // Unknown command
   if (cmd.startsWith('/')) {
     console.log(chalk.yellow(`Unknown command: ${cmd}`));
@@ -288,12 +365,20 @@ async function runRepl(): Promise<void> {
 
   // Function to initialize or reinitialize a session
   async function initSession(): Promise<void> {
-    const initResponse = await api.converse.send('hello');
-    state.sessionId = initResponse.session_id;
-    state.messageCount = 1; // Count the initial greeting
-    // Extract outcome ID from response data if present
-    if (initResponse.data && typeof initResponse.data === 'object' && 'outcome_id' in initResponse.data) {
-      state.currentOutcomeId = initResponse.data.outcome_id as string | null;
+    if (useAgentMode) {
+      const initResponse = await api.converseAgent.send('hello');
+      state.sessionId = initResponse.session_id;
+      state.messageCount = 1;
+      if (initResponse.data && typeof initResponse.data === 'object' && 'outcome_id' in initResponse.data) {
+        state.currentOutcomeId = initResponse.data.outcome_id as string | null;
+      }
+    } else {
+      const initResponse = await api.converse.send('hello');
+      state.sessionId = initResponse.session_id;
+      state.messageCount = 1;
+      if (initResponse.data && typeof initResponse.data === 'object' && 'outcome_id' in initResponse.data) {
+        state.currentOutcomeId = initResponse.data.outcome_id as string | null;
+      }
     }
   }
 
@@ -363,24 +448,45 @@ async function runRepl(): Promise<void> {
       // Show thinking indicator
       process.stdout.write(chalk.gray('Thinking...'));
 
-      const response = await api.converse.send(trimmedInput, state.sessionId);
+      if (useAgentMode) {
+        const response = await api.converseAgent.send(trimmedInput, state.sessionId);
 
-      // Clear thinking indicator
-      process.stdout.write('\r' + ' '.repeat(20) + '\r');
+        // Clear thinking indicator
+        process.stdout.write('\r' + ' '.repeat(20) + '\r');
 
-      // Update state from response
-      if (response.session_id) {
-        state.sessionId = response.session_id;
+        // Update state from response
+        if (response.session_id) {
+          state.sessionId = response.session_id;
+        }
+        state.messageCount++;
+
+        // Extract outcome ID if present in response data
+        if (response.data && typeof response.data === 'object' && 'outcome_id' in response.data) {
+          state.currentOutcomeId = response.data.outcome_id as string | null;
+        }
+
+        // Format and display response
+        formatAgentResponse(response);
+      } else {
+        const response = await api.converse.send(trimmedInput, state.sessionId);
+
+        // Clear thinking indicator
+        process.stdout.write('\r' + ' '.repeat(20) + '\r');
+
+        // Update state from response
+        if (response.session_id) {
+          state.sessionId = response.session_id;
+        }
+        state.messageCount++;
+
+        // Extract outcome ID if present in response data
+        if (response.data && typeof response.data === 'object' && 'outcome_id' in response.data) {
+          state.currentOutcomeId = response.data.outcome_id as string | null;
+        }
+
+        // Format and display response
+        formatIntentResponse(response);
       }
-      state.messageCount++;
-
-      // Extract outcome ID if present in response data
-      if (response.data && typeof response.data === 'object' && 'outcome_id' in response.data) {
-        state.currentOutcomeId = response.data.outcome_id as string | null;
-      }
-
-      // Format and display response
-      formatResponse(response);
 
     } catch (error) {
       // Clear thinking indicator
@@ -404,13 +510,20 @@ async function runRepl(): Promise<void> {
 }
 
 export const converseCommand = new Command('converse')
+  .alias('talk')
   .description('Start an interactive conversation with Digital Twin')
   .option('--session <id>', 'Resume an existing session by ID')
-  .action(async (options: { session?: string }) => {
+  .option('--intent', 'Use intent-classification mode instead of agent mode')
+  .action(async (options: { session?: string; intent?: boolean }) => {
     // If session ID provided, we could resume it
     // For now, just start fresh (session resume can be added later)
     if (options.session) {
       console.log(chalk.gray(`Note: Session resume not yet implemented. Starting new session.`));
+    }
+
+    // Set mode based on flag
+    if (options.intent) {
+      useAgentMode = false;
     }
 
     await runRepl();

@@ -25,7 +25,7 @@ cli/
 ├── tsconfig.json          # TypeScript strict ES2022
 ├── README.md              # User documentation
 ├── src/
-│   ├── index.ts           # Entry point, Commander setup (34 commands)
+│   ├── index.ts           # Entry point, Commander setup (35 commands)
 │   ├── api.ts             # Typed API client (~800 lines)
 │   ├── utils/
 │   │   ├── index.ts       # Re-exports
@@ -62,7 +62,11 @@ cli/
 │       ├── files.ts       # flow files
 │       ├── config.ts      # flow config
 │       ├── sync.ts        # flow sync
-│       └── retro.ts       # flow retro
+│       ├── retro.ts       # flow retro
+│       ├── converse.ts    # flow converse/talk (markdown rendering)
+│       └── server.ts      # flow server (start dev server)
+│   └── types/
+│       └── marked-terminal.d.ts  # Type declarations for marked-terminal
 └── dist/                  # Compiled JavaScript
 ```
 
@@ -304,6 +308,8 @@ Future: Could read from environment variable or config file.
 - `commander` ^12.1.0 - CLI framework
 - `chalk` ^5.3.0 - Terminal styling
 - `@inquirer/prompts` ^8.2.0 - Interactive prompts
+- `marked` ^15.x - Markdown parser
+- `marked-terminal` ^7.x - Terminal markdown renderer
 
 **Development:**
 - `typescript` ^5.x - Type checking
@@ -345,6 +351,25 @@ When `flow new` finds matching outcomes, it offers choices:
 - Add to existing outcome → calls iterate API to create tasks
 - Create new outcome instead
 - Cancel
+
+### Flow Server
+
+Start the Next.js dev server from anywhere without `cd`:
+
+```bash
+flow server           # Start on port 3000
+flow server -p 3001   # Start on custom port
+```
+
+Uses `import.meta.url` to find the project root relative to the CLI installation.
+
+### Flow Converse/Talk (Markdown Rendering)
+
+The conversational REPL (`flow converse` or `flow talk`) renders markdown responses using `marked-terminal`:
+
+- Tables render with box-drawing characters
+- Bold, italic, and code formatting preserved
+- Terminal width clamped to 60-120 chars to prevent table mangling
 
 ---
 

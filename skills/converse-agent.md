@@ -186,15 +186,16 @@ Create a new task for an outcome.
 Update a task with additional context or details.
 - **Parameters**:
   - `task_id` (required) - Task ID to update
-  - `prd_context` (optional) - PRD context: the WHAT - product goals, user needs, success criteria
-  - `design_context` (optional) - Design context: the HOW - technical approach, patterns, file structure
-  - `task_intent` (optional) - Clarified intent of what the task should accomplish
-  - `task_approach` (optional) - Specific approach or steps to complete the task
+  - `task_intent` (optional) - **WHAT** this task should achieve (shows in UI as "WHAT (TASK INTENT)")
+  - `task_approach` (optional) - **HOW** to do it: tools, patterns, approach (shows in UI as "HOW (TASK APPROACH)")
+  - `prd_context` (optional) - Inherited PRD context from outcome (rarely used directly)
+  - `design_context` (optional) - Inherited design context from outcome (rarely used directly)
   - `title` (optional) - Updated task title
   - `description` (optional) - Updated task description
   - `priority` (optional) - Updated priority (lower = higher priority)
 - **Returns**: `{ task }` with all context fields
 - **Use when**: "optimize task", "add context to task", "update task with PRD", "enrich task", "add design context"
+- **Field guidance**: When user says "design context" or "how to do it" for a task → use `task_approach`. When user says "what it should achieve" or "requirements" → use `task_intent`.
 
 #### findTask
 Search for tasks by title or description. Returns all matching tasks with full context.

@@ -150,6 +150,20 @@ Create a new task for an outcome.
 - **Returns**: `{ task, outcomeStats }`
 - **Use when**: "add a task to...", "create task", "new task for X"
 
+#### updateTask
+Update a task with additional context or details.
+- **Parameters**:
+  - `task_id` (required) - Task ID to update
+  - `prd_context` (optional) - PRD context: the WHAT - product goals, user needs, success criteria
+  - `design_context` (optional) - Design context: the HOW - technical approach, patterns, file structure
+  - `task_intent` (optional) - Clarified intent of what the task should accomplish
+  - `task_approach` (optional) - Specific approach or steps to complete the task
+  - `title` (optional) - Updated task title
+  - `description` (optional) - Updated task description
+  - `priority` (optional) - Updated priority (lower = higher priority)
+- **Returns**: `{ task }` with all context fields
+- **Use when**: "optimize task", "add context to task", "update task with PRD", "enrich task", "add design context"
+
 ### Worker Details Tools
 
 #### getWorkerDetails

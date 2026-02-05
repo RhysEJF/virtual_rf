@@ -244,6 +244,27 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         };
       }
 
+      case 'updateTask': {
+        const taskId = args.task_id as string;
+        if (!taskId) {
+          return { success: false, error: 'task_id is required' };
+        }
+        const result = taskTools.updateTask(taskId, {
+          title: args.title as string | undefined,
+          description: args.description as string | undefined,
+          prd_context: args.prd_context as string | undefined,
+          design_context: args.design_context as string | undefined,
+          task_intent: args.task_intent as string | undefined,
+          task_approach: args.task_approach as string | undefined,
+          priority: args.priority as number | undefined,
+        });
+        return {
+          success: result.success,
+          data: result.task,
+          error: result.error,
+        };
+      }
+
       // =====================================================================
       // Worker Details Tools
       // =====================================================================

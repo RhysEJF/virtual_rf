@@ -280,7 +280,7 @@ Instead of intent classification, the agent now uses Claude to select from 20+ t
 | **Outcomes** | `getOutcome`, `getOutcomeTasks`, `getOutcomeWorkers`, `createOutcome`, `iterateOnOutcome` | "Show tasks for X" |
 | **Workers** | `getActiveWorkers`, `startWorker`, `stopWorker`, `getWorkerDetails`, `getWorkerProgress` | "Start a worker" |
 | **Escalations** | `getPendingEscalations`, `answerEscalation` | "Any questions?" |
-| **Tasks** | `getTask`, `addTask` | "Add a task to X" |
+| **Tasks** | `getTask`, `addTask`, `updateTask` | "Add context to task", "Optimize task" |
 | **HOMR** | `getHomrStatus`, `getHomrDashboard`, `runAutoResolve` | "HOMR status" |
 
 Claude decides which tool(s) to call based on the user's natural language query.

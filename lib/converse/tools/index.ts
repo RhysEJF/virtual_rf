@@ -252,6 +252,53 @@ export const converseTools: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'updateTask',
+    description:
+      'Update a task with additional context or details. Use for "optimize task", "add context to task", "update task with PRD", "enrich task".',
+    parameters: {
+      task_id: {
+        type: 'string',
+        description: 'Task ID to update',
+        required: true,
+      },
+      prd_context: {
+        type: 'string',
+        description: 'PRD context - the WHAT: product goals, user needs, success criteria',
+        required: false,
+      },
+      design_context: {
+        type: 'string',
+        description: 'Design context - the HOW: technical approach, patterns, file structure',
+        required: false,
+      },
+      task_intent: {
+        type: 'string',
+        description: 'Clarified intent of what the task should accomplish',
+        required: false,
+      },
+      task_approach: {
+        type: 'string',
+        description: 'Specific approach or steps to complete the task',
+        required: false,
+      },
+      title: {
+        type: 'string',
+        description: 'Updated task title',
+        required: false,
+      },
+      description: {
+        type: 'string',
+        description: 'Updated task description',
+        required: false,
+      },
+      priority: {
+        type: 'number',
+        description: 'Updated priority (lower = higher priority)',
+        required: false,
+      },
+    },
+  },
 
   // =========================================================================
   // Worker Details Tools

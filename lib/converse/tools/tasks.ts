@@ -8,6 +8,7 @@ import {
   getTaskById,
   createTask as dbCreateTask,
   getTaskStats,
+  updateTask as dbUpdateTask,
 } from '../../db/tasks';
 import { getOutcomeById } from '../../db/outcomes';
 
@@ -114,6 +115,80 @@ export function addTask(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create task',
+    };
+  }
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string;
+  prd_context?: string;
+  design_context?: string;
+  task_intent?: string;
+  task_approach?: string;
+  required_skills?: string;
+  priority?: number;
+}
+
+export interface UpdateTaskResult {
+  success: boolean;
+  task?: {
+    id: string;
+    title: string;
+    description: string | null;
+    prd_context: string | null;
+    design_context: string | null;
+    task_intent: string | null;
+    task_approach: string | null;
+    required_skills: string | null;
+    priority: number;
+  };
+  error?: string;
+}
+
+/**
+ * Update a task with new context or details
+ */
+export function updateTask(
+  taskId: string,
+  updates: UpdateTaskInput
+): UpdateTaskResult {
+  const existingTask = getTaskById(taskId);
+  if (!existingTask) {
+    return { success: false, error: `Task ${taskId} not found` };
+  }
+
+  // Ensure at least one field is being updated
+  const hasUpdates = Object.values(updates).some((v) => v !== undefined);
+  if (!hasUpdates) {
+    return { success: false, error: 'No updates provided' };
+  }
+
+  try {
+    const updated = dbUpdateTask(taskId, updates);
+
+    if (!updated) {
+      return { success: false, error: 'Failed to update task' };
+    }
+
+    return {
+      success: true,
+      task: {
+        id: updated.id,
+        title: updated.title,
+        description: updated.description,
+        prd_context: updated.prd_context,
+        design_context: updated.design_context,
+        task_intent: updated.task_intent,
+        task_approach: updated.task_approach,
+        required_skills: updated.required_skills,
+        priority: updated.priority,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update task',
     };
   }
 }

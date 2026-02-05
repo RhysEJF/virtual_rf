@@ -122,8 +122,8 @@ export const listCommand = command
       }
 
       // Table configuration
-      const idWidth = 16;
-      const nameWidth = 32;
+      const idWidth = 22;  // out_ + 16 chars = 20, plus padding
+      const nameWidth = 30;
       const statusWidth = 10;
 
       // Print header
@@ -138,7 +138,8 @@ export const listCommand = command
 
       // Print rows
       for (const outcome of filteredOutcomes) {
-        const id = padEnd(outcome.id, idWidth);
+        // Don't truncate IDs - they're needed for commands
+        const id = outcome.id.padEnd(idWidth);
         const name = padEnd(outcome.name, nameWidth);
         const status = formatStatus(outcome.status);
         const tasks = formatTaskCounts(outcome);
@@ -148,7 +149,7 @@ export const listCommand = command
           ? chalk.green(` ⚙ ${outcome.active_workers}`)
           : '';
 
-        console.log(`${chalk.gray(id)}${chalk.white(name)}${status}${tasks}${workerIndicator}`);
+        console.log(`${chalk.cyan(id)}${chalk.white(name)}${status}${tasks}${workerIndicator}`);
       }
 
       console.log();

@@ -1233,6 +1233,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             iteration,
             content: `Completed: ${task.title}`,
             full_output: taskResult.fullOutput,
+            task_id: task.id,
           });
 
           // HOMЯ observation - analyze the completed task
@@ -1282,6 +1283,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             iteration,
             content: `Failed: ${task.title} - ${taskResult.error}`,
             full_output: taskResult.fullOutput,
+            task_id: task.id,
           });
 
           // Check if this is a critical error
@@ -2093,6 +2095,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         iteration,
         content: `Completed: ${task.title}`,
         full_output: taskResult.fullOutput,
+        task_id: task.id,
       });
 
       // HOMЯ observation - analyze the completed task
@@ -2136,6 +2139,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         iteration,
         content: `Failed: ${task.title} - ${taskResult.error}`,
         full_output: taskResult.fullOutput,
+        task_id: task.id,
       });
     }
 

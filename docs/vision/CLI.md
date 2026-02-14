@@ -68,7 +68,8 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Task management (`tasks`, `task`) | Complete |
 | HOMЯ integration (`homr`, `escalations`, `answer`, `dismiss`) | Complete |
 | Skill/tool management (`skills`, `skill`, `tools`, `tool`) | Complete |
-| Worker management (`workers`, `worker`, `intervene`, `pause`, `resume`, `logs`) | Complete |
+| Worker management (`workers`, `worker`, `intervene`, `pause`, `resume`, `logs`, `inspect`) | Complete |
+| Worker log verbosity (`flow logs -v`, `-vv`, `-vvv`) | Complete |
 | Resource viewing (`files`, `outputs`) | Complete |
 | Outcome updates (`update`, `archive`) | Complete |
 | Chat/iterate (`chat`) | Complete |
@@ -87,7 +88,7 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Workspace app serving (`flow serve`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 36 commands implemented (full coverage)
+**Current:** 37 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -198,7 +199,8 @@ flow worker show <id> [--logs] [--progress]
 flow worker start <outcome-id> [--parallel] [--worktree]   # Done via flow start
 flow worker stop <id>                                       # Done via flow stop
 flow worker intervene <id> --message="..."
-flow worker logs <id> [--tail=<n>] [--follow]
+flow worker logs <id> [--tail=<n>] [--follow] [-v|-vv|-vvv]
+flow worker inspect <id> <iteration> [--latest] [--output] [--analysis]
 ```
 
 #### Skills
@@ -442,7 +444,8 @@ RF_NO_COLOR=1
 - [x] `intervene <worker-id> "<msg>"` - Send instruction
 - [x] `flow-pause <worker-id>` - Pause worker
 - [x] `flow-resume <worker-id>` - Resume worker
-- [x] `flow-logs <worker-id>` - View worker logs
+- [x] `flow-logs <worker-id>` - View worker logs (with -v/-vv/-vvv verbosity)
+- [x] `flow-inspect <worker-id> <iteration>` - Deep dive into worker iteration
 - [x] `homr <outcome-id>` - HOMЯ status with discoveries/decisions
 - [x] `homr <outcome-id> --supervise` - Live watch mode (5s polling)
 - [x] `homr <outcome-id> --yolo` - Auto-resolve + supervise

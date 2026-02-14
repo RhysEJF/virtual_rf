@@ -25,7 +25,7 @@ cli/
 ├── tsconfig.json          # TypeScript strict ES2022
 ├── README.md              # User documentation
 ├── src/
-│   ├── index.ts           # Entry point, Commander setup (35 commands)
+│   ├── index.ts           # Entry point, Commander setup (37 commands)
 │   ├── api.ts             # Typed API client (~800 lines)
 │   ├── utils/
 │   │   ├── index.ts       # Re-exports
@@ -47,7 +47,8 @@ cli/
 │       ├── intervene.ts   # flow intervene
 │       ├── flow-pause.ts  # flow pause
 │       ├── flow-resume.ts # flow resume
-│       ├── flow-logs.ts   # flow logs
+│       ├── flow-logs.ts   # flow logs (-v/-vv/-vvv verbosity)
+│       ├── inspect.ts     # flow inspect (deep dive into iteration)
 │       ├── homr.ts        # flow homr (--supervise, --yolo)
 │       ├── escalations.ts # flow escalations
 │       ├── answer.ts      # flow answer
@@ -362,6 +363,31 @@ flow server -p 3001   # Start on custom port
 ```
 
 Uses `import.meta.url` to find the project root relative to the CLI installation.
+
+### Flow Logs Verbosity
+
+The `flow logs` command supports incremental verbosity flags:
+
+```bash
+flow logs <worker-id>           # Basic log output
+flow logs <worker-id> -v        # + HOMЯ quality scores
+flow logs <worker-id> -vv       # + Discoveries, drift, issues
+flow logs <worker-id> -vvv      # + Full Claude output preview
+```
+
+Flags can be stacked (`-v -v -v`) or combined (`-vvv`).
+
+### Flow Inspect
+
+Deep dive into a specific worker iteration with full HOMЯ analysis:
+
+```bash
+flow inspect <worker-id> <iteration>    # Specific iteration
+flow inspect <worker-id> --latest       # Most recent iteration
+flow inspect <worker-id> 2 --output     # Only Claude output
+flow inspect <worker-id> 2 --analysis   # Only HOMЯ analysis
+flow inspect <worker-id> 2 --json       # Raw JSON output
+```
 
 ### Flow Converse/Talk (Markdown Rendering)
 

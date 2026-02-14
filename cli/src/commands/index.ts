@@ -30,6 +30,7 @@ export { reviewCommand } from './review.js';
 export { flowPauseCommand } from './flow-pause.js';
 export { flowResumeCommand } from './flow-resume.js';
 export { flowLogsCommand } from './flow-logs.js';
+export { inspectCommand } from './inspect.js';
 export { flowAuditCommand } from './flow-audit.js';
 export { converseCommand } from './converse.js';
 export { capabilityCommand } from './capability.js';

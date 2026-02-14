@@ -147,6 +147,19 @@ export interface Worker {
   pid: number | null;
 }
 
+// Progress entry observation (from HOMЯ)
+export interface ProgressObservation {
+  quality: string;
+  alignmentScore: number;
+  onTrack: boolean;
+  // Verbosity >= 2
+  discoveries?: Array<{ type: string; content: string }>;
+  drift?: Array<{ type: string; description: string; severity: string }>;
+  issues?: Array<{ type: string; description: string; severity: string }>;
+  hasAmbiguity?: boolean;
+  ambiguityData?: { type: string; description: string } | null;
+}
+
 // Progress entry type
 export interface ProgressEntry {
   id: number;
@@ -155,9 +168,13 @@ export interface ProgressEntry {
   iteration: number;
   content: string;
   full_output: string | null;
+  task_id: string | null;
   compacted: boolean;
   compacted_into: number | null;
   created_at: number;
+  // Enriched fields (when verbosity >= 1)
+  taskTitle?: string;
+  observation?: ProgressObservation | null;
 }
 
 // Skill type

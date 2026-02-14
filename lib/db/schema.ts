@@ -329,6 +329,7 @@ export interface ProgressEntry {
   iteration: number;
   content: string;                  // Summary/log message
   full_output: string | null;       // Complete Claude output (stdout/stderr)
+  task_id: string | null;           // Task ID for linking to HOMЯ observations
   compacted: boolean;               // Has this been compacted?
   compacted_into: number | null;    // ID of compacted summary entry
   created_at: number;

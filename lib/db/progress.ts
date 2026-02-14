@@ -18,6 +18,7 @@ export interface CreateProgressEntryInput {
   iteration: number;
   content: string;
   full_output?: string;  // Complete Claude output (stdout/stderr)
+  task_id?: string;      // Task ID for linking to HOMЯ observations
 }
 
 export function createProgressEntry(input: CreateProgressEntryInput): ProgressEntry {
@@ -25,8 +26,8 @@ export function createProgressEntry(input: CreateProgressEntryInput): ProgressEn
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO progress_entries (outcome_id, worker_id, iteration, content, full_output, compacted, created_at)
-    VALUES (?, ?, ?, ?, ?, 0, ?)
+    INSERT INTO progress_entries (outcome_id, worker_id, iteration, content, full_output, task_id, compacted, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?)
   `);
 
   const result = stmt.run(
@@ -35,6 +36,7 @@ export function createProgressEntry(input: CreateProgressEntryInput): ProgressEn
     input.iteration,
     input.content,
     input.full_output || null,
+    input.task_id || null,
     timestamp
   );
 
@@ -53,6 +55,7 @@ export function getProgressEntryById(id: number): ProgressEntry | null {
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   };
 }
 
@@ -68,6 +71,7 @@ export function getProgressEntriesByWorker(workerId: string): ProgressEntry[] {
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   }));
 }
 
@@ -83,6 +87,7 @@ export function getUncompactedEntries(workerId: string): ProgressEntry[] {
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   }));
 }
 
@@ -109,6 +114,7 @@ export function getCompactedSummaries(workerId: string): ProgressEntry[] {
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   }));
 }
 
@@ -129,6 +135,7 @@ export function getRecentProgress(workerId: string, limit: number = 10): Progres
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   })).reverse(); // Return in chronological order
 }
 
@@ -265,6 +272,7 @@ export function getEntriesForCompaction(workerId: string, limit: number = COMPAC
     ...row,
     compacted: Boolean(row.compacted),
     full_output: row.full_output || null,
+    task_id: row.task_id || null,
   }));
 }
 

@@ -553,6 +553,15 @@ function runMigrations(database: Database.Database): void {
     database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_messages_session ON conversation_messages(session_id)`);
     database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_messages_created ON conversation_messages(session_id, created_at)`);
   }
+
+  // Add task_id column to progress_entries for linking to HOMЯ observations
+  const progressColsTaskId = database.prepare(`PRAGMA table_info(progress_entries)`).all() as { name: string }[];
+  const hasTaskId = progressColsTaskId.some(c => c.name === 'task_id');
+  if (!hasTaskId) {
+    database.exec(`ALTER TABLE progress_entries ADD COLUMN task_id TEXT`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_progress_task ON progress_entries(task_id)`);
+    console.log(`[DB Migration] Added task_id column to progress_entries`);
+  }
 }
 
 /**

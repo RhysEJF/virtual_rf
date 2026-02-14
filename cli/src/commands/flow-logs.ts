@@ -3,6 +3,11 @@
  *
  * Streams/tails logs for a worker, fetching progress entries and displaying
  * them with live updates.
+ *
+ * Verbosity levels:
+ *   -v    : Show HOMЯ quality scores
+ *   -vv   : Show discoveries, drift, issues
+ *   -vvv  : Show Claude output preview
  */
 
 import { Command } from 'commander';
@@ -15,11 +20,13 @@ interface LogsOptions extends OutputOptions {
   follow?: boolean;
   tail?: number;
   since?: string;
+  verbose?: number;  // 0, 1, 2, or 3
 }
 
 // Response type for worker logs
 interface WorkerLogsResponse {
   entries: ProgressEntry[];
+  verbosity?: number;
 }
 
 // Response type for worker details
@@ -39,13 +46,23 @@ const command = new Command('logs')
   .argument('<worker-id>', 'The worker ID to fetch logs for')
   .option('-f, --follow', 'Follow log output (live updates)')
   .option('-n, --tail <lines>', 'Number of entries to show from end', '10')
-  .option('--since <time>', 'Show entries since timestamp (e.g., "5m", "1h", "2024-01-01")');
+  .option('--since <time>', 'Show entries since timestamp (e.g., "5m", "1h", "2024-01-01")')
+  .option('-v, --verbose', 'Increase verbosity (-v, -vv, -vvv)', increaseVerbosity, 0);
 
 addOutputFlags(command);
+
+/**
+ * Accumulator function for -v flag repetition
+ */
+function increaseVerbosity(_dummyValue: string, previous: number): number {
+  return previous + 1;
+}
 
 export const flowLogsCommand = command
   .action(async (workerId: string, options: LogsOptions) => {
     try {
+      const verbosity = Math.min(options.verbose || 0, 3);
+
       // First get worker details to verify it exists and show context
       const workerResponse = await api.get<WorkerDetailsResponse>(
         `/workers/${workerId}`
@@ -56,12 +73,15 @@ export const flowLogsCommand = command
         console.log();
         console.log(chalk.gray(`Fetching logs for worker ${chalk.cyan(workerId)}...`));
         console.log(chalk.gray(`Worker: ${worker.name} | Status: ${formatStatus(worker.status)} | Iteration: ${worker.iteration}`));
+        if (verbosity > 0) {
+          console.log(chalk.gray(`Verbosity: ${verbosity} (${verbosityDescription(verbosity)})`));
+        }
         console.log();
       }
 
-      // Fetch initial logs
+      // Fetch initial logs with verbosity
       const logsResponse = await api.get<WorkerLogsResponse>(
-        `/workers/${workerId}/logs`
+        `/workers/${workerId}/logs?verbosity=${verbosity}`
       );
 
       let entries = logsResponse.entries;
@@ -89,7 +109,8 @@ export const flowLogsCommand = command
           workerId,
           workerName: worker.name,
           status: worker.status,
-          entries: entries.map(formatEntryForJson)
+          verbosity,
+          entries: entries.map(e => formatEntryForJson(e, verbosity))
         };
         handleOutput(data, options);
         return;
@@ -108,7 +129,7 @@ export const flowLogsCommand = command
         console.log(chalk.yellow('No log entries found'));
       } else {
         for (const entry of entries) {
-          displayEntry(entry);
+          displayEntry(entry, verbosity);
         }
       }
 
@@ -133,9 +154,9 @@ export const flowLogsCommand = command
               `/workers/${workerId}`
             );
 
-            // Fetch new logs
+            // Fetch new logs with verbosity
             const newLogsResponse = await api.get<WorkerLogsResponse>(
-              `/workers/${workerId}/logs`
+              `/workers/${workerId}/logs?verbosity=${verbosity}`
             );
 
             // Filter to only new entries
@@ -145,7 +166,7 @@ export const flowLogsCommand = command
 
             // Display new entries
             for (const entry of newEntries) {
-              displayEntry(entry);
+              displayEntry(entry, verbosity);
               lastSeenId = Math.max(lastSeenId, entry.id);
             }
 
@@ -205,6 +226,9 @@ export const flowLogsCommand = command
       } else {
         console.log();
         console.log(chalk.gray(`Use 'flow logs ${workerId} -f' to follow live updates`));
+        if (verbosity === 0) {
+          console.log(chalk.gray(`Use -v, -vv, or -vvv for more detail`));
+        }
         console.log();
       }
     } catch (error) {
@@ -255,14 +279,26 @@ function formatStatus(status: WorkerStatus): string {
 }
 
 /**
+ * Get description of verbosity level
+ */
+function verbosityDescription(level: number): string {
+  switch (level) {
+    case 1: return 'quality scores';
+    case 2: return 'discoveries, drift, issues';
+    case 3: return 'full output';
+    default: return 'default';
+  }
+}
+
+/**
  * Display a single log entry with formatting
  */
-function displayEntry(entry: ProgressEntry): void {
+function displayEntry(entry: ProgressEntry, verbosity: number): void {
   const timestamp = new Date(entry.created_at).toLocaleTimeString();
   const iterationLabel = chalk.gray(`[iter ${entry.iteration}]`);
   const timeLabel = chalk.gray(timestamp);
 
-  // Determine if this is a status update or full output
+  // Base content (always shown)
   if (entry.content.startsWith('STATUS:')) {
     const status = entry.content.replace('STATUS:', '').trim();
     console.log(`${timeLabel} ${iterationLabel} ${chalk.cyan('●')} ${chalk.white(status)}`);
@@ -271,33 +307,93 @@ function displayEntry(entry: ProgressEntry): void {
   } else if (entry.content.startsWith('ERROR:')) {
     const errorMsg = entry.content.replace('ERROR:', '').trim();
     console.log(`${timeLabel} ${iterationLabel} ${chalk.red('✗')} ${chalk.red(errorMsg)}`);
+  } else if (entry.content.includes('Completed:')) {
+    console.log(`${timeLabel} ${iterationLabel} ${chalk.green('✓')} ${chalk.white(entry.content)}`);
+  } else if (entry.content.includes('Failed:')) {
+    console.log(`${timeLabel} ${iterationLabel} ${chalk.red('✗')} ${chalk.red(entry.content)}`);
   } else {
     // Regular content
     console.log(`${timeLabel} ${iterationLabel} ${chalk.gray('│')} ${entry.content}`);
   }
 
-  // If there's full_output and it's different from content, show a truncated preview
-  if (entry.full_output && entry.full_output !== entry.content) {
-    const preview = entry.full_output.slice(0, 200);
-    const truncated = entry.full_output.length > 200;
-    console.log(chalk.gray(`    └─ ${preview}${truncated ? '...' : ''}`));
+  // Verbosity level 1: HOMЯ quality summary
+  if (verbosity >= 1 && entry.observation) {
+    const obs = entry.observation;
+    const qualityColor = obs.quality === 'good' ? chalk.green :
+                         obs.quality === 'needs_work' ? chalk.yellow : chalk.red;
+    const trackStatus = obs.onTrack ? chalk.green('on track') : chalk.yellow('drifting');
+    console.log(chalk.gray(`           │ `) +
+      `Quality: ${qualityColor(obs.quality)} (${obs.alignmentScore}/100) • ${trackStatus}`);
+  }
+
+  // Verbosity level 2: Discoveries, drift, issues
+  if (verbosity >= 2 && entry.observation) {
+    const obs = entry.observation;
+
+    if (obs.discoveries && obs.discoveries.length > 0) {
+      console.log(chalk.gray(`           │ `) + chalk.cyan('Discoveries:'));
+      for (const d of obs.discoveries) {
+        console.log(chalk.gray(`           │   `) + `• [${d.type}] ${d.content}`);
+      }
+    }
+
+    if (obs.drift && obs.drift.length > 0) {
+      console.log(chalk.gray(`           │ `) + chalk.yellow('Drift:'));
+      for (const d of obs.drift) {
+        console.log(chalk.gray(`           │   `) + `• ${d.description}`);
+      }
+    }
+
+    if (obs.issues && obs.issues.length > 0) {
+      console.log(chalk.gray(`           │ `) + chalk.red('Issues:'));
+      for (const i of obs.issues) {
+        console.log(chalk.gray(`           │   `) + `• ${i.description}`);
+      }
+    }
+
+    if (obs.hasAmbiguity && obs.ambiguityData) {
+      console.log(chalk.gray(`           │ `) + chalk.magenta('Ambiguity: ') + obs.ambiguityData.type);
+    }
+  }
+
+  // Verbosity level 3: Full Claude output preview
+  if (verbosity >= 3 && entry.full_output) {
+    const preview = entry.full_output.slice(0, 1000);
+    const truncated = entry.full_output.length > 1000;
+    console.log(chalk.gray(`           └─── Claude Output ───`));
+    console.log(chalk.gray(preview));
+    if (truncated) {
+      console.log(chalk.gray(`           ... (${entry.full_output.length - 1000} more chars)`));
+    }
   }
 }
 
 /**
  * Format entry for JSON output
  */
-function formatEntryForJson(entry: ProgressEntry): object {
-  return {
+function formatEntryForJson(entry: ProgressEntry, verbosity: number): object {
+  const result: Record<string, unknown> = {
     id: entry.id,
     iteration: entry.iteration,
     content: entry.content,
+    taskId: entry.task_id,
+    taskTitle: entry.taskTitle,
     hasFullOutput: !!entry.full_output,
     fullOutputLength: entry.full_output?.length ?? 0,
     compacted: entry.compacted,
     createdAt: entry.created_at,
     createdAtFormatted: new Date(entry.created_at).toISOString()
   };
+
+  if (verbosity >= 1 && entry.observation) {
+    result.observation = entry.observation;
+  }
+
+  if (verbosity >= 3 && entry.full_output) {
+    result.fullOutput = entry.full_output;
+  }
+
+  return result;
 }
 
 /**

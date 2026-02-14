@@ -259,6 +259,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           design_context: args.design_context as string | undefined,
           task_intent: args.task_intent as string | undefined,
           task_approach: args.task_approach as string | undefined,
+          required_capabilities: args.required_capabilities as string[] | undefined,
           priority: args.priority as number | undefined,
         });
         return {

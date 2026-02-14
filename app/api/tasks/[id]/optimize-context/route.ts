@@ -3,12 +3,14 @@
  *
  * POST /api/tasks/[id]/optimize-context
  * Takes a ramble and optimizes it into structured task_intent and task_approach
+ * Also detects and sets required_capabilities for skill/tool dependencies
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getTaskById, updateTask } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { complete } from '@/lib/claude/client';
+import { detectCapabilities } from '@/lib/capabilities/detection';
 
 const OPTIMIZE_PROMPT = `You are helping structure context for a task. The user has rambled their thoughts about how this task should be done.
 
@@ -104,7 +106,7 @@ export async function POST(
     }
 
     // Update task with new context (merge with existing)
-    const updates: { task_intent?: string; task_approach?: string } = {};
+    const updates: { task_intent?: string; task_approach?: string; required_capabilities?: string[] } = {};
 
     if (parsed.task_intent) {
       // Merge with existing intent if present
@@ -122,6 +124,40 @@ export async function POST(
         : parsed.task_approach;
     }
 
+    // Detect capabilities mentioned in the ramble and parsed approach
+    const textToAnalyze = `${ramble}\n\n${parsed.task_approach || ''}`;
+    const detectedCaps = detectCapabilities(textToAnalyze, task.outcome_id);
+
+    // Build required_capabilities array from detected skills/tools
+    const requiredCaps: string[] = [];
+
+    // Add detected skills/tools that need to be built
+    for (const cap of detectedCaps.suggested) {
+      requiredCaps.push(`${cap.type}:${cap.name.toLowerCase().replace(/\s+/g, '-')}`);
+    }
+
+    // Also add any existing capability references (skills that exist but should be available)
+    for (const ref of detectedCaps.skillReferences) {
+      const capName = `skill:${ref.toLowerCase().replace(/\s+/g, '-')}`;
+      if (!requiredCaps.includes(capName)) {
+        requiredCaps.push(capName);
+      }
+    }
+
+    // Merge with existing required_capabilities
+    if (requiredCaps.length > 0) {
+      let existingCaps: string[] = [];
+      if (task.required_capabilities) {
+        try {
+          existingCaps = JSON.parse(task.required_capabilities);
+        } catch {
+          existingCaps = [];
+        }
+      }
+      const mergedCaps = Array.from(new Set([...existingCaps, ...requiredCaps]));
+      updates.required_capabilities = mergedCaps;
+    }
+
     if (Object.keys(updates).length > 0) {
       updateTask(id, updates);
     }
@@ -135,6 +171,11 @@ export async function POST(
       parsed: {
         task_intent: parsed.task_intent,
         task_approach: parsed.task_approach,
+      },
+      capabilities: {
+        detected: detectedCaps.suggested.map(c => `${c.type}:${c.name}`),
+        references: detectedCaps.skillReferences,
+        setOnTask: updates.required_capabilities || [],
       },
     });
   } catch (error) {

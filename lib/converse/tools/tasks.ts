@@ -140,6 +140,7 @@ export interface UpdateTaskInput {
   task_intent?: string;
   task_approach?: string;
   required_skills?: string;
+  required_capabilities?: string[];
   priority?: number;
 }
 
@@ -154,6 +155,7 @@ export interface UpdateTaskResult {
     task_intent: string | null;
     task_approach: string | null;
     required_skills: string | null;
+    required_capabilities: string | null;
     priority: number;
   };
   error?: string;
@@ -195,6 +197,7 @@ export function updateTask(
         task_intent: updated.task_intent,
         task_approach: updated.task_approach,
         required_skills: updated.required_skills,
+        required_capabilities: updated.required_capabilities,
         priority: updated.priority,
       },
     };

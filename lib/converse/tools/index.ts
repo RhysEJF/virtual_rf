@@ -288,6 +288,12 @@ export const converseTools: ToolDefinition[] = [
         description: 'Specific approach or steps to complete the task',
         required: false,
       },
+      required_capabilities: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Required capabilities (skills/tools) that must exist before this task runs. Format: ["skill:skill-name", "tool:tool-name"]. Workers will skip this task until these files exist.',
+        required: false,
+      },
       title: {
         type: 'string',
         description: 'Updated task title',

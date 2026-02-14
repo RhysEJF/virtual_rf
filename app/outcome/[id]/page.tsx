@@ -339,28 +339,6 @@ export default function OutcomeDetailPage(): JSX.Element {
     }
   };
 
-  const handleStartOrchestrated = async () => {
-    setActionLoading(true);
-    try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/orchestrate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ async: true }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        toast({ type: 'success', message: 'Orchestrated execution started - building capabilities first' });
-      } else {
-        toast({ type: 'error', message: data.error || 'Failed to start orchestration' });
-      }
-      fetchOutcome();
-    } catch (err) {
-      toast({ type: 'error', message: 'Failed to start orchestration' });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const handleRunReview = async () => {
     setActionLoading(true);
     setLastReviewResponse(null);
@@ -1402,10 +1380,10 @@ export default function OutcomeDetailPage(): JSX.Element {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={needsCapabilities ? handleStartOrchestrated : handleStartWorker}
+                    onClick={handleStartWorker}
                     disabled={actionLoading}
                   >
-                    {needsCapabilities ? 'Build & Run' : 'Start Worker'}
+                    Start Worker
                   </Button>
                 )}
               </CardHeader>

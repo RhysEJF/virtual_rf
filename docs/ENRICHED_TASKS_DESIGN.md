@@ -42,12 +42,15 @@ interface Task {
   priority: number;
   from_review: boolean;
   // NEW
-  task_intent: string | null;    // Mini-PRD for this task
-  task_approach: string | null;  // How to execute this task
+  task_intent: string | null;           // Mini-PRD for this task
+  task_approach: string | null;         // How to execute this task
+  required_capabilities: string | null; // JSON array: ["skill:name", "tool:name"]
   created_at: number;
   updated_at: number;
 }
 ```
+
+**Note:** `required_capabilities` is auto-populated when using "Optimize Context" but can also be set manually via API or converse tools.
 
 ---
 
@@ -173,11 +176,18 @@ New endpoint for ramble → structured:
 {
   "task_intent": "...",      // Updated or null if no changes
   "task_approach": "...",    // Updated or null if no changes
-  "applied": true
+  "capabilities": {
+    "detected": ["skill:noUiSlider Integration"],
+    "references": ["Web Components"],
+    "setOnTask": ["skill:nouislider-integration"]
+  }
 }
 ```
 
 This calls Claude to parse the ramble and determine what's "what" vs "how".
+
+**Capability Detection (Added 2026-02-05):**
+The endpoint now also runs capability detection on the ramble text using `lib/capabilities/detection.ts`. Any skills or tools mentioned are automatically added to the task's `required_capabilities` field. Workers will skip the task until those capabilities exist in the workspace.
 
 ---
 

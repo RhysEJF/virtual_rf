@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Long-form explorations of the structural AI shifts reshaping industries, workforces, and what it means to build.">
 <title>Publications — The Cognitive Shift</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Libre+Franklin:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/styles.css">
@@ -30,15 +31,17 @@
     </p>
   </header>
 
-  <!-- Publications listing — populated dynamically via JS or static entries -->
+  <div class="gold-rule"></div>
+
+  <!-- Publications listing — populated dynamically via JS -->
   <section class="content-section" id="publications-list">
-    <p>Publications are coming soon. Join the workshop to be notified when new work is published.</p>
+    <p class="pub-loading">Loading publications&hellip;</p>
   </section>
 
   <!-- Bottom CTA -->
   <section class="bottom-cta">
-    <div class="bottom-epigraph">"The shift is structural. The window is now."</div>
-    <div class="bottom-attribution">— The Cognitive Shift</div>
+    <div class="bottom-epigraph">&ldquo;The shift is structural. The window is now.&rdquo;</div>
+    <div class="bottom-attribution">&mdash; The Cognitive Shift</div>
     <form class="signup-form" id="bottom-signup-form">
       <input type="email" placeholder="your@email.com" required />
       <button type="submit">Join free</button>
@@ -49,7 +52,7 @@
     <div class="footer-line">
       <div class="footer-text">The Cognitive Shift</div>
       <div class="footer-diamond"></div>
-      <div class="footer-text">© 2026</div>
+      <div class="footer-text">&copy; 2026</div>
     </div>
   </footer>
 
@@ -76,6 +79,7 @@
   <script src="/js/pocketbase.js"></script>
   <script src="/js/main.js"></script>
   <script src="/js/article.js"></script>
+  <script src="/js/publications.js"></script>
   <script src="/js/newsletter-modal.js"></script>
 </body>
 </html>

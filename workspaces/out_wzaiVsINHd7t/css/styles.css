@@ -719,13 +719,158 @@ body {
   text-decoration: underline;
 }
 
-/* === Publication Page === */
-/* TODO: Publication detail, issue metadata, article listing
-   within a publication, cover image styles */
+/* === Publication Page (Single Publication View) === */
+
+.pub-hero-description {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0.5rem auto 0;
+}
+.pub-hero-description p {
+  margin-bottom: 0.5rem;
+}
+.pub-hero-description p:last-child {
+  margin-bottom: 0;
+}
+.pub-hero-owner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.pub-hero-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.pub-hero-owner-name {
+  font-size: 0.85rem;
+  color: var(--cream-dim);
+}
+.pub-hero-owner-name a {
+  color: var(--cream-dim);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.pub-hero-owner-name a:hover {
+  color: var(--gold);
+}
+
+/* --- Publication Article Feed --- */
+.pub-article-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  text-align: left;
+}
+.pub-article-item {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border);
+}
+.pub-article-item:last-child {
+  border-bottom: 1px solid var(--border);
+}
+.pub-article-item h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 0.3rem;
+}
+.pub-article-item h3 a {
+  color: var(--cream);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.pub-article-item h3 a:hover {
+  color: var(--gold);
+}
+.pub-article-excerpt {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--cream-muted);
+  margin-bottom: 0.5rem;
+}
+.pub-article-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.pub-article-author {
+  color: var(--cream-dim);
+}
+.pub-article-sep {
+  color: var(--muted);
+}
+.pub-article-date {
+  color: var(--cream-muted);
+}
 
 /* === Publications Index === */
-/* TODO: Publications grid/list, filter controls,
-   publication cards, pagination */
+
+.pub-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  text-align: left;
+}
+.pub-card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  text-decoration: none;
+  transition: border-color 0.2s;
+}
+.pub-card:hover {
+  border-color: var(--gold-border);
+}
+.pub-card-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 0.4rem;
+}
+.pub-card-description {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--cream-muted);
+  margin-bottom: 0.75rem;
+}
+.pub-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+.pub-card-owner {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* --- Publications Loading / Empty States --- */
+.pub-loading {
+  text-align: center;
+  color: var(--cream-muted);
+  font-size: 0.95rem;
+  padding: 2rem 0;
+}
+.pub-empty {
+  color: var(--cream-muted);
+  font-size: 0.95rem;
+  font-style: italic;
+}
 
 /* === Author Profile === */
 

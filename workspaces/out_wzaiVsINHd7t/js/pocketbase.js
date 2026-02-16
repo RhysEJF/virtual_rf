@@ -120,7 +120,8 @@ async function getPublications() {
  */
 async function getPublication(slug) {
   var params = new URLSearchParams({
-    filter: "(slug='" + slug + "')"
+    filter: "(slug='" + slug + "')",
+    expand: "owner"
   });
   var result = await _pbGet(_pbUrl("publications") + "?" + params.toString());
   return result && result.items && result.items.length > 0 ? result.items[0] : null;

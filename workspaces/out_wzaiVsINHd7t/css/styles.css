@@ -608,6 +608,117 @@ body {
   font-family: 'Playfair Display', Georgia, serif;
 }
 
+/* === Newsletter Modal === */
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 42, 34, 0.8);
+  z-index: 1000;
+  animation: modalFadeIn 200ms ease;
+}
+
+.modal-overlay.fade-out {
+  animation: modalFadeOut 200ms ease forwards;
+}
+
+.modal-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 440px;
+  width: calc(100% - 2rem);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 2rem;
+  z-index: 1001;
+}
+
+.modal-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: var(--cream-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.modal-heading {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin: 0;
+}
+
+.modal-content .gold-rule {
+  margin: 1.25rem auto 1.5rem;
+}
+
+.modal-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+}
+
+.modal-bullets li {
+  position: relative;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--cream-dim);
+}
+
+.modal-bullets li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  background: var(--gold);
+  transform: rotate(45deg);
+}
+
+.modal-content .signup-form {
+  margin-bottom: 0.75rem;
+}
+
+.modal-content .signup-form input {
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.modal-already-subscribed {
+  background: none;
+  border: none;
+  color: var(--cream-muted);
+  font-size: 0.8rem;
+  font-family: 'Libre Franklin', sans-serif;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.modal-already-subscribed:hover {
+  text-decoration: underline;
+}
+
 /* === Publication Page === */
 /* TODO: Publication detail, issue metadata, article listing
    within a publication, cover image styles */

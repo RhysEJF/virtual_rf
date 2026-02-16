@@ -53,9 +53,29 @@
     </div>
   </footer>
 
+  <!-- Newsletter Modal (hidden by default, triggered on article scroll) -->
+  <div class="modal-overlay" id="newsletter-modal-overlay" style="display:none;">
+    <div class="modal-content">
+      <button class="modal-close" id="newsletter-modal-close" aria-label="Close">&times;</button>
+      <h3 class="modal-heading">Stay ahead of the shift</h3>
+      <div class="gold-rule"></div>
+      <ul class="modal-bullets">
+        <li>Weekly dispatches on structural AI shifts</li>
+        <li>First access to new publications and research</li>
+        <li>Operator playbooks from practitioners in the field</li>
+      </ul>
+      <form class="signup-form" id="newsletter-modal-form">
+        <input type="email" placeholder="your@email.com" required />
+        <button type="submit">Join free</button>
+      </form>
+      <button class="modal-already-subscribed" id="newsletter-modal-already">I am already subscribed</button>
+    </div>
+  </div>
+
   <script src="/js/config.js"></script>
   <script src="/js/pocketbase.js"></script>
   <script src="/js/main.js"></script>
   <script src="/js/article.js"></script>
+  <script src="/js/newsletter-modal.js"></script>
 </body>
 </html>

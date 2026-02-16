@@ -403,6 +403,9 @@ body {
   .signup-form { flex-direction: column; }
   .topbar-nav { gap: 1rem; }
   .page-header { padding: 6rem 1.5rem 2rem; }
+  .article-header { padding: 6rem 1.5rem 1.5rem; }
+  .article-content { padding: 1.5rem 1.5rem 3rem; }
+  .author-bio-card { flex-direction: column; margin-left: 1.5rem; margin-right: 1.5rem; }
 }
 
 
@@ -411,8 +414,199 @@ body {
    ======================================== */
 
 /* === Article Page === */
-/* TODO: Single article layout, article header, article body,
-   byline, publish date, share links, related articles */
+
+.article-header {
+  text-align: center;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 8rem 2rem 2rem;
+}
+.article-header .article-publication-link {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.article-header .article-publication-link:hover {
+  color: var(--gold-light);
+}
+.article-header h1 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 400;
+  color: var(--cream);
+  margin: 1.5rem 0 1.25rem;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.article-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--cream-muted);
+  font-size: 0.8rem;
+}
+.article-meta-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.article-meta-name {
+  color: var(--cream-dim);
+  font-weight: 400;
+}
+.article-meta-sep {
+  color: var(--muted);
+}
+.article-meta-date {
+  color: var(--cream-muted);
+}
+
+/* --- Article Content (rich text body) --- */
+.article-content {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 2rem 2rem 4rem;
+}
+.article-content p {
+  font-family: 'Libre Franklin', sans-serif;
+  font-weight: 300;
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: var(--cream-dim);
+  margin-bottom: 1.5rem;
+}
+.article-content h2,
+.article-content h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+  color: var(--cream);
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  font-weight: 400;
+}
+.article-content h2 {
+  font-size: 1.5rem;
+}
+.article-content h3 {
+  font-size: 1.2rem;
+}
+.article-content blockquote {
+  border-left: 2px solid var(--gold);
+  padding-left: 1.5rem;
+  font-style: italic;
+  color: var(--cream-muted);
+  margin: 1.5rem 0;
+}
+.article-content code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.4rem;
+  font-size: 0.9em;
+}
+.article-content pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+.article-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.article-content img {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+.article-content ul,
+.article-content ol {
+  color: var(--cream-dim);
+  padding-left: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.article-content li {
+  line-height: 1.8;
+  margin-bottom: 0.25rem;
+}
+.article-content a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s;
+}
+.article-content a:hover {
+  color: var(--gold-light);
+}
+
+/* --- Author Bio Card --- */
+.author-bio-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  margin-top: 3rem;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+.author-bio-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.author-bio-info {
+  flex: 1;
+}
+.author-bio-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1rem;
+  color: var(--cream);
+  margin-bottom: 0.35rem;
+}
+.author-bio-name a {
+  color: var(--cream);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.author-bio-name a:hover {
+  color: var(--gold);
+}
+.author-bio-text {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--cream-muted);
+}
+
+/* --- Article Loading / Error States --- */
+.article-loading,
+.article-error {
+  text-align: center;
+  padding: 8rem 2rem 4rem;
+  max-width: 680px;
+  margin: 0 auto;
+}
+.article-loading {
+  color: var(--cream-muted);
+  font-size: 0.95rem;
+}
+.article-error {
+  color: var(--cream-muted);
+  font-size: 1.1rem;
+  font-family: 'Playfair Display', Georgia, serif;
+}
 
 /* === Publication Page === */
 /* TODO: Publication detail, issue metadata, article listing

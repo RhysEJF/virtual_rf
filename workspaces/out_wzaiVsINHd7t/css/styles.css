@@ -398,14 +398,34 @@ body {
    9. Responsive
    ======================================== */
 @media (max-width: 600px) {
+  /* Topbar */
   .topbar { padding: 0.75rem 1.25rem; }
-  .hero { padding: 8rem 1.5rem 3rem; }
-  .signup-form { flex-direction: column; }
   .topbar-nav { gap: 1rem; }
+  .topbar-badge { display: none; }
+
+  /* Landing page hero + below-fold + bottom CTA */
+  .hero { padding: 8rem 1.5rem 3rem; }
+  .below-fold { padding: 3rem 1.5rem 4rem; }
+  .bottom-cta { padding: 3rem 1.5rem 4rem; }
+  .reading-item { gap: 1rem; }
+
+  /* Signup form (all pages) */
+  .signup-form { flex-direction: column; }
+
+  /* Inner page headers + content sections */
   .page-header { padding: 6rem 1.5rem 2rem; }
+  .content-section { padding: 3rem 1.5rem; }
+
+  /* Article page */
   .article-header { padding: 6rem 1.5rem 1.5rem; }
   .article-content { padding: 1.5rem 1.5rem 3rem; }
   .author-bio-card { flex-direction: column; margin-left: 1.5rem; margin-right: 1.5rem; }
+
+  /* Publication cards */
+  .pub-card { padding: 1.25rem; }
+
+  /* Newsletter modal */
+  .modal-content { padding: 1.5rem; }
 }
 
 

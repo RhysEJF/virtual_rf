@@ -980,9 +980,178 @@ body {
   font-style: italic;
 }
 
-/* === Post-Signup Page === */
-/* TODO: Confirmation message, next steps, recommended reading,
-   social sharing prompts */
+/* === Post-Signup Questions Page === */
+
+.signup-q-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rem 2rem 4rem;
+  text-align: center;
+}
+.signup-q-hero-content {
+  max-width: 520px;
+}
+.signup-q-eyebrow {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 1.5rem;
+}
+.signup-q-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+.signup-q-body {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0 auto;
+}
+.signup-q-back-link {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--gold);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.signup-q-back-link:hover {
+  color: var(--gold-light);
+}
+
+/* --- Questions Form Card --- */
+.signup-q-card {
+  max-width: 520px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 2rem;
+}
+.signup-q-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+.signup-q-field {
+  text-align: left;
+}
+.signup-q-label {
+  display: block;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 0.6rem;
+}
+.signup-q-required {
+  color: var(--gold);
+  font-size: 0.85em;
+}
+
+/* --- Form Inputs --- */
+.signup-q-input {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 0.8rem 1rem;
+  font-family: 'Libre Franklin', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 300;
+  color: var(--cream);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.signup-q-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(200, 164, 92, 0.1);
+}
+.signup-q-input::placeholder {
+  color: var(--muted);
+}
+.signup-q-textarea {
+  resize: vertical;
+  min-height: 5rem;
+  line-height: 1.7;
+}
+
+/* --- URL Group --- */
+.signup-q-url-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.signup-q-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.signup-q-url-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cream-muted);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+.signup-q-url-row .signup-q-input {
+  flex: 1;
+}
+
+/* --- Note & Error --- */
+.signup-q-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.6rem;
+  font-style: italic;
+}
+.signup-q-error {
+  font-size: 0.85rem;
+  color: #c0886a;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(192, 136, 106, 0.25);
+  background: rgba(192, 136, 106, 0.06);
+}
+
+/* --- Submit Button --- */
+.signup-q-submit {
+  background: var(--gold);
+  border: none;
+  padding: 0.9rem 1.6rem;
+  color: var(--bg);
+  font-family: 'Libre Franklin', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s;
+  width: 100%;
+}
+.signup-q-submit:hover {
+  background: var(--gold-light);
+}
+.signup-q-submit:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  .signup-q-hero { padding: 6rem 1.5rem 3rem; }
+  .signup-q-card { padding: 1.5rem; }
+  .signup-q-url-row { flex-direction: column; align-items: stretch; gap: 0.25rem; }
+  .signup-q-url-label { min-width: unset; }
+}
 
 /* === 404 Page === */
 /* TODO: Error state layout, illustration area,

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Welcome — The Cognitive Shift</title>
+<title>Complete Your Profile — The Cognitive Shift</title>
+<meta name="description" content="Complete your profile to request access to The Cognitive Shift community.">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Libre+Franklin:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/styles.css">
 </head>
@@ -19,40 +20,133 @@
     </div>
   </nav>
 
-  <header class="page-header">
-    <div class="section-label">Welcome aboard</div>
-    <h1 class="page-title">Tell us about yourself</h1>
-    <p class="page-subtitle">
-      A few quick questions so we can tailor what we send you. Takes 30 seconds.
-    </p>
-  </header>
-
-  <!-- Post-signup questions form -->
-  <section class="content-section">
-    <div class="signup-card" style="max-width: 520px; margin: 0 auto;">
-      <div class="signup-card-header">Your profile</div>
-      <form id="signup-questions-form" style="display: flex; flex-direction: column; gap: 1.5rem;">
-        <!-- Questions will be populated by JS or hardcoded here -->
-        <p style="color: var(--cream-muted); font-size: 0.9rem; line-height: 1.7;">
-          Post-signup questions will be configured here. This page is shown after a user joins the workshop.
+  <main>
+    <!-- No-email fallback (hidden by default, shown by JS) -->
+    <section id="no-email-state" class="signup-q-hero" style="display: none;">
+      <div class="signup-q-hero-content">
+        <h1 class="signup-q-title">Looks like you haven't signed up yet</h1>
+        <p class="signup-q-body">
+          You'll need to join first before completing your profile.
         </p>
-        <button type="submit" class="signup-form" style="display: inline-block;">
-          <!-- Reuse button style inline for now -->
-        </button>
-      </form>
-    </div>
-  </section>
+        <div class="gold-rule"></div>
+        <a href="/" class="signup-q-back-link">Back to the landing page</a>
+      </div>
+    </section>
+
+    <!-- Form state -->
+    <section id="form-state" class="signup-q-hero">
+      <div class="signup-q-hero-content">
+        <div class="signup-q-eyebrow">One more thing</div>
+        <h1 class="signup-q-title">Tell us about yourself</h1>
+        <p class="signup-q-body">
+          Complete your profile to request access to the community.
+        </p>
+        <div class="gold-rule"></div>
+      </div>
+
+      <div class="signup-q-card">
+        <div class="signup-card-header">Your profile</div>
+        <form id="signup-questions-form">
+          <!-- Question 1 -->
+          <div class="signup-q-field">
+            <label class="signup-q-label" for="q-role">
+              What do you do? <span class="signup-q-required">*</span>
+            </label>
+            <input
+              type="text"
+              id="q-role"
+              name="role"
+              required
+              placeholder="e.g., Head of Product at Stripe"
+              class="signup-q-input"
+            />
+          </div>
+
+          <!-- Question 2 -->
+          <div class="signup-q-field">
+            <label class="signup-q-label">
+              Where can we find you? <span class="signup-q-required">*</span>
+            </label>
+            <div class="signup-q-url-group">
+              <div class="signup-q-url-row">
+                <span class="signup-q-url-label">LinkedIn</span>
+                <input
+                  type="url"
+                  id="q-linkedin"
+                  name="linkedin_url"
+                  required
+                  placeholder="linkedin.com/in/..."
+                  class="signup-q-input"
+                />
+              </div>
+              <div class="signup-q-url-row">
+                <span class="signup-q-url-label">X / Twitter</span>
+                <input
+                  type="url"
+                  id="q-twitter"
+                  name="twitter_url"
+                  placeholder="x.com/..."
+                  class="signup-q-input"
+                />
+              </div>
+              <div class="signup-q-url-row">
+                <span class="signup-q-url-label">GitHub</span>
+                <input
+                  type="url"
+                  id="q-github"
+                  name="github_url"
+                  placeholder="github.com/..."
+                  class="signup-q-input"
+                />
+              </div>
+            </div>
+            <div class="signup-q-note">LinkedIn is required. Others are optional but encouraged.</div>
+          </div>
+
+          <!-- Question 3 -->
+          <div class="signup-q-field">
+            <label class="signup-q-label" for="q-motivation">
+              What are you hoping to get from The Cognitive Shift? <span class="signup-q-required">*</span>
+            </label>
+            <textarea
+              id="q-motivation"
+              name="motivation"
+              required
+              rows="4"
+              placeholder="What problems are you working on? What would make this worth your time?"
+              class="signup-q-input signup-q-textarea"
+            ></textarea>
+          </div>
+
+          <!-- Error message slot -->
+          <div id="signup-q-error" class="signup-q-error" style="display: none;"></div>
+
+          <!-- Submit -->
+          <button type="submit" class="signup-q-submit">Request access</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Success state (hidden by default) -->
+    <section id="success-state" class="signup-q-hero" style="display: none;">
+      <div class="signup-q-hero-content">
+        <div class="gold-rule"></div>
+        <h1 class="signup-q-title">You're on the list.</h1>
+        <p class="signup-q-body">We'll be in touch.</p>
+      </div>
+    </section>
+  </main>
 
   <footer class="footer">
     <div class="footer-line">
       <div class="footer-text">The Cognitive Shift</div>
       <div class="footer-diamond"></div>
-      <div class="footer-text">© 2026</div>
+      <div class="footer-text">&copy; 2026</div>
     </div>
   </footer>
 
   <script src="/js/config.js"></script>
   <script src="/js/pocketbase.js"></script>
-  <script src="/js/main.js"></script>
+  <script src="/js/signup-questions.js"></script>
 </body>
 </html>

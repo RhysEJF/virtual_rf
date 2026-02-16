@@ -1,6 +1,7 @@
 /* The Cognitive Shift — Shared Stylesheet
    Extracted from concept-e.html. See DESIGN-SYSTEM.md for full documentation. */
 
+
 /* ========================================
    1. CSS Custom Properties
    ======================================== */
@@ -33,11 +34,16 @@
   --white: #f5efe5;
 }
 
+
 /* ========================================
-   2. Reset & Base
+   2. Reset
    ======================================== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+
+/* ========================================
+   3. Base Styles (body, links, headings)
+   ======================================== */
 body {
   background: var(--bg);
   color: var(--cream-dim);
@@ -46,9 +52,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+
 /* ========================================
-   3. Topbar
+   4. Layout: Topbar, Hero, Sections, Footer
    ======================================== */
+
+/* --- Topbar --- */
 .topbar {
   position: fixed;
   top: 0; left: 0; right: 0; z-index: 100;
@@ -94,16 +103,8 @@ body {
   border: 1px solid var(--gold-border);
   padding: 0.25rem 0.6rem;
 }
-.topbar-diamond {
-  width: 6px; height: 6px;
-  background: var(--gold);
-  transform: rotate(45deg);
-  opacity: 0.6;
-}
 
-/* ========================================
-   4. Hero
-   ======================================== */
+/* --- Hero --- */
 .hero {
   min-height: 100vh;
   display: flex;
@@ -122,57 +123,114 @@ body {
   pointer-events: none;
 }
 .hero-content { max-width: 620px; position: relative; z-index: 1; }
-
 .hero-crest {
   margin: 0 auto 2.5rem;
   width: 64px; height: 64px;
 }
 .hero-crest svg { width: 100%; height: 100%; }
 
-.hero-eyebrow {
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin-bottom: 1.75rem;
+/* --- Below Fold --- */
+.below-fold {
+  padding: 5rem 2rem 6rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.below-content { max-width: 520px; margin: 0 auto; text-align: center; }
+
+/* --- Bottom CTA --- */
+.bottom-cta {
+  padding: 4rem 2rem 5rem;
+  text-align: center;
+}
+.bottom-epigraph {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.15rem;
+  font-style: italic;
+  color: var(--cream-muted);
+  margin-bottom: 0.5rem;
+  max-width: 380px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.bottom-attribution {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin-bottom: 2rem;
+}
+.bottom-cta .signup-form {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.bottom-cta .signup-form input {
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
-.hero-title {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: clamp(2.2rem, 5vw, 3.2rem);
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--cream);
+/* --- Page Header (inner pages) --- */
+.page-header {
+  padding: 8rem 2rem 3rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.page-header .section-label {
   margin-bottom: 1.5rem;
+}
+.page-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 1rem;
   letter-spacing: -0.01em;
 }
-.hero-title em {
-  font-style: italic;
-  color: var(--gold-light);
-}
-
-.hero-body {
-  font-size: 1.05rem;
-  line-height: 1.8;
+.page-subtitle {
+  font-size: 0.95rem;
+  line-height: 1.7;
   color: var(--cream-muted);
   max-width: 480px;
   margin: 0 auto;
 }
 
-/* ========================================
-   5. Gold Rule
-   ======================================== */
-.gold-rule {
-  width: 60px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--gold), transparent);
-  margin: 2.5rem auto;
+/* --- Content Section (inner pages) --- */
+.content-section {
+  padding: 4rem 2rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.content-section p {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--cream-dim);
+  margin-bottom: 1.5rem;
 }
 
+/* --- Footer --- */
+.footer {
+  padding: 2rem;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+.footer-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+.footer-text {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+
 /* ========================================
-   6. Signup Card & Form
+   5. Components: Signup Card, Signup Form,
+      Reading List, Reading Item
    ======================================== */
+
+/* --- Signup Card --- */
 .signup-card {
   max-width: 440px;
   margin: 0 auto;
@@ -190,6 +248,14 @@ body {
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--border);
 }
+.signup-card-note {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 0.75rem;
+  font-style: italic;
+}
+
+/* --- Signup Form --- */
 .signup-form {
   display: flex;
   gap: 0.5rem;
@@ -226,31 +292,8 @@ body {
   white-space: nowrap;
 }
 .signup-form button:hover { background: var(--gold-light); }
-.signup-card-note {
-  font-size: 0.68rem;
-  color: var(--muted);
-  margin-top: 0.75rem;
-  font-style: italic;
-}
 
-/* ========================================
-   7. Below Fold / Reading List
-   ======================================== */
-.below-fold {
-  padding: 5rem 2rem 6rem;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-.below-content { max-width: 520px; margin: 0 auto; text-align: center; }
-.section-label {
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 3rem;
-}
-
+/* --- Reading List --- */
 .reading-list { display: flex; flex-direction: column; gap: 0; text-align: left; }
 .reading-item {
   padding: 1.25rem 0;
@@ -280,57 +323,62 @@ body {
   color: var(--cream-muted);
 }
 
-/* ========================================
-   8. Bottom CTA
-   ======================================== */
-.bottom-cta {
-  padding: 4rem 2rem 5rem;
-  text-align: center;
-}
-.bottom-epigraph {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.15rem;
-  font-style: italic;
-  color: var(--cream-muted);
-  margin-bottom: 0.5rem;
-  max-width: 380px;
-  margin-left: auto;
-  margin-right: auto;
-}
-.bottom-attribution {
-  font-size: 0.65rem;
-  color: var(--muted);
-  letter-spacing: 0.1em;
-  margin-bottom: 2rem;
-}
-.bottom-cta .signup-form {
-  max-width: 420px;
-  margin: 0 auto;
-}
-.bottom-cta .signup-form input {
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
 
 /* ========================================
-   9. Footer
+   6. Typography Helpers
    ======================================== */
-.footer {
-  padding: 2rem;
-  text-align: center;
-  border-top: 1px solid var(--border);
-}
-.footer-line {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-}
-.footer-text {
+.hero-eyebrow {
   font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 1.75rem;
+}
+.hero-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--cream);
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.01em;
+}
+.hero-title em {
+  font-style: italic;
+  color: var(--gold-light);
+}
+.hero-body {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0 auto;
+}
+.section-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--muted);
+  margin-bottom: 3rem;
+}
+
+
+/* ========================================
+   7. Decorative: Gold Rule, Diamond Shapes
+   ======================================== */
+.gold-rule {
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  margin: 2.5rem auto;
+}
+.topbar-diamond {
+  width: 6px; height: 6px;
+  background: var(--gold);
+  transform: rotate(45deg);
+  opacity: 0.6;
 }
 .footer-diamond {
   width: 4px; height: 4px;
@@ -339,50 +387,15 @@ body {
   opacity: 0.3;
 }
 
-/* ========================================
-   10. Page Header (for inner pages)
-   ======================================== */
-.page-header {
-  padding: 8rem 2rem 3rem;
-  text-align: center;
-  border-bottom: 1px solid var(--border);
-}
-.page-header .section-label {
-  margin-bottom: 1.5rem;
-}
-.page-title {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: clamp(1.8rem, 4vw, 2.4rem);
-  font-weight: 400;
-  color: var(--cream);
-  margin-bottom: 1rem;
-  letter-spacing: -0.01em;
-}
-.page-subtitle {
-  font-size: 0.95rem;
-  line-height: 1.7;
-  color: var(--cream-muted);
-  max-width: 480px;
-  margin: 0 auto;
-}
 
 /* ========================================
-   11. Content Section (for inner pages)
+   8. Utility Classes
    ======================================== */
-.content-section {
-  padding: 4rem 2rem;
-  max-width: 640px;
-  margin: 0 auto;
-}
-.content-section p {
-  font-size: 0.95rem;
-  line-height: 1.8;
-  color: var(--cream-dim);
-  margin-bottom: 1.5rem;
-}
+/* (none yet) */
+
 
 /* ========================================
-   12. Responsive
+   9. Responsive
    ======================================== */
 @media (max-width: 600px) {
   .topbar { padding: 0.75rem 1.25rem; }
@@ -391,3 +404,32 @@ body {
   .topbar-nav { gap: 1rem; }
   .page-header { padding: 6rem 1.5rem 2rem; }
 }
+
+
+/* ========================================
+   TODO STUBS — Future Page Styles
+   ======================================== */
+
+/* === Article Page === */
+/* TODO: Single article layout, article header, article body,
+   byline, publish date, share links, related articles */
+
+/* === Publication Page === */
+/* TODO: Publication detail, issue metadata, article listing
+   within a publication, cover image styles */
+
+/* === Publications Index === */
+/* TODO: Publications grid/list, filter controls,
+   publication cards, pagination */
+
+/* === Author Profile === */
+/* TODO: Author avatar, bio section, author stats,
+   authored articles list */
+
+/* === Post-Signup Page === */
+/* TODO: Confirmation message, next steps, recommended reading,
+   social sharing prompts */
+
+/* === 404 Page === */
+/* TODO: Error state layout, illustration area,
+   navigation suggestions, search prompt */

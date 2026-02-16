@@ -1,0 +1,393 @@
+/* The Cognitive Shift — Shared Stylesheet
+   Extracted from concept-e.html. See DESIGN-SYSTEM.md for full documentation. */
+
+/* ========================================
+   1. CSS Custom Properties
+   ======================================== */
+:root {
+  /* Backgrounds */
+  --bg: #1a2a22;
+  --surface: #1f3028;
+  --panel: #243830;
+
+  /* Borders */
+  --border: #2e4a3a;
+  --border-light: #3a5a48;
+
+  /* Cream palette (text hierarchy) */
+  --cream: #f0e8d8;
+  --cream-dim: #c8bfa8;
+  --cream-muted: #988f7a;
+
+  /* Gold accent */
+  --gold: #c8a45c;
+  --gold-light: #daba72;
+  --gold-glow: rgba(200, 164, 92, 0.08);
+  --gold-border: rgba(200, 164, 92, 0.2);
+
+  /* Greens (muted UI text) */
+  --green-text: #5a7a68;
+  --muted: #4a6a58;
+
+  /* White */
+  --white: #f5efe5;
+}
+
+/* ========================================
+   2. Reset & Base
+   ======================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--cream-dim);
+  font-family: 'Libre Franklin', sans-serif;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ========================================
+   3. Topbar
+   ======================================== */
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0; z-index: 100;
+  padding: 0.9rem 2.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(26, 42, 34, 0.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-mark {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--cream);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+.topbar-mark:hover { color: var(--cream); }
+.topbar-right {
+  display: flex; align-items: center; gap: 1rem;
+}
+.topbar-nav {
+  display: flex; align-items: center; gap: 1.5rem;
+}
+.topbar-nav a {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.topbar-nav a:hover { color: var(--cream); }
+.topbar-badge {
+  font-size: 0.55rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
+  padding: 0.25rem 0.6rem;
+}
+.topbar-diamond {
+  width: 6px; height: 6px;
+  background: var(--gold);
+  transform: rotate(45deg);
+  opacity: 0.6;
+}
+
+/* ========================================
+   4. Hero
+   ======================================== */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 10rem 2rem 5rem;
+  text-align: center;
+  position: relative;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(16, 24, 18, 0.4) 100%);
+  pointer-events: none;
+}
+.hero-content { max-width: 620px; position: relative; z-index: 1; }
+
+.hero-crest {
+  margin: 0 auto 2.5rem;
+  width: 64px; height: 64px;
+}
+.hero-crest svg { width: 100%; height: 100%; }
+
+.hero-eyebrow {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 1.75rem;
+}
+
+.hero-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--cream);
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.01em;
+}
+.hero-title em {
+  font-style: italic;
+  color: var(--gold-light);
+}
+
+.hero-body {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ========================================
+   5. Gold Rule
+   ======================================== */
+.gold-rule {
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  margin: 2.5rem auto;
+}
+
+/* ========================================
+   6. Signup Card & Form
+   ======================================== */
+.signup-card {
+  max-width: 440px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+}
+.signup-card-header {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.signup-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.signup-form input {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 0.8rem 1rem;
+  font-family: 'Libre Franklin', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 300;
+  color: var(--cream);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.signup-form input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(200, 164, 92, 0.1);
+}
+.signup-form input::placeholder { color: var(--muted); }
+.signup-form button {
+  background: var(--gold);
+  border: none;
+  padding: 0.8rem 1.4rem;
+  color: var(--bg);
+  font-family: 'Libre Franklin', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.signup-form button:hover { background: var(--gold-light); }
+.signup-card-note {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 0.75rem;
+  font-style: italic;
+}
+
+/* ========================================
+   7. Below Fold / Reading List
+   ======================================== */
+.below-fold {
+  padding: 5rem 2rem 6rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.below-content { max-width: 520px; margin: 0 auto; text-align: center; }
+.section-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3rem;
+}
+
+.reading-list { display: flex; flex-direction: column; gap: 0; text-align: left; }
+.reading-item {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+.reading-item:last-child { border-bottom: 1px solid var(--border); }
+.reading-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--gold);
+  min-width: 20px;
+}
+.reading-item h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 0.3rem;
+}
+.reading-item p {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--cream-muted);
+}
+
+/* ========================================
+   8. Bottom CTA
+   ======================================== */
+.bottom-cta {
+  padding: 4rem 2rem 5rem;
+  text-align: center;
+}
+.bottom-epigraph {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.15rem;
+  font-style: italic;
+  color: var(--cream-muted);
+  margin-bottom: 0.5rem;
+  max-width: 380px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.bottom-attribution {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin-bottom: 2rem;
+}
+.bottom-cta .signup-form {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.bottom-cta .signup-form input {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ========================================
+   9. Footer
+   ======================================== */
+.footer {
+  padding: 2rem;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+.footer-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+.footer-text {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.footer-diamond {
+  width: 4px; height: 4px;
+  background: var(--gold);
+  transform: rotate(45deg);
+  opacity: 0.3;
+}
+
+/* ========================================
+   10. Page Header (for inner pages)
+   ======================================== */
+.page-header {
+  padding: 8rem 2rem 3rem;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.page-header .section-label {
+  margin-bottom: 1.5rem;
+}
+.page-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+.page-subtitle {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ========================================
+   11. Content Section (for inner pages)
+   ======================================== */
+.content-section {
+  padding: 4rem 2rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.content-section p {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--cream-dim);
+  margin-bottom: 1.5rem;
+}
+
+/* ========================================
+   12. Responsive
+   ======================================== */
+@media (max-width: 600px) {
+  .topbar { padding: 0.75rem 1.25rem; }
+  .hero { padding: 8rem 1.5rem 3rem; }
+  .signup-form { flex-direction: column; }
+  .topbar-nav { gap: 1rem; }
+  .page-header { padding: 6rem 1.5rem 2rem; }
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome — The Cognitive Shift</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&family=Libre+Franklin:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <nav class="topbar">
+    <a href="/" class="topbar-mark">The Cognitive Shift</a>
+    <div class="topbar-right">
+      <nav class="topbar-nav">
+        <a href="/publications/">Publications</a>
+      </nav>
+      <div class="topbar-badge">Now open</div>
+      <div class="topbar-diamond"></div>
+    </div>
+  </nav>
+
+  <header class="page-header">
+    <div class="section-label">Welcome aboard</div>
+    <h1 class="page-title">Tell us about yourself</h1>
+    <p class="page-subtitle">
+      A few quick questions so we can tailor what we send you. Takes 30 seconds.
+    </p>
+  </header>
+
+  <!-- Post-signup questions form -->
+  <section class="content-section">
+    <div class="signup-card" style="max-width: 520px; margin: 0 auto;">
+      <div class="signup-card-header">Your profile</div>
+      <form id="signup-questions-form" style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <!-- Questions will be populated by JS or hardcoded here -->
+        <p style="color: var(--cream-muted); font-size: 0.9rem; line-height: 1.7;">
+          Post-signup questions will be configured here. This page is shown after a user joins the workshop.
+        </p>
+        <button type="submit" class="signup-form" style="display: inline-block;">
+          <!-- Reuse button style inline for now -->
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-line">
+      <div class="footer-text">The Cognitive Shift</div>
+      <div class="footer-diamond"></div>
+      <div class="footer-text">© 2026</div>
+    </div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/pocketbase.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>

@@ -728,8 +728,112 @@ body {
    publication cards, pagination */
 
 /* === Author Profile === */
-/* TODO: Author avatar, bio section, author stats,
-   authored articles list */
+
+.author-profile-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+.author-profile-avatar-placeholder {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+.author-profile-avatar-placeholder span {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 2rem;
+  color: var(--gold);
+  font-weight: 400;
+}
+.author-profile-bio {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--cream-muted);
+  max-width: 480px;
+  margin: 0.75rem auto 0;
+}
+.author-not-found {
+  text-align: center;
+  padding: 8rem 2rem 4rem;
+}
+.author-not-found .page-title {
+  margin-bottom: 1rem;
+}
+.author-not-found .page-subtitle {
+  margin: 0 auto;
+}
+.author-articles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  text-align: left;
+}
+.author-article-item {
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border);
+}
+.author-article-item:last-child {
+  border-bottom: 1px solid var(--border);
+}
+.author-article-item h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--cream);
+  margin-bottom: 0.3rem;
+}
+.author-article-item h3 a {
+  color: var(--cream);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.author-article-item h3 a:hover {
+  color: var(--gold);
+}
+.author-article-excerpt {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--cream-muted);
+  margin-bottom: 0.5rem;
+}
+.author-article-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+.author-article-pub {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.author-article-pub:hover {
+  color: var(--gold-light);
+}
+.author-article-sep {
+  color: var(--muted);
+}
+.author-article-date {
+  color: var(--cream-muted);
+  font-size: 0.8rem;
+}
+.author-no-articles {
+  font-size: 0.95rem;
+  color: var(--cream-muted);
+  font-style: italic;
+}
 
 /* === Post-Signup Page === */
 /* TODO: Confirmation message, next steps, recommended reading,

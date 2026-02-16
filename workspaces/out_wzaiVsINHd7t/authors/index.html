@@ -19,29 +19,29 @@
     </div>
   </nav>
 
-  <!-- Author profile — loaded dynamically via ?slug=author-name -->
-  <header class="page-header">
+  <!-- Author profile header — populated dynamically via ?slug=author-name -->
+  <header class="page-header" id="author-header">
     <div class="section-label">Author</div>
-    <h1 class="page-title" id="author-name">Author Profile</h1>
-    <p class="page-subtitle" id="author-bio">
-      Author biography will be loaded here.
-    </p>
+    <h1 class="page-title">Loading&hellip;</h1>
   </header>
 
-  <section class="content-section" id="author-publications">
-    <p>Author publications will appear here.</p>
+  <div class="gold-rule"></div>
+
+  <!-- Author articles list — populated dynamically -->
+  <section class="content-section" id="author-articles">
   </section>
 
   <footer class="footer">
     <div class="footer-line">
       <div class="footer-text">The Cognitive Shift</div>
       <div class="footer-diamond"></div>
-      <div class="footer-text">© 2026</div>
+      <div class="footer-text">&copy; 2026</div>
     </div>
   </footer>
 
   <script src="/js/config.js"></script>
   <script src="/js/pocketbase.js"></script>
   <script src="/js/main.js"></script>
+  <script src="/js/author.js"></script>
 </body>
 </html>

@@ -1,7 +1,11 @@
 /**
- * Improvements Create Consolidated API
+ * Improvements Create Consolidated API (DEPRECATED)
  *
  * POST /api/improvements/create-consolidated - Create ONE consolidated outcome from multiple clusters
+ *
+ * @deprecated Use /api/improvements/create-from-proposals with { consolidated: true } instead.
+ * The create-from-proposals endpoint provides the same functionality with a simpler,
+ * unified API surface.
  *
  * This endpoint:
  * 1. Accepts selected clusters and proposals from escalation analysis

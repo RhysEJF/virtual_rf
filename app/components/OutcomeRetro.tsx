@@ -301,89 +301,50 @@ export function OutcomeRetro({ outcomeId, onOutcomeCreated }: OutcomeRetroProps)
     try {
       const createdOutcomes: Array<{ id: string; name: string }> = [];
 
-      // Create standalone outcomes
-      for (const proposal of creationSummary.standalone) {
-        const res = await fetch('/api/improvements/create', {
+      // Create standalone outcomes (each as individual via create-from-proposals)
+      if (creationSummary.standalone.length > 0) {
+        const res = await fetch('/api/improvements/create-from-proposals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cluster: {
-              id: proposal.clusterId,
-              rootCause: proposal.rootCause,
-              patternDescription: proposal.problemSummary,
-              problemStatement: proposal.problemSummary,
-              severity: result?.clusters.find(c => c.id === proposal.clusterId)?.severity || 'medium',
-              triggerTypes: result?.clusters.find(c => c.id === proposal.clusterId)?.triggerTypes || [],
-            },
-            proposal: {
-              outcomeName: proposal.outcomeName,
-              intent: proposal.intent,
-              approach: proposal.approach,
-              tasks: proposal.proposedTasks,
-            },
+            proposals: creationSummary.standalone,
+            consolidated: false,
           }),
         });
 
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || `Failed to create outcome: ${proposal.outcomeName}`);
+          throw new Error(data.error || 'Failed to create standalone outcomes');
         }
-        if (data.outcome) {
-          createdOutcomes.push(data.outcome);
+        if (data.outcomes) {
+          for (const o of data.outcomes) {
+            createdOutcomes.push({ id: o.id, name: o.name });
+          }
         }
       }
 
-      // Create grouped outcomes
+      // Create grouped outcomes (each group as consolidated via create-from-proposals)
       for (const [groupId, proposals] of Object.entries(creationSummary.grouped)) {
         if (proposals.length === 0) continue;
 
-        const groupLabel = groups.find(g => g.id === groupId)?.label || groupId;
-
-        // Get clusters and trigger types for all proposals in this group
-        const groupClusters = proposals.map(p => {
-          const cluster = result?.clusters.find(c => c.id === p.clusterId);
-          return {
-            id: p.clusterId,
-            rootCause: p.rootCause,
-            patternDescription: p.problemSummary,
-            problemStatement: p.problemSummary,
-            severity: cluster?.severity || 'medium',
-            triggerTypes: cluster?.triggerTypes || [],
-          };
-        });
-
-        const groupTriggerTypes = Array.from(
-          new Set(groupClusters.flatMap(c => c.triggerTypes))
-        );
-
-        const res = await fetch('/api/improvements/create-consolidated', {
+        const res = await fetch('/api/improvements/create-from-proposals', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            clusters: groupClusters,
-            proposals: proposals.map(p => ({
-              clusterId: p.clusterId,
-              rootCause: p.rootCause,
-              escalationCount: p.escalationCount,
-              problemSummary: p.problemSummary,
-              outcomeName: p.outcomeName,
-              proposedTasks: p.proposedTasks,
-              intent: p.intent,
-              approach: p.approach,
-            })),
-            trigger_types: groupTriggerTypes,
-            group_name: proposals.length > 1
-              ? `Combined Improvements (${groupLabel})`
-              : proposals[0].outcomeName,
+            proposals,
+            consolidated: true,
           }),
         });
 
         const data = await res.json();
         if (!res.ok) {
+          const groupLabel = groups.find(g => g.id === groupId)?.label || groupId;
           throw new Error(data.error || `Failed to create grouped outcome for ${groupLabel}`);
         }
-        if (data.outcome_id) {
-          createdOutcomes.push({ id: data.outcome_id, name: data.outcome_name || groupLabel });
+        if (data.outcomes) {
+          for (const o of data.outcomes) {
+            createdOutcomes.push({ id: o.id, name: o.name });
+          }
         }
       }
 

@@ -21,8 +21,8 @@
 | `app/api/activity/route.ts` | Activity API | ~2KB |
 | `app/api/costs/route.ts` | Costs API | ~1KB |
 | `app/api/improvements/analyze/route.ts` | Analysis API (GET/POST) | ~8KB |
-| `app/api/improvements/create/route.ts` | Create improvement outcomes | ~10KB |
-| `app/api/improvements/create-consolidated/route.ts` | Create consolidated outcomes | ~8KB |
+| `app/api/improvements/create/route.ts` | ~~Create improvement outcomes~~ (DEPRECATED) | ~10KB |
+| `app/api/improvements/create-consolidated/route.ts` | ~~Create consolidated outcomes~~ (DEPRECATED) | ~8KB |
 | `app/api/improvements/jobs/[jobId]/route.ts` | Job status endpoint | ~2KB |
 | `app/api/improvements/jobs/active/route.ts` | Active jobs list | ~1KB |
 | `app/api/improvements/jobs/recent/route.ts` | Recent jobs list (incl. completed) | ~1KB |
@@ -464,6 +464,13 @@ Create outcomes from analysis proposals (supports individual and consolidated cr
 ```
 
 When `consolidated: true`, multiple proposals are merged into a single outcome.
+
+### Deprecated Endpoints
+
+The following endpoints are deprecated. All consumers (OutcomeRetro, ImprovementPreviewModal, CLI, Converse) now use `/api/improvements/create-from-proposals`:
+
+- **POST /api/improvements/create** - Legacy trigger-type-based creation. Use `create-from-proposals` with `consolidated: false`.
+- **POST /api/improvements/create-consolidated** - Legacy consolidated creation. Use `create-from-proposals` with `consolidated: true`.
 
 ---
 

@@ -1,7 +1,13 @@
 /**
- * Improvements Create API
+ * Improvements Create API (DEPRECATED)
  *
  * POST /api/improvements/create - Create improvement outcomes from escalation clusters
+ *
+ * @deprecated Use /api/improvements/create-from-proposals instead.
+ * This legacy endpoint accepts trigger_type-based cluster IDs and generates
+ * generic template outcomes. The create-from-proposals endpoint accepts
+ * rich proposal data (AI-generated intent, approach, tasks) and produces
+ * higher quality outcomes.
  *
  * This endpoint:
  * 1. Accepts selected cluster IDs (trigger_types) from escalation analysis

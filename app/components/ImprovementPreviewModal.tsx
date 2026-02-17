@@ -57,14 +57,14 @@ interface AnalyzeResponse {
   message: string;
 }
 
-interface CreateResponse {
+interface CreateFromProposalsResponse {
   success: boolean;
-  parent_outcome_id: string;
-  created_outcomes: Array<{
+  parentOutcomeId: string;
+  outcomes: Array<{
     id: string;
     name: string;
-    trigger_type: string;
-    task_count: number;
+    taskCount: number;
+    rootCause: string;
   }>;
   message: string;
 }
@@ -329,19 +329,6 @@ export function ImprovementPreviewModal({
     return analysisData?.proposals.find(p => p.clusterId === clusterId);
   };
 
-  // Get all trigger types from selected clusters
-  const getSelectedTriggerTypes = (): string[] => {
-    const triggerTypes: string[] = [];
-    for (const clusterId of Array.from(selectedClusterIds)) {
-      const cluster = analysisData?.clusters.find(c => c.id === clusterId);
-      if (cluster?.triggerTypes) {
-        triggerTypes.push(...cluster.triggerTypes);
-      }
-    }
-    // Return unique trigger types
-    return Array.from(new Set(triggerTypes));
-  };
-
   // Create individual outcomes for each selected cluster
   const handleCreateIndividualOutcomes = async () => {
     if (selectedClusterIds.size === 0) {
@@ -353,19 +340,25 @@ export function ImprovementPreviewModal({
     setError(null);
 
     try {
-      const triggerTypes = getSelectedTriggerTypes();
+      // Gather proposals for selected clusters
+      const selectedProposals = Array.from(selectedClusterIds)
+        .map(id => analysisData?.proposals.find(p => p.clusterId === id))
+        .filter((p): p is ProposalSummary => p !== undefined);
 
-      if (triggerTypes.length === 0) {
-        throw new Error('No trigger types found for selected clusters');
+      if (selectedProposals.length === 0) {
+        throw new Error('No proposals found for selected clusters');
       }
 
-      const response = await fetch('/api/improvements/create', {
+      const response = await fetch('/api/improvements/create-from-proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cluster_ids: triggerTypes }),
+        body: JSON.stringify({
+          proposals: selectedProposals,
+          consolidated: false,
+        }),
       });
 
-      const data = await response.json() as CreateResponse;
+      const data = await response.json() as CreateFromProposalsResponse;
 
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Failed to create improvement outcomes');
@@ -373,14 +366,14 @@ export function ImprovementPreviewModal({
 
       toast({
         type: 'success',
-        message: `Created ${data.created_outcomes.length} improvement outcome(s)`,
+        message: `Created ${data.outcomes.length} improvement outcome(s)`,
       });
 
       onSuccess?.();
 
-      // Navigate to the parent outcome
-      if (data.parent_outcome_id) {
-        router.push(`/outcome/${data.parent_outcome_id}`);
+      // Navigate to the first created outcome
+      if (data.outcomes.length > 0) {
+        router.push(`/outcome/${data.outcomes[0].id}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create outcomes');
@@ -401,28 +394,25 @@ export function ImprovementPreviewModal({
     setError(null);
 
     try {
-      // Gather all selected clusters and their proposals
-      const selectedClusters = Array.from(selectedClusterIds)
-        .map(id => analysisData?.clusters.find(c => c.id === id))
-        .filter((c): c is ClusterSummary => c !== undefined);
-
-      const selectedProposals = selectedClusters
-        .map(c => analysisData?.proposals.find(p => p.clusterId === c.id))
+      // Gather proposals for selected clusters
+      const selectedProposals = Array.from(selectedClusterIds)
+        .map(id => analysisData?.proposals.find(p => p.clusterId === id))
         .filter((p): p is ProposalSummary => p !== undefined);
 
-      const triggerTypes = getSelectedTriggerTypes();
+      if (selectedProposals.length === 0) {
+        throw new Error('No proposals found for selected clusters');
+      }
 
-      const response = await fetch('/api/improvements/create-consolidated', {
+      const response = await fetch('/api/improvements/create-from-proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          clusters: selectedClusters,
           proposals: selectedProposals,
-          trigger_types: triggerTypes,
+          consolidated: true,
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as CreateFromProposalsResponse;
 
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Failed to create consolidated outcome');
@@ -436,8 +426,8 @@ export function ImprovementPreviewModal({
       onSuccess?.();
 
       // Navigate to the created outcome
-      if (data.outcome_id) {
-        router.push(`/outcome/${data.outcome_id}`);
+      if (data.outcomes.length > 0) {
+        router.push(`/outcome/${data.outcomes[0].id}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create consolidated outcome');

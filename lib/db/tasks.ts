@@ -8,6 +8,7 @@
 
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { paths } from '../config/paths';
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
@@ -1264,7 +1265,7 @@ export function checkTaskCapabilityDependencies(
   }
 
   const missing: string[] = [];
-  const workspacesRoot = join(process.cwd(), 'workspaces', outcomeId);
+  const workspacesRoot = join(paths.workspaces, outcomeId);
 
   for (const capability of capabilities) {
     // Parse capability format 'type:name'

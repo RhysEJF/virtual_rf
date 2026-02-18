@@ -87,7 +87,7 @@ export const DANGEROUS_PATTERNS: CommandPattern[] = [
     id: 'rm_rf_outside_workspace',
     name: 'Delete Outside Workspace',
     description: 'Force deletion targeting paths outside the current workspace',
-    pattern: /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*)\s+\/(?!Users\/[^\/]+\/virtual_rf\/workspaces)/,
+    pattern: /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*)\s+\/(?!Users\/[^\/]+\/flow\/workspaces|Users\/[^\/]+\/flow-data\/workspaces)/,
     category: 'filesystem_destruction',
     severity: 'high',
     examples: ['rm -f /etc/hosts', 'rm -rf /usr/local/bin'],

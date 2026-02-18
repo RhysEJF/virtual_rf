@@ -25,7 +25,7 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: '@virtual_rf',
+  title: 'Flow',
   description: 'Your personal AI workforce management system',
 };
 

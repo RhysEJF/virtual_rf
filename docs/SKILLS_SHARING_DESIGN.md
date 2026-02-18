@@ -29,7 +29,7 @@ The current system has limitations that prevent effective collaboration:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    DIGITAL TWIN REPO                         │
-│  (your main codebase - virtual_rf)                          │
+│  (your main codebase - flow)                          │
 │                                                              │
 │  ├── skills/              ← Global skills (in-repo)         │
 │  ├── workspaces/          ← [gitignored] Runtime workspaces │

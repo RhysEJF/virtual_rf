@@ -76,6 +76,16 @@ export type ConversationTopic =
   | null;                    // No clear topic yet
 
 /**
+ * Pending action suggested by the assistant that user can confirm with "Yes"
+ */
+export interface PendingAction {
+  type: 'start_worker' | 'stop_worker' | 'answer_escalation' | 'create_outcome';
+  params: Record<string, unknown>;
+  prompt: string; // The question asked, e.g., "Would you like me to start a worker?"
+  createdAt: number;
+}
+
+/**
  * Enhanced session context structure stored in the context JSON field.
  * Extends the basic context with intent history and entity tracking.
  */
@@ -88,6 +98,9 @@ export interface EnhancedSessionContext {
 
   // Current conversation topic for context-aware responses
   conversation_topic: ConversationTopic;
+
+  // Pending action that user can confirm with "Yes" / "No"
+  pending_action?: PendingAction;
 
   // Legacy fields (for backwards compatibility)
   lastEscalationQuestion?: string;
@@ -113,6 +126,9 @@ export interface EnrichedContext {
 
   // Entity resolution context
   referencedEntities: ReferencedEntitiesMap;
+
+  // Pending action that user can confirm with "Yes" / "No"
+  pendingAction?: PendingAction;
 
   // Escalation state
   hasActiveOutcome: boolean;
@@ -371,6 +387,56 @@ export function trackReferencedEntity(
   return updateSessionContext(sessionId, {
     referenced_entities: referencedEntities,
   });
+}
+
+/**
+ * Set a pending action that user can confirm with "Yes" / "No".
+ * Used when assistant asks "Would you like me to start a worker?" etc.
+ */
+export function setPendingAction(
+  sessionId: string,
+  action: Omit<PendingAction, 'createdAt'>
+): ConversationSession | null {
+  const pendingAction: PendingAction = {
+    ...action,
+    createdAt: now(),
+  };
+
+  return updateSessionContext(sessionId, {
+    pending_action: pendingAction,
+  });
+}
+
+/**
+ * Clear the pending action after it's been executed or declined.
+ */
+export function clearPendingAction(sessionId: string): ConversationSession | null {
+  return updateSessionContext(sessionId, {
+    pending_action: null,
+  });
+}
+
+/**
+ * Get the current pending action for a session.
+ * Returns null if no pending action or if it's stale (> 1 minute old).
+ */
+export function getPendingAction(sessionId: string): PendingAction | null {
+  const session = getSessionByIdParsed(sessionId);
+  if (!session) return null;
+
+  const context = session.context as EnhancedSessionContext;
+  const pendingAction = context.pending_action;
+
+  if (!pendingAction) return null;
+
+  // Check if action is stale (> 1 minute old)
+  if (now() - pendingAction.createdAt > 60000) {
+    // Clear stale action
+    clearPendingAction(sessionId);
+    return null;
+  }
+
+  return pendingAction;
 }
 
 /**
@@ -907,6 +973,12 @@ export function buildEnrichedContext(
     ? pendingEscalations[0].id
     : context.pendingEscalationId;
 
+  // Get pending action (if any, and if not stale)
+  const pendingAction = context.pending_action &&
+    (now() - context.pending_action.createdAt < 60000) // 1 minute timeout
+    ? context.pending_action
+    : undefined;
+
   // Build the enriched context object
   const enrichedContext: EnrichedContext = {
     // Session-level context
@@ -920,6 +992,9 @@ export function buildEnrichedContext(
 
     // Entity resolution
     referencedEntities,
+
+    // Pending action
+    pendingAction,
 
     // Escalation state
     hasActiveOutcome: !!session.current_outcome_id,

@@ -29,7 +29,7 @@ flow status
 
 **Example output:**
 ```
-Digital Twin Status
+Stay In Flow
 ──────────────────────────────────────────────────
 
 Supervisor

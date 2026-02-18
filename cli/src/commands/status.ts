@@ -46,7 +46,7 @@ export const statusCommand = command
 
       // Header
       console.log();
-      console.log(chalk.bold('Digital Twin Status'));
+      console.log(chalk.bold('Stay In Flow'));
       console.log(chalk.gray('─'.repeat(50)));
       console.log();
 
@@ -125,12 +125,12 @@ export const statusCommand = command
             const taskProgress = outcome.total_tasks > 0
               ? `${outcome.completed_tasks}/${outcome.total_tasks} tasks`
               : 'no tasks';
-            const workerInfo = outcome.active_workers > 0
-              ? chalk.green(` (${outcome.active_workers} worker${outcome.active_workers > 1 ? 's' : ''})`)
-              : '';
+            const workerIndicator = outcome.active_workers > 0
+              ? chalk.green(`⚙ ${outcome.active_workers}`)
+              : chalk.gray('○');
             const converging = outcome.is_converging ? chalk.green(' ⟳') : '';
 
-            console.log(`  ${chalk.gray('•')} ${chalk.white(outcome.name)} ${chalk.gray(`[${taskProgress}]`)}${workerInfo}${converging}`);
+            console.log(`  ${workerIndicator} ${chalk.white(outcome.name)} ${chalk.gray(`[${taskProgress}]`)}${converging}`);
           }
         }
       }

@@ -4,8 +4,10 @@
 
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { SCHEMA_SQL } from './schema';
 import { loadVSSExtension, type VSSLoadResult } from './vss-loader';
+import { paths } from '../config/paths';
 
 /**
  * Check if a process with the given PID is still running
@@ -21,8 +23,14 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
-// Database file path
-const DB_PATH = path.join(process.cwd(), 'data', 'twin.db');
+// Database file path - resolved from config
+const DB_PATH = paths.database;
+
+// Ensure database directory exists
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 // Singleton database instance
 let db: Database.Database | null = null;

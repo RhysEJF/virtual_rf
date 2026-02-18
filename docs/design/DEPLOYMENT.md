@@ -70,8 +70,8 @@ npm install -g @anthropic-ai/claude-cli
 claude auth login
 
 # Project
-git clone git@github.com:you/virtual_rf.git
-cd virtual_rf
+git clone git@github.com:you/flow.git
+cd flow
 npm install
 
 # Auto-start on boot (launchd)
@@ -180,12 +180,12 @@ Create `~/Library/LaunchAgents/com.digitaltwin.server.plist`:
     <key>ProgramArguments</key>
     <array>
         <string>/Users/you/.nvm/versions/node/v20.x.x/bin/node</string>
-        <string>/Users/you/virtual_rf/node_modules/.bin/next</string>
+        <string>/Users/you/flow/node_modules/.bin/next</string>
         <string>start</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/you/virtual_rf</string>
+    <string>/Users/you/flow</string>
 
     <key>EnvironmentVariables</key>
     <dict>
@@ -202,10 +202,10 @@ Create `~/Library/LaunchAgents/com.digitaltwin.server.plist`:
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/you/virtual_rf/logs/server.log</string>
+    <string>/Users/you/flow/logs/server.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/you/virtual_rf/logs/server.error.log</string>
+    <string>/Users/you/flow/logs/server.error.log</string>
 </dict>
 </plist>
 ```
@@ -230,7 +230,7 @@ top -pid $(pgrep -f "next start")
 ```bash
 # Reload after code changes
 launchctl unload ~/Library/LaunchAgents/com.digitaltwin.server.plist
-cd ~/virtual_rf && git pull && npm install && npm run build
+cd ~/flow && git pull && npm install && npm run build
 launchctl load ~/Library/LaunchAgents/com.digitaltwin.server.plist
 ```
 
@@ -296,7 +296,7 @@ function checkRateLimit(userId: string): boolean {
 # Daily backup script
 #!/bin/bash
 BACKUP_DIR="/Users/you/backups/digital-twin"
-DB_PATH="/Users/you/virtual_rf/data/twin.db"
+DB_PATH="/Users/you/flow-data/data/twin.db"
 DATE=$(date +%Y-%m-%d)
 
 mkdir -p $BACKUP_DIR
@@ -322,7 +322,7 @@ Workspaces contain generated code and outputs:
 ```bash
 # Selective backup of completed outcomes
 rsync -av --include='*/outputs/' --exclude='*/node_modules/' \
-  ~/virtual_rf/workspaces/ ~/backups/workspaces/
+  ~/flow-data/workspaces/ ~/backups/workspaces/
 ```
 
 ---

@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { upsertSkill, getAllSkills, searchSkills, incrementSkillUsage, getSkillById } from '../db/skills';
 import type { Skill } from '../db/schema';
+import { paths } from '../config/paths';
 
 interface SkillMetadata {
   name: string;
@@ -46,7 +47,7 @@ interface ParsedSkillFile {
   content: string;
 }
 
-const SKILLS_DIR = path.join(process.cwd(), 'skills');
+const SKILLS_DIR = paths.userSkills;
 
 /**
  * Parse a SKILL.md file
@@ -98,24 +99,17 @@ function parseSkillFile(filePath: string): ParsedSkillFile | null {
 }
 
 /**
- * Scan the skills directory and load all skills
+ * Scan a single skills directory and collect skill metadata
  */
-export function loadSkills(): SkillMetadata[] {
-  const skills: SkillMetadata[] = [];
-  const seen = new Set<string>();
+function scanSkillsDirectory(skillsDir: string, skills: SkillMetadata[], seen: Set<string>): void {
+  if (!fs.existsSync(skillsDir)) return;
 
-  if (!fs.existsSync(SKILLS_DIR)) {
-    console.log('[SkillManager] Skills directory not found, creating...');
-    fs.mkdirSync(SKILLS_DIR, { recursive: true });
-    return skills;
-  }
-
-  const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+  const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
 
   // 1. Load flat .md files at the root of skills/
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-    const filePath = path.join(SKILLS_DIR, entry.name);
+    const filePath = path.join(skillsDir, entry.name);
     if (seen.has(filePath)) continue;
     seen.add(filePath);
 
@@ -138,7 +132,7 @@ export function loadSkills(): SkillMetadata[] {
   const categories = entries.filter(d => d.isDirectory()).map(d => d.name);
 
   for (const category of categories) {
-    const categoryPath = path.join(SKILLS_DIR, category);
+    const categoryPath = path.join(skillsDir, category);
     const categoryEntries = fs.readdirSync(categoryPath, { withFileTypes: true });
 
     // 2a. Flat .md files inside category dirs (e.g. research/website-analyzer.md)
@@ -184,6 +178,27 @@ export function loadSkills(): SkillMetadata[] {
         content: parsed.content,
       });
     }
+  }
+}
+
+/**
+ * Scan skill directories and load all skills.
+ * Scans both app-internal skills and user skills (if separate).
+ */
+export function loadSkills(): SkillMetadata[] {
+  const skills: SkillMetadata[] = [];
+  const seen = new Set<string>();
+
+  // Scan user skills first (higher priority in dedup)
+  if (!fs.existsSync(SKILLS_DIR)) {
+    console.log('[SkillManager] Skills directory not found, creating...');
+    fs.mkdirSync(SKILLS_DIR, { recursive: true });
+  }
+  scanSkillsDirectory(SKILLS_DIR, skills, seen);
+
+  // Also scan app-internal skills if they're in a different directory
+  if (paths.appSkills !== SKILLS_DIR) {
+    scanSkillsDirectory(paths.appSkills, skills, seen);
   }
 
   return skills;

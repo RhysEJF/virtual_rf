@@ -64,6 +64,7 @@ import {
   logWorkerCompleted,
   logWorkerFailed,
 } from '../db/activity';
+import { paths } from '../config/paths';
 
 // ============================================================================
 // Types
@@ -841,7 +842,7 @@ export async function startRalphWorker(
 ): Promise<{ workerId: string; started: boolean; error?: string }> {
   const {
     outcomeId,
-    workspacePath = join(process.cwd(), 'workspaces'),
+    workspacePath = paths.workspaces,
     maxIterations = 50,
     heartbeatIntervalMs = 30000,
     useWorktree = false,
@@ -1952,7 +1953,7 @@ export async function runWorkerLoop(
   };
 
   // Set up workspace
-  const workspacePath = join(process.cwd(), 'workspaces');
+  const workspacePath = paths.workspaces;
   const outcomeWorkspace = join(workspacePath, outcomeId);
 
   if (!existsSync(outcomeWorkspace)) {

@@ -538,7 +538,7 @@ Success:       #5d8a6b (forest green)
 
 ### Project Structure
 ```
-virtual_rf/
+flow/
 ├── app/                    # Next.js app directory
 │   ├── page.tsx           # Dashboard
 │   ├── project/[id]/      # Project detail

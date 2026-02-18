@@ -1,4 +1,4 @@
-# @virtual_rf Design Document
+# Flow Design Document
 
 > Detailed UI mockups, interaction patterns, and design rationale for the AI workforce management system.
 
@@ -96,7 +96,7 @@ The primary view. Shows all outcomes with activity feed.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  @virtual_rf                                           ○ ● Dark Mode    │
+│  Flow                                           ○ ● Dark Mode    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
@@ -522,7 +522,7 @@ For terminal and Telegram interactions:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  @virtual_rf                                           ○ ● Dark Mode    │
+│  Flow                                           ○ ● Dark Mode    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │                        ┌───────────────────────────────────┐            │
@@ -1804,4 +1804,4 @@ skills/**/.private/
 
 ---
 
-*This document captures the detailed design decisions for @virtual_rf. For high-level vision and philosophy, see [VISION.md](./VISION.md).*
+*This document captures the detailed design decisions for Flow. For high-level vision and philosophy, see [VISION.md](./VISION.md).*

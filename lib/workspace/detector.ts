@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { paths } from '../config/paths';
 
 // ============================================================================
 // Types
@@ -66,7 +67,7 @@ export interface WorkspaceInfo {
 // Workspace Path Resolution
 // ============================================================================
 
-const WORKSPACES_ROOT = path.join(process.cwd(), 'workspaces');
+const WORKSPACES_ROOT = paths.workspaces;
 
 export function getWorkspacePath(outcomeId: string): string {
   return path.join(WORKSPACES_ROOT, outcomeId);

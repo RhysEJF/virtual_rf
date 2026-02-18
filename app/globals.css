@@ -21,6 +21,21 @@
   --success: #5d8a6b;
   --info: #6e7e8d;
   --paper-grid: rgba(31, 26, 23, 0.04);
+
+  /* Animation timing custom properties */
+  --animation-duration-fast: 150ms;
+  --animation-duration-normal: 300ms;
+  --animation-duration-slow: 500ms;
+  --animation-duration-slower: 800ms;
+
+  /* Animation easing custom properties */
+  --animation-ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --animation-ease-in-out: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --animation-ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --animation-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* Animation delay stagger for sequential reveals */
+  --animation-stagger-delay: 100ms;
 }
 
 /* Dark Theme */
@@ -164,5 +179,571 @@
   .badge-info {
     @apply badge text-status-info;
     background-color: color-mix(in srgb, var(--info) 20%, transparent);
+  }
+}
+
+/* FlowState illustration animations */
+@layer utilities {
+  /* Subtle floating animation for mascot */
+  @keyframes subtle-float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  .animate-subtle-float {
+    animation: subtle-float 4s ease-in-out infinite;
+  }
+
+  /* Subtle wobble for chaotic elements */
+  @keyframes subtle-wobble {
+    0%, 100% {
+      transform: rotate(0deg) translateY(0);
+    }
+    25% {
+      transform: rotate(1deg) translateY(-1px);
+    }
+    50% {
+      transform: rotate(-1deg) translateY(1px);
+    }
+    75% {
+      transform: rotate(0.5deg) translateY(-0.5px);
+    }
+  }
+
+  .animate-subtle-wobble {
+    animation: subtle-wobble 3s ease-in-out infinite;
+  }
+
+  /* Gentle scale pulse for emphasis */
+  @keyframes gentle-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.05);
+      opacity: 0.9;
+    }
+  }
+
+  .animate-gentle-pulse {
+    animation: gentle-pulse 2s ease-in-out infinite;
+  }
+
+  /* Glow fade for completing states */
+  @keyframes glow-fade {
+    0%, 100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+
+  .animate-glow-fade {
+    animation: glow-fade 2s ease-in-out infinite;
+  }
+
+  /* Shimmer effect for progress bars */
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 2s ease-in-out infinite;
+  }
+
+  /* === Micro-interaction Animations for FlowState Landing === */
+
+  /* Fade in animation for scroll reveals */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in var(--animation-duration-normal) var(--animation-ease-out) forwards;
+  }
+
+  /* Fade in and slide up for content reveals */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up var(--animation-duration-normal) var(--animation-ease-out) forwards;
+  }
+
+  /* Fade in and slide down for dropdown reveals */
+  @keyframes fade-in-down {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-down {
+    animation: fade-in-down var(--animation-duration-normal) var(--animation-ease-out) forwards;
+  }
+
+  /* Scale up animation for buttons/cards */
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-scale-in {
+    animation: scale-in var(--animation-duration-normal) var(--animation-ease-spring) forwards;
+  }
+
+  /* Pop animation for dopamine hits */
+  @keyframes pop {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  .animate-pop {
+    animation: pop var(--animation-duration-fast) var(--animation-ease-bounce);
+  }
+
+  /* Bounce animation for attention grabbing */
+  @keyframes bounce {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  .animate-bounce-subtle {
+    animation: bounce 0.6s var(--animation-ease-bounce);
+  }
+
+  /* Shake animation for error states or attention */
+  @keyframes shake {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    20%, 60% {
+      transform: translateX(-4px);
+    }
+    40%, 80% {
+      transform: translateX(4px);
+    }
+  }
+
+  .animate-shake {
+    animation: shake 0.5s var(--animation-ease-out);
+  }
+
+  /* Checkmark draw animation */
+  @keyframes draw-check {
+    0% {
+      stroke-dashoffset: 24;
+    }
+    100% {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .animate-draw-check {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    animation: draw-check var(--animation-duration-slow) var(--animation-ease-out) forwards;
+  }
+
+  /* Slide in from left */
+  @keyframes slide-in-left {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-slide-in-left {
+    animation: slide-in-left var(--animation-duration-normal) var(--animation-ease-out) forwards;
+  }
+
+  /* Slide in from right */
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-right var(--animation-duration-normal) var(--animation-ease-out) forwards;
+  }
+
+  /* Staggered reveal base - use with animation-delay */
+  .animate-stagger-1 { animation-delay: calc(var(--animation-stagger-delay) * 1); }
+  .animate-stagger-2 { animation-delay: calc(var(--animation-stagger-delay) * 2); }
+  .animate-stagger-3 { animation-delay: calc(var(--animation-stagger-delay) * 3); }
+  .animate-stagger-4 { animation-delay: calc(var(--animation-stagger-delay) * 4); }
+  .animate-stagger-5 { animation-delay: calc(var(--animation-stagger-delay) * 5); }
+  .animate-stagger-6 { animation-delay: calc(var(--animation-stagger-delay) * 6); }
+
+  /* Initially hidden state for scroll-triggered animations */
+  .animate-on-scroll {
+    opacity: 0;
+  }
+
+  .animate-on-scroll.is-visible {
+    opacity: 1;
+  }
+
+  /* Hover micro-interactions */
+  .hover-lift {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out),
+                box-shadow var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .hover-scale {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  .hover-scale:hover {
+    transform: scale(1.02);
+  }
+
+  .hover-glow {
+    transition: box-shadow var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  .hover-glow:hover {
+    box-shadow: 0 0 20px rgba(var(--accent), 0.3);
+  }
+
+  /* Active/pressed state */
+  .active-press {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  .active-press:active {
+    transform: scale(0.98);
+  }
+
+  /* === Enhanced Hover States and Click Feedback === */
+
+  /* Card hover with lift and shadow - for interactive cards */
+  .hover-card-lift {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out),
+                box-shadow var(--animation-duration-fast) var(--animation-ease-out),
+                border-color var(--animation-duration-fast) var(--animation-ease-out);
+    cursor: pointer;
+  }
+
+  .hover-card-lift:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.15),
+                0 4px 10px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  .hover-card-lift:active {
+    transform: translateY(-2px) scale(0.99);
+    box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.1),
+                0 2px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Button press effect - satisfying click feedback */
+  .btn-press {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-bounce),
+                box-shadow var(--animation-duration-fast) var(--animation-ease-out),
+                background-color var(--animation-duration-fast) var(--animation-ease-out);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-press:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn-press:active {
+    transform: translateY(1px) scale(0.97);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Ripple effect for click feedback */
+  @keyframes ripple-effect {
+    0% {
+      transform: scale(0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(4);
+      opacity: 0;
+    }
+  }
+
+  .ripple-container {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ripple-container::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 60%);
+    transform: translate(-50%, -50%) scale(0);
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  .ripple-container:active::after {
+    animation: ripple-effect var(--animation-duration-slow) var(--animation-ease-out);
+  }
+
+  /* Pulse on click - subtle dopamine hit */
+  @keyframes click-pulse {
+    0% {
+      box-shadow: 0 0 0 0 var(--pulse-color, rgba(124, 154, 108, 0.5));
+    }
+    70% {
+      box-shadow: 0 0 0 12px var(--pulse-color, rgba(124, 154, 108, 0));
+    }
+    100% {
+      box-shadow: 0 0 0 0 var(--pulse-color, rgba(124, 154, 108, 0));
+    }
+  }
+
+  .click-pulse:active {
+    animation: click-pulse 0.4s var(--animation-ease-out);
+  }
+
+  /* Interactive element with glow on hover */
+  .hover-glow-accent {
+    transition: box-shadow var(--animation-duration-normal) var(--animation-ease-out),
+                filter var(--animation-duration-normal) var(--animation-ease-out);
+  }
+
+  .hover-glow-accent:hover {
+    box-shadow: 0 0 20px var(--glow-color, rgba(124, 154, 108, 0.4)),
+                0 0 40px var(--glow-color, rgba(124, 154, 108, 0.2));
+    filter: brightness(1.05);
+  }
+
+  /* Playful cursor styles */
+  .cursor-pointer-playful {
+    cursor: pointer;
+  }
+
+  .cursor-pointer-playful:hover {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%237c9a6c' d='M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z'/%3E%3C/svg%3E") 12 12, pointer;
+  }
+
+  .cursor-grab-interactive {
+    cursor: grab;
+  }
+
+  .cursor-grab-interactive:active {
+    cursor: grabbing;
+  }
+
+  /* Scale bounce on hover - playful interaction */
+  .hover-bounce {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-spring);
+  }
+
+  .hover-bounce:hover {
+    transform: scale(1.05);
+  }
+
+  .hover-bounce:active {
+    transform: scale(0.95);
+  }
+
+  /* Tilt effect on hover */
+  .hover-tilt {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out);
+    transform-style: preserve-3d;
+    perspective: 1000px;
+  }
+
+  .hover-tilt:hover {
+    transform: rotateX(-2deg) rotateY(2deg) translateZ(10px);
+  }
+
+  /* SVG element hover glow */
+  .svg-hover-glow {
+    transition: filter var(--animation-duration-fast) var(--animation-ease-out),
+                transform var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  .svg-hover-glow:hover {
+    filter: drop-shadow(0 0 8px var(--glow-color, rgba(124, 154, 108, 0.6)));
+  }
+
+  /* Interactive meter/gauge hover */
+  .meter-interactive {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out);
+    cursor: pointer;
+  }
+
+  .meter-interactive:hover {
+    transform: scale(1.03);
+  }
+
+  .meter-interactive:active {
+    transform: scale(0.98);
+  }
+
+  /* Icon button hover effect */
+  .icon-btn-hover {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-bounce),
+                background-color var(--animation-duration-fast) var(--animation-ease-out),
+                color var(--animation-duration-fast) var(--animation-ease-out);
+    cursor: pointer;
+  }
+
+  .icon-btn-hover:hover {
+    transform: scale(1.15) rotate(-5deg);
+  }
+
+  .icon-btn-hover:active {
+    transform: scale(0.9) rotate(0deg);
+  }
+
+  /* Floating card with depth */
+  .float-depth {
+    transition: transform var(--animation-duration-normal) var(--animation-ease-out),
+                box-shadow var(--animation-duration-normal) var(--animation-ease-out);
+  }
+
+  .float-depth:hover {
+    transform: translateY(-8px) translateZ(20px);
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.2),
+                0 10px 20px -10px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Shimmer highlight on hover */
+  @keyframes shimmer-highlight {
+    0% {
+      background-position: -200% center;
+    }
+    100% {
+      background-position: 200% center;
+    }
+  }
+
+  .hover-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hover-shimmer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity var(--animation-duration-fast) var(--animation-ease-out);
+    pointer-events: none;
+  }
+
+  .hover-shimmer:hover::before {
+    opacity: 1;
+    animation: shimmer-highlight 1.5s ease-in-out infinite;
+  }
+
+  /* Magnetic hover effect - subtle pull toward cursor */
+  .magnetic-hover {
+    transition: transform var(--animation-duration-fast) var(--animation-ease-out);
+  }
+
+  /* Success checkmark animation for completed states */
+  @keyframes success-check-bounce {
+    0% {
+      transform: scale(0);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.2);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .success-check-animate {
+    animation: success-check-bounce 0.4s var(--animation-ease-spring) forwards;
+  }
+
+  /* Reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

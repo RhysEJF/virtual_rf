@@ -14,7 +14,7 @@ The original audit suggested that workers might not be properly scoped — that 
 
 ### Two distinct CLAUDE.md files exist
 
-1. **Root CLAUDE.md** (`/virtual_rf/CLAUDE.md`) — Human-authored project documentation. Contains tech stack, coding standards, project structure, git workflow guidelines. ~500 lines.
+1. **Root CLAUDE.md** (`/flow/CLAUDE.md`) — Human-authored project documentation. Contains tech stack, coding standards, project structure, git workflow guidelines. ~500 lines.
 
 2. **Generated per-task CLAUDE.md** — Created by `generateTaskInstructions()` in `lib/ralph/worker.ts:668-779`. Contains task-specific instructions, PRD context, design context, skill content, and behavioral rules. Written to the task's working directory.
 

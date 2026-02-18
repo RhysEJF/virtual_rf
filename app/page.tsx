@@ -285,7 +285,7 @@ export default function Dashboard(): JSX.Element {
       {/* Header */}
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-text-primary">@virtual_rf</h1>
+          <h1 className="text-2xl font-semibold text-text-primary">Flow</h1>
           <p className="text-text-secondary mt-1">Your personal AI workforce</p>
         </div>
         <div className="flex items-center gap-3">

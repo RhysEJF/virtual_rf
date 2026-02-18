@@ -1,10 +1,19 @@
-# Digital Twin
+# Flow
 
 > Personal AI workforce management system
 
 ## Overview
 
-This codebase is the Digital Twin system - an AI-powered personal assistant that routes requests, spawns AI workers, and self-improves over time.
+Flow is the Digital Twin system - an AI-powered personal assistant that routes requests, spawns AI workers, and self-improves over time.
+
+## Directory Layout
+
+Flow separates the **app** (this repo) from **user data** (`~/flow-data/`):
+
+- **App directory** (`~/flow/`): Shareable git repo with all source code
+- **Data directory** (`~/flow-data/`): Private user data — database, workspaces, personal skills
+
+Path resolution is centralized in `lib/config/paths.ts`. If `~/flow-data/` doesn't exist, the app falls back to `process.cwd()` paths for backwards compatibility.
 
 ## Documentation
 
@@ -33,49 +42,65 @@ This codebase is the Digital Twin system - an AI-powered personal assistant that
 
 ## Project Structure
 
+### The App (`~/flow/`) — git repo, shareable
+
 ```
-virtual_rf/
+~/flow/
 ├── app/                    # Next.js App Router
-│   ├── page.tsx           # Dashboard
+│   ├── page.tsx           # Dashboard (title: "Flow")
 │   ├── outcome/[id]/      # Outcome detail & management
 │   ├── worker/[id]/       # Worker drill-down & logs
-│   ├── skills/            # Skills library (global + outcome)
+│   ├── skills/            # Skills library UI
 │   ├── components/        # React components
-│   │   ├── ui/            # Base UI components (Card, Badge, Button, etc.)
-│   │   ├── SkillsSection.tsx
-│   │   ├── IterateSection.tsx
-│   │   ├── OutputsSection.tsx
-│   │   ├── ProgressView.tsx
+│   │   ├── ui/            # Base UI components
 │   │   └── ...
 │   └── api/               # API routes
 │       ├── outcomes/      # Outcome CRUD & actions
 │       ├── workers/       # Worker management
-│       ├── skills/        # Skills APIs (global + outcome)
+│       ├── skills/        # Skills APIs
 │       └── dispatch/      # Request dispatcher
 ├── lib/
+│   ├── config/
+│   │   └── paths.ts       # Centralized path resolution (data vs app)
 │   ├── agents/            # AI agent implementations
-│   │   ├── dispatcher.ts
-│   │   ├── briefer.ts
-│   │   ├── capability-planner.ts
-│   │   ├── skill-builder.ts
-│   │   ├── tool-builder.ts
-│   │   └── reviewer.ts
 │   ├── ralph/             # Ralph worker system
-│   │   ├── worker.ts
-│   │   └── orchestrator.ts
+│   ├── homr/              # HOMR Protocol
 │   ├── db/                # Database layer (SQLite)
 │   ├── claude/            # Claude CLI client
 │   ├── workspace/         # Workspace utilities
 │   └── utils/             # Utilities
-├── skills/                # Global skill library (markdown files)
-├── workspaces/            # Outcome workspaces (created at runtime)
+├── cli/                   # CLI tool
+├── skills/                # APP-INTERNAL skills only
+│   ├── converse-agent.md  #   system prompt for converse REPL
+│   ├── update-docs.md     #   doc update instructions
+│   └── cli-patterns.md    #   CLI coding patterns
+├── archive/               # Historical reference
+│   └── ralph-wiggum-method/
+├── docs/                  # App documentation
+├── CLAUDE.md
+├── VISION.md
+└── DESIGN.md
+```
+
+### User Data (`~/flow-data/`) — private, never in the app repo
+
+```
+~/flow-data/
+├── config.toml            # Settings (future)
+├── data/
+│   └── twin.db            # SQLite database
+├── skills/                # Your personal global skill library
+│   ├── market-intelligence.md
+│   ├── etymology-nerd-formula.md
+│   ├── campaign-planning.md
+│   ├── development/
+│   └── research/
+├── workspaces/            # All runtime workspaces
 │   └── out_{id}/          # Each outcome gets a workspace
-│       ├── skills/        # Outcome-specific skills
+│       ├── skills/        # Outcome-specific skills (sync to GitHub via repo sync)
 │       ├── tools/         # Outcome-specific tools
 │       └── task_{id}/     # Task working directories
-├── data/                  # SQLite database
-├── VISION.md              # System vision document
-└── CLAUDE.md              # This file
+└── personal/              # Private files
 ```
 
 ## Commands
@@ -186,11 +211,12 @@ Autonomous development loop that:
 
 PID is tracked in database for reliable pause/stop.
 
-### Skills (Two Types)
-1. **Global Skills** (`/skills/`): Shared across all outcomes, DB-tracked
-2. **Outcome Skills** (`/workspaces/{id}/skills/`): Built during capability phase, specific to that outcome
+### Skills (Three Types)
+1. **App Skills** (`~/flow/skills/`): Ship with the app (converse-agent, update-docs, cli-patterns)
+2. **User Skills** (`~/flow-data/skills/`): Your personal global skill library, DB-tracked
+3. **Outcome Skills** (`~/flow-data/workspaces/{id}/skills/`): Built during capability phase, specific to that outcome
 
-Skills are markdown files with instructions that get injected into worker context.
+Skills are markdown files with instructions that get injected into worker context. `loadSkills()` merges app and user skill directories.
 
 ### Review Cycles
 After workers complete, the Reviewer agent:
@@ -240,8 +266,9 @@ npm run typecheck
 
 **Database issues:**
 ```bash
-rm data/twin.db
+rm ~/flow-data/data/twin.db
 # DB will auto-recreate on next access
+# (or rm data/twin.db in legacy layout)
 ```
 
 **Port already in use:**
@@ -446,6 +473,7 @@ kill -9 <PID>
 - [ ] Always-on deployment (Mac Mini + Cloudflare Tunnel)
 
 ### Key Files to Understand
+- `lib/config/paths.ts` - Centralized path resolution (data dir vs app dir)
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
 - `lib/ralph/worker.ts` - Autonomous worker spawning with PID tracking
 - `lib/ralph/orchestrator.ts` - Two-phase orchestration controller

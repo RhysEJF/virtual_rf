@@ -8,6 +8,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { paths } from '../config/paths';
 
 // ============================================================================
 // Types
@@ -35,7 +36,7 @@ interface SkillCache {
 // Constants
 // ============================================================================
 
-const SKILL_FILE_PATH = path.join(process.cwd(), 'skills', 'converse-agent.md');
+const SKILL_FILE_PATH = path.join(paths.appSkills, 'converse-agent.md');
 const CACHE_TTL_MS = 60000; // 1 minute cache
 
 // Section delimiters

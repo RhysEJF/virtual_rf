@@ -44,5 +44,26 @@ coverage/
 *.log
 .vercel
 
-# Workspaces (generated project outputs)
+# Workspaces (generated project outputs - now in ~/flow-data/workspaces/)
 workspaces/
+
+# Personal files (now in ~/flow-data/personal/)
+personal/
+*.epub
+
+# Personal files that may still exist in root during migration
+Meeting Transcription.txt
+james-call-*.txt
+interesting-repos.md
+architecture-audit.md
+Untitled
+
+# User skills (now in ~/flow-data/skills/) — keep only app-internal skills tracked
+skills/campaign-planning.md
+skills/market-intelligence.md
+skills/etymology-nerd-formula.md
+skills/development/
+skills/research/
+
+# Historical design notes (archived to archive/)
+/Ralph/

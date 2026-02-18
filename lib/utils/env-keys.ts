@@ -6,8 +6,9 @@
 
 import fs from 'fs';
 import path from 'path';
+import { paths } from '../config/paths';
 
-const ENV_FILE_PATH = path.join(process.cwd(), '.env.local');
+const ENV_FILE_PATH = paths.envFile;
 
 /**
  * Parse .env file content into key-value pairs

@@ -24,8 +24,8 @@ Path resolution is centralized in `lib/config/paths.ts`. If `~/flow-data/` doesn
 | [docs/homr/VISION.md](./docs/homr/VISION.md) | HOMЯ Protocol - Intelligent orchestration layer above Ralph |
 | [docs/homr/DESIGN.md](./docs/homr/DESIGN.md) | HOMЯ Protocol - Technical architecture |
 | [docs/IDEAS.md](./docs/IDEAS.md) | Future improvement ideas |
-| [VISION.md](./VISION.md) | Original vision (historical reference) |
-| [DESIGN.md](./DESIGN.md) | Original design spec (historical reference) |
+| [archive/VISION.md](./archive/VISION.md) | Original vision (historical reference) |
+| [archive/DESIGN.md](./archive/DESIGN.md) | Original design spec (historical reference) |
 
 **When working on a specific module**, read its vision doc first (e.g., `docs/vision/WORKER.md` before changing `lib/ralph/worker.ts`).
 
@@ -75,11 +75,11 @@ Path resolution is centralized in `lib/config/paths.ts`. If `~/flow-data/` doesn
 │   ├── update-docs.md     #   doc update instructions
 │   └── cli-patterns.md    #   CLI coding patterns
 ├── archive/               # Historical reference
-│   └── ralph-wiggum-method/
+│   ├── ralph-wiggum-method/
+│   ├── VISION.md          #   Original vision doc
+│   └── DESIGN.md          #   Original design spec
 ├── docs/                  # App documentation
-├── CLAUDE.md
-├── VISION.md
-└── DESIGN.md
+└── CLAUDE.md
 ```
 
 ### User Data (`~/flow-data/`) — private, never in the app repo
@@ -499,7 +499,7 @@ kill -9 <PID>
 
 When working on this codebase:
 
-1. **Start** by reading VISION.md for full context
+1. **Start** by reading docs/vision/README.md for full context
 2. **Check** "Current Progress" section above for what's done/remaining
 3. **Understand** before modifying
 4. **Test** your changes locally

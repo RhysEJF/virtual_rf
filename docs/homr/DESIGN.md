@@ -422,7 +422,7 @@ interface Escalation {
   id: string;
   outcomeId: string;
   createdAt: number;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
 
   // What triggered this
   trigger: {
@@ -440,6 +440,13 @@ interface Escalation {
 
   // What's affected
   affectedTasks: string[];  // These are paused
+
+  // Semi-auto proposed resolution (pending human confirmation)
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;  // 0-1
 
   // Resolution
   answer?: {
@@ -733,7 +740,7 @@ CREATE TABLE homr_escalations (
   created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
 
   -- Status
-  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'answered', 'dismissed'
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'pending_confirmation', 'answered', 'dismissed'
 
   -- Trigger
   trigger_type TEXT NOT NULL,
@@ -747,6 +754,10 @@ CREATE TABLE homr_escalations (
 
   -- Affected tasks (JSON array of task IDs)
   affected_tasks TEXT NOT NULL DEFAULT '[]',
+
+  -- Semi-auto proposed resolution
+  proposed_resolution TEXT,   -- JSON: { selectedOption, reasoning }
+  proposed_confidence REAL,   -- 0-1 confidence score
 
   -- Resolution
   answer_option TEXT,
@@ -817,7 +828,7 @@ export interface HomrEscalation {
   id: string;
   outcome_id: string;
   created_at: number;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
   trigger_type: string;
   trigger_task_id: string;
   trigger_evidence: string[];
@@ -825,6 +836,8 @@ export interface HomrEscalation {
   question_context: string;
   question_options: QuestionOption[];
   affected_tasks: string[];
+  proposed_resolution?: string;   // JSON: { selectedOption, reasoning }
+  proposed_confidence?: number;   // 0-1
   answer_option?: string;
   answer_context?: string;
   answered_at?: number;
@@ -957,6 +970,8 @@ GET  /api/outcomes/:id/homr/escalations           # List escalations
 GET  /api/outcomes/:id/homr/escalations/:escId    # Get escalation details
 POST /api/outcomes/:id/homr/escalations/:escId/answer  # Answer escalation
 POST /api/outcomes/:id/homr/escalations/:escId/dismiss # Dismiss escalation
+POST /api/outcomes/:id/homr/escalations/:escId/confirm # Confirm semi-auto proposal
+DELETE /api/outcomes/:id/homr/escalations/:escId/confirm # Reject semi-auto proposal
 ```
 
 ### Escalation Answer Request
@@ -1299,6 +1314,8 @@ All core components of the HOMЯ Protocol have been implemented and integrated.
 | `GET /api/outcomes/[id]/homr/escalations` | Complete |
 | `POST /api/outcomes/[id]/homr/escalations/[escId]/answer` | Complete |
 | `POST /api/outcomes/[id]/homr/escalations/[escId]/dismiss` | Complete |
+| `POST /api/outcomes/[id]/homr/escalations/[escId]/confirm` | Complete |
+| `DELETE /api/outcomes/[id]/homr/escalations/[escId]/confirm` | Complete |
 | `GET /api/outcomes/[id]/auto-resolve` | Complete |
 | `PATCH /api/outcomes/[id]/auto-resolve` | Complete |
 
@@ -1358,7 +1375,7 @@ interface FailurePatternConfig {
 | Mode | Description |
 |------|-------------|
 | `manual` | All escalations require human decision (default) |
-| `semi-auto` | AI suggests resolution, human approves |
+| `semi-auto` | AI proposes resolution with confidence score, human confirms or rejects |
 | `full-auto` | AI decides automatically above confidence threshold |
 
 **Configuration:**
@@ -1380,6 +1397,15 @@ interface AutoResolveConfig {
    - Analyzes escalation context, options, and implications
    - Generates a confidence score and reasoning
    - Only applies if confidence ≥ threshold
+
+**Semi-Auto Confirmation Flow:**
+
+In semi-auto mode, the auto-resolver does NOT apply the resolution immediately. Instead:
+1. Stores the proposed resolution and confidence on the escalation
+2. Sets status to `pending_confirmation`
+3. UI shows the AI recommendation with "Approve" / "Reject" buttons
+4. On confirm: applies the stored resolution and resumes affected tasks
+5. On reject: reverts escalation to `pending` status for manual decision
 
 **Worker Auto-Spawn:**
 
@@ -1471,7 +1497,6 @@ const verificationTask = createTask({
 - `HomrConfigModal` - Per-outcome HOMЯ settings UI
 - Enable/disable API endpoints
 - Telegram notifications for escalations
-- Cross-outcome learning
 
 ---
 

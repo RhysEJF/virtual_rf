@@ -331,7 +331,7 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
    **Partially Resolved:** UI-based escalation alerts are implemented. Telegram/push notifications are future work.
 
 5. ~~**Learning Persistence** - Do HOMЯ learnings persist across outcomes or reset?~~
-   **Resolved:** Learnings are per-outcome only. Cross-outcome learning is out of scope for now.
+   **Resolved:** Discoveries are per-outcome in the HOMЯ context store. High-value discoveries are automatically promoted to the cross-outcome `memories` table by the Observer, enabling learning across outcomes via the Memory Service's hybrid search.
 
 ---
 
@@ -370,6 +370,13 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
   - Configurable confidence threshold (default 80%)
   - Heuristic-based resolution for complexity escalations
   - Claude-based resolution for complex cases
+- [x] Semi-auto confirmation flow
+  - AI proposes resolution with confidence score, sets status to `pending_confirmation`
+  - UI shows proposal with "Approve" / "Reject" buttons in `EscalationAlert`
+  - Confirm applies stored resolution; Reject reverts to `pending` for manual decision
+  - API: `POST/DELETE /api/outcomes/:id/homr/escalations/:escId/confirm`
+  - CLI: `flow confirm <id>` / `flow reject <id>`
+  - Converse tools: `confirmEscalationProposal` / `rejectEscalationProposal`
 - [x] Auto-spawn worker after resolution
   - Automatically starts a worker when auto-resolve makes a decision
   - Enables truly hands-off operation
@@ -385,8 +392,19 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
   - Toast notifications when auto-resolve applies a decision
   - Real-time feedback on autonomous decisions
 
+### Phase 4.7: Cross-Outcome Learning - COMPLETE
+- [x] Discovery promotion to cross-outcome memory (`lib/homr/observer.ts`)
+  - Observer automatically promotes high-value discoveries to `memories` table
+  - Filters by minimum content length and excludes compaction artifacts
+  - Deduplicates against existing memories for the same outcome
+  - Maps discovery types to memory types/importance (blocker→critical, pattern→medium, etc.)
+  - Tags with `homr`, `discovery`, and discovery type for retrieval
+- [x] Read path via Memory Service (`lib/memory/index.ts`)
+  - Steerer queries memories globally at task-claim time
+  - Hybrid search (BM25 + vector) surfaces relevant cross-outcome learnings
+  - Workers on Outcome B receive discoveries from Outcome A
+
 ### Phase 5: Intelligence - FUTURE
-- [ ] Pattern learning across outcomes
 - [ ] Proactive suggestions
 - [ ] Autonomous steering refinement
 

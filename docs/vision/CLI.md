@@ -237,6 +237,8 @@ flow homr <outcome-id> --yolo             # Auto-resolve + supervise (Done)
 flow escalations [--outcome=<id>]         # List pending escalations (Done)
 flow answer <escalation-id> <choice>      # Answer escalation (Done)
 flow dismiss <escalation-id>              # Dismiss escalation (Done)
+flow confirm <escalation-id>              # Confirm semi-auto AI proposal (Done)
+flow reject <escalation-id>               # Reject semi-auto AI proposal (Done)
 ```
 
 **Supervise Mode Features:**
@@ -452,6 +454,8 @@ RF_NO_COLOR=1
 - [x] `escalations [--outcome=<id>]` - List pending escalations
 - [x] `answer <escalation-id> <choice>` - Answer escalation
 - [x] `dismiss <escalation-id>` - Dismiss escalation
+- [x] `confirm <escalation-id>` - Confirm semi-auto AI proposal
+- [x] `reject <escalation-id>` - Reject semi-auto AI proposal
 
 ### Phase 4: Skills & Resources (Complete)
 - [x] `skills [--outcome=<id>]` - List skills

@@ -209,6 +209,32 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         };
       }
 
+      case 'confirmEscalationProposal': {
+        const escalationId = args.escalation_id as string;
+        if (!escalationId) {
+          return { success: false, error: 'escalation_id is required' };
+        }
+        const result = await escalationTools.confirmEscalationProposal(escalationId);
+        return {
+          success: result.success,
+          data: result.success ? { confirmed: true, workerSpawned: result.workerSpawned } : undefined,
+          error: result.error,
+        };
+      }
+
+      case 'rejectEscalationProposal': {
+        const escalationId = args.escalation_id as string;
+        if (!escalationId) {
+          return { success: false, error: 'escalation_id is required' };
+        }
+        const result = escalationTools.rejectEscalationProposal(escalationId);
+        return {
+          success: result.success,
+          data: result.success ? { rejected: true } : undefined,
+          error: result.error,
+        };
+      }
+
       // =====================================================================
       // Task Tools
       // =====================================================================

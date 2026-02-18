@@ -231,14 +231,21 @@ async function displayHomrStatus(
       console.log(chalk.bold.red(`⚠ Pending Escalations: ${pendingCount}`));
       for (const esc of escalationsData.escalations.slice(0, 3)) {
         const question = esc.question?.text || 'Unknown question';
-        console.log(`  ${chalk.yellow('•')} ${question.substring(0, 80)}${question.length > 80 ? '...' : ''}`);
-        if (esc.question?.options) {
+        const isProposal = esc.status === 'pending_confirmation';
+        const prefix = isProposal ? chalk.magenta('?') : chalk.yellow('•');
+        console.log(`  ${prefix} ${question.substring(0, 80)}${question.length > 80 ? '...' : ''}`);
+        if (isProposal && esc.proposedResolution) {
+          const optLabel = esc.question?.options?.find((o: { id: string }) => o.id === esc.proposedResolution?.selectedOption)?.label
+            || esc.proposedResolution.selectedOption;
+          const conf = esc.proposedConfidence != null ? ` (${Math.round(esc.proposedConfidence * 100)}%)` : '';
+          console.log(`    ${chalk.green('AI recommends:')} ${optLabel}${conf}`);
+        } else if (esc.question?.options) {
           const optionLabels = esc.question.options.map((o: { label: string }) => o.label).join(' | ');
           console.log(`    ${chalk.gray('Options:')} ${optionLabels}`);
         }
       }
       if (!options.yolo) {
-        console.log(chalk.gray(`  Run \`flow escalations --outcome=${outcomeId}\` to respond`));
+        console.log(chalk.gray(`  Run \`flow escalations --outcome=${outcomeId}\` to view and respond`));
       }
     } else {
       console.log(chalk.bold.green('✓ No Pending Escalations'));

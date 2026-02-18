@@ -216,6 +216,31 @@ export const converseTools: ToolDefinition[] = [
     },
   },
 
+  {
+    name: 'confirmEscalationProposal',
+    description:
+      'Approve an AI-proposed escalation resolution (semi-auto mode). Use when user says "approve", "confirm", "yes to that proposal", "accept the AI suggestion".',
+    parameters: {
+      escalation_id: {
+        type: 'string',
+        description: 'The escalation ID to confirm',
+        required: true,
+      },
+    },
+  },
+  {
+    name: 'rejectEscalationProposal',
+    description:
+      'Reject an AI-proposed escalation resolution, reverting it to pending for manual decision. Use when user says "reject proposal", "no to that", "I\'ll decide myself".',
+    parameters: {
+      escalation_id: {
+        type: 'string',
+        description: 'The escalation ID to reject',
+        required: true,
+      },
+    },
+  },
+
   // =========================================================================
   // Task Tools
   // =========================================================================

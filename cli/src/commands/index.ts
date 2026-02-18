@@ -13,6 +13,8 @@ export { homrCommand } from './homr.js';
 export { escalationsCommand } from './escalations.js';
 export { answerCommand } from './answer.js';
 export { dismissCommand } from './dismiss.js';
+export { confirmCommand } from './confirm.js';
+export { rejectCommand } from './reject.js';
 export { chatCommand } from './chat.js';
 export { skillsCommand } from './skills.js';
 export { toolsCommand } from './tools.js';

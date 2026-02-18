@@ -335,7 +335,7 @@ export interface HomrEscalationOption {
 export interface HomrEscalation {
   id: string;
   outcomeId: string;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
   trigger: {
     type: string;
     taskId: string;
@@ -351,6 +351,11 @@ export interface HomrEscalation {
     additionalContext?: string;
     answeredAt: number;
   };
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;
   createdAt: number;
 }
 
@@ -925,6 +930,16 @@ export const api = {
     // Dismiss an escalation
     dismissEscalation(outcomeId: string, escalationId: string): Promise<{ success: boolean }> {
       return api.post<{ success: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/dismiss`);
+    },
+
+    // Confirm a semi-auto proposed resolution
+    confirmEscalation(outcomeId: string, escalationId: string): Promise<{ success: boolean; workerSpawned?: boolean }> {
+      return api.post<{ success: boolean; workerSpawned?: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/confirm`);
+    },
+
+    // Reject a semi-auto proposed resolution (reverts to pending)
+    rejectEscalation(outcomeId: string, escalationId: string): Promise<{ success: boolean }> {
+      return api.delete<{ success: boolean }>(`/outcomes/${outcomeId}/homr/escalations/${escalationId}/confirm`);
     },
 
     // Auto-resolve pending escalations (YOLO mode)

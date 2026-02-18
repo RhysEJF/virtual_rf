@@ -8,6 +8,9 @@ import {
   getPendingEscalations as dbGetPendingEscalations,
   getEscalationById,
   answerEscalation as dbAnswerEscalation,
+  confirmEscalationResolution,
+  rejectEscalationResolution,
+  logHomrActivity,
   parseEscalation,
 } from '../../db/homr';
 import { getOutcomeById, getActiveOutcomes } from '../../db/outcomes';
@@ -18,6 +21,7 @@ export interface EscalationInfo {
   id: string;
   outcomeId: string;
   outcomeName: string;
+  status: 'pending' | 'pending_confirmation';
   question: string;
   context: string;
   options: Array<{
@@ -25,6 +29,11 @@ export interface EscalationInfo {
     label: string;
     description: string;
   }>;
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;
   createdAt: number;
 }
 
@@ -63,10 +72,20 @@ export function getPendingEscalations(
       options = [];
     }
 
+    let proposedResolution: EscalationInfo['proposedResolution'] | undefined;
+    if (esc.proposed_resolution) {
+      try {
+        proposedResolution = JSON.parse(esc.proposed_resolution);
+      } catch {
+        // Invalid JSON, skip
+      }
+    }
+
     return {
       id: esc.id,
       outcomeId: esc.outcome_id,
       outcomeName: outcome?.name || 'Unknown',
+      status: esc.status as 'pending' | 'pending_confirmation',
       question: esc.question_text,
       context: esc.question_context,
       options: options.map((opt: { id: string; label: string; description?: string }) => ({
@@ -74,6 +93,8 @@ export function getPendingEscalations(
         label: opt.label,
         description: opt.description || '',
       })),
+      proposedResolution,
+      proposedConfidence: esc.proposed_confidence ?? undefined,
       createdAt: esc.created_at,
     };
   });
@@ -102,6 +123,13 @@ export async function answerEscalation(
   const escalation = getEscalationById(escalationId);
   if (!escalation) {
     return { success: false, error: `Escalation ${escalationId} not found` };
+  }
+
+  if (escalation.status === 'pending_confirmation') {
+    return {
+      success: false,
+      error: `This escalation has a pending AI proposal. Use confirmEscalationProposal to approve or rejectEscalationProposal to dismiss it.`,
+    };
   }
 
   if (escalation.status !== 'pending') {
@@ -156,6 +184,96 @@ export async function answerEscalation(
         error instanceof Error
           ? error.message
           : 'Failed to resolve escalation',
+    };
+  }
+}
+
+export interface ConfirmRejectResult {
+  success: boolean;
+  error?: string;
+  workerSpawned?: boolean;
+}
+
+/**
+ * Confirm a semi-auto proposed resolution
+ */
+export async function confirmEscalationProposal(
+  escalationId: string
+): Promise<ConfirmRejectResult> {
+  const escalation = getEscalationById(escalationId);
+  if (!escalation) {
+    return { success: false, error: `Escalation ${escalationId} not found` };
+  }
+
+  if (escalation.status !== 'pending_confirmation') {
+    return {
+      success: false,
+      error: `Escalation is not pending confirmation (status: ${escalation.status})`,
+    };
+  }
+
+  try {
+    const proposed = JSON.parse(escalation.proposed_resolution || '{}');
+    if (!proposed.selectedOption) {
+      return { success: false, error: 'No proposed resolution found' };
+    }
+
+    confirmEscalationResolution(escalationId);
+
+    const resolution = await resolveEscalation(escalationId, {
+      selectedOption: proposed.selectedOption,
+      additionalContext: `[SEMI-AUTO CONFIRMED] ${proposed.reasoning || ''}`,
+    });
+
+    logHomrActivity({
+      outcome_id: escalation.outcome_id,
+      type: 'auto_resolved',
+      summary: `Semi-auto confirmed via converse: ${proposed.selectedOption}`,
+      details: { escalationId, selectedOption: proposed.selectedOption, confirmed: true },
+    });
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to confirm resolution',
+    };
+  }
+}
+
+/**
+ * Reject a semi-auto proposed resolution (reverts to pending)
+ */
+export function rejectEscalationProposal(
+  escalationId: string
+): ConfirmRejectResult {
+  const escalation = getEscalationById(escalationId);
+  if (!escalation) {
+    return { success: false, error: `Escalation ${escalationId} not found` };
+  }
+
+  if (escalation.status !== 'pending_confirmation') {
+    return {
+      success: false,
+      error: `Escalation is not pending confirmation (status: ${escalation.status})`,
+    };
+  }
+
+  try {
+    rejectEscalationResolution(escalationId);
+
+    logHomrActivity({
+      outcome_id: escalation.outcome_id,
+      type: 'auto_resolve_deferred',
+      summary: `Semi-auto rejected via converse: proposal dismissed`,
+      details: { escalationId, rejected: true },
+    });
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reject resolution',
     };
   }
 }

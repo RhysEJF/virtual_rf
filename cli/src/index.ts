@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand } from './commands/index.js';
 
 const program = new Command();
 
@@ -25,6 +25,8 @@ program.addCommand(homrCommand);
 program.addCommand(escalationsCommand);
 program.addCommand(answerCommand);
 program.addCommand(dismissCommand);
+program.addCommand(confirmCommand);
+program.addCommand(rejectCommand);
 program.addCommand(chatCommand);
 program.addCommand(skillsCommand);
 program.addCommand(toolsCommand);

@@ -91,45 +91,81 @@ export const escalationsCommand = command
         escalations = await fetchAllEscalations();
       }
 
-      // Filter to only pending escalations
-      const pendingEscalations = escalations.filter(esc => esc.status === 'pending');
+      // Filter to actionable escalations (pending + pending_confirmation)
+      const actionableEscalations = escalations.filter(
+        esc => esc.status === 'pending' || esc.status === 'pending_confirmation'
+      );
 
       // Handle JSON output
       if (options.json) {
-        console.log(JSON.stringify(pendingEscalations, null, 2));
+        console.log(JSON.stringify(actionableEscalations, null, 2));
         return;
       }
 
       // Handle quiet output - IDs only
       if (options.quiet) {
-        for (const esc of pendingEscalations) {
+        for (const esc of actionableEscalations) {
           console.log(esc.id);
         }
         return;
       }
 
+      // Split into two groups
+      const pendingEscalations = actionableEscalations.filter(esc => esc.status === 'pending');
+      const proposalEscalations = actionableEscalations.filter(esc => esc.status === 'pending_confirmation');
+
       // Normal output
       console.log();
-      console.log(chalk.bold.white(`Pending Escalations (${pendingEscalations.length})`));
+      console.log(chalk.bold.white(`Pending Escalations (${actionableEscalations.length})`));
       console.log();
 
-      if (pendingEscalations.length === 0) {
+      if (actionableEscalations.length === 0) {
         console.log(chalk.gray('No pending escalations'));
         console.log();
         return;
       }
 
-      for (const esc of pendingEscalations) {
-        console.log(`${chalk.cyan(`[${esc.id}]`)} Outcome: ${chalk.white(esc.outcomeName)}`);
-        console.log(`  ${esc.question.text}`);
-        if (esc.question.options.length > 0) {
-          console.log(`  ${chalk.gray('Options:')} ${formatOptions(esc.question.options)}`);
+      // Show proposals first (they're easier to action)
+      if (proposalEscalations.length > 0) {
+        console.log(chalk.bold.magenta(`AI Proposals (${proposalEscalations.length}):`));
+        console.log();
+        for (const esc of proposalEscalations) {
+          const confidence = esc.proposedConfidence != null
+            ? ` ${chalk.gray(`(${Math.round(esc.proposedConfidence * 100)}% confident)`)}`
+            : '';
+          console.log(`${chalk.cyan(`[${esc.id}]`)} Outcome: ${chalk.white(esc.outcomeName)}${confidence}`);
+          console.log(`  ${esc.question.text}`);
+          if (esc.proposedResolution) {
+            const optionLabel = esc.question.options.find(o => o.id === esc.proposedResolution?.selectedOption)?.label
+              || esc.proposedResolution.selectedOption;
+            console.log(`  ${chalk.green('AI recommends:')} ${optionLabel}`);
+            if (esc.proposedResolution.reasoning) {
+              console.log(`  ${chalk.gray(esc.proposedResolution.reasoning)}`);
+            }
+          }
+          console.log();
         }
+        console.log(chalk.gray(`Use \`flow confirm <id>\` to approve or \`flow reject <id>\` to dismiss`));
         console.log();
       }
 
-      console.log(chalk.gray(`Use \`flow answer <id> "<choice>"\` to respond`));
-      console.log();
+      // Show pending (manual) escalations
+      if (pendingEscalations.length > 0) {
+        if (proposalEscalations.length > 0) {
+          console.log(chalk.bold.yellow(`Needs Your Decision (${pendingEscalations.length}):`));
+          console.log();
+        }
+        for (const esc of pendingEscalations) {
+          console.log(`${chalk.cyan(`[${esc.id}]`)} Outcome: ${chalk.white(esc.outcomeName)}`);
+          console.log(`  ${esc.question.text}`);
+          if (esc.question.options.length > 0) {
+            console.log(`  ${chalk.gray('Options:')} ${formatOptions(esc.question.options)}`);
+          }
+          console.log();
+        }
+        console.log(chalk.gray(`Use \`flow answer <id> "<choice>"\` to respond`));
+        console.log();
+      }
 
     } catch (error) {
       if (error instanceof NetworkError) {

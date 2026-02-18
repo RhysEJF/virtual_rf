@@ -40,7 +40,7 @@ interface Escalation {
   id: string;
   outcomeId: string;
   createdAt: number;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
   trigger: {
     type: string;
     taskId: string;
@@ -57,6 +57,11 @@ interface Escalation {
     }>;
   };
   affectedTasks: string[];
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;
 }
 
 interface WorkerSummary {
@@ -74,6 +79,8 @@ interface HomrDashboardProps {
   workerSummary: WorkerSummary;
   onAnswer: (escalationId: string, selectedOption: string, additionalContext?: string) => Promise<void>;
   onDismiss: (escalationId: string) => Promise<void>;
+  onConfirm?: (escalationId: string) => Promise<void>;
+  onReject?: (escalationId: string) => Promise<void>;
   onActivityClick?: () => void;
 }
 
@@ -95,6 +102,8 @@ export function HomrDashboard({
   workerSummary,
   onAnswer,
   onDismiss,
+  onConfirm,
+  onReject,
   onActivityClick,
 }: HomrDashboardProps): JSX.Element {
   const [stats, setStats] = useState<HomrStats | null>(null);
@@ -347,6 +356,8 @@ export function HomrDashboard({
                 escalation={escalation}
                 onAnswer={onAnswer}
                 onDismiss={onDismiss}
+                onConfirm={onConfirm}
+                onReject={onReject}
               />
             ))}
           </div>

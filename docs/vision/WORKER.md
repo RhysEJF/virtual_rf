@@ -185,6 +185,31 @@ The isolation mode is set per-outcome (with a system-wide default). When in work
 
 This provides defense-in-depth alongside the destructive command guard.
 
+### Worker CLAUDE.md Scope
+
+Each worker receives a **generated per-task CLAUDE.md** written to its task workspace directory. This is distinct from the root project `CLAUDE.md` (which is for human developers and contains coding standards, project structure, etc.).
+
+**How it works:**
+
+1. `generateTaskInstructions()` in `lib/ralph/worker.ts` builds a task-specific CLAUDE.md containing:
+   - Outcome name and intent summary
+   - Full design document (truncated at 3000 chars if large)
+   - Isolation/git/HOMR context
+   - Task description, PRD context, design context, intent, and approach
+   - Matched skill content
+   - Progress format and behavioral rules
+
+2. This file is written to the task workspace (e.g., `workspaces/out_{id}/task_{id}/CLAUDE.md`)
+
+3. The Claude CLI process is spawned with `cwd` set to this task workspace directory
+
+**What workers see in each mode:**
+
+- **Workspace-isolated mode:** Workers see only the generated per-task CLAUDE.md. The root project CLAUDE.md is not in their working directory path and is not read.
+- **Codebase mode:** Workers still run from the task workspace directory. The root CLAUDE.md is not automatically loaded. Workers receive a "follow existing patterns and conventions" instruction plus the injected design document for architectural guidance.
+
+**This is by design.** The generated CLAUDE.md provides all the context a worker needs: task specifics, design doc, skills, and HOMR learnings. The root CLAUDE.md serves a different purpose (human developer guidance, project documentation) and its content would add noise to worker context without adding actionable task information.
+
 ---
 
 ## Behaviors

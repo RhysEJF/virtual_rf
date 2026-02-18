@@ -52,7 +52,7 @@ export type SupervisorAlertStatus = 'active' | 'acknowledged' | 'resolved';
 
 // HOMЯ Protocol types
 export type HomrQuality = 'good' | 'needs_work' | 'off_rails';
-export type HomrEscalationStatus = 'pending' | 'answered' | 'dismissed';
+export type HomrEscalationStatus = 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
 export type HomrActivityType = 'observation' | 'steering' | 'escalation' | 'resolution' | 'auto_resolved' | 'auto_resolve_deferred';
 export type HomrDriftType = 'scope_creep' | 'wrong_direction' | 'missed_requirement' | 'contradicts_design';
 export type HomrDiscoveryType = 'constraint' | 'dependency' | 'pattern' | 'decision' | 'blocker';
@@ -511,6 +511,8 @@ export interface HomrEscalation {
   answered_at: number | null;
   incorporated_into_outcome_id: string | null;  // Improvement outcome that addressed this escalation
   incorporated_at: number | null;               // When it was incorporated
+  proposed_resolution: string | null;           // JSON: { selectedOption, reasoning } for semi-auto mode
+  proposed_confidence: number | null;           // AI confidence score for the proposed resolution
 }
 
 // HOMЯ Activity Log Entry (database entity)

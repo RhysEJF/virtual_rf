@@ -1,0 +1,104 @@
+# Gap 6: Skill Directory Inconsistency — `loadSkills()` Misses Most Global Skills
+
+> **Verdict: CONFIRMED GAP + REAL BUG**
+> **Severity: HIGH**
+> **Fix complexity: LOW (fix glob pattern in loadSkills)**
+
+---
+
+## Claimed Gap
+
+The original audit noted inconsistency between global skills (`/skills/`) and outcome-specific skills (`/workspaces/{id}/skills/`), suggesting the two directories have different structures or expectations.
+
+## Audit Findings
+
+### The gap is worse than claimed — it's an active bug
+
+The real issue is not just inconsistency between directories. `loadSkills()` in `lib/agents/skill-manager.ts` uses a glob pattern that misses the majority of global skill files.
+
+### `loadSkills()` expects a nested directory structure
+
+**File:** `lib/agents/skill-manager.ts:113-126`
+
+```typescript
+const skillFiles = glob.sync(path.join(skillsDir, '*', 'SKILL.md'));
+```
+
+This pattern matches: `skills/{category}/SKILL.md`
+
+It expects each skill to be a directory containing a `SKILL.md` file, e.g.:
+```
+skills/
+  api-design/
+    SKILL.md     ← matched
+  testing/
+    SKILL.md     ← matched
+```
+
+### Actual global skill files use flat naming
+
+**Actual structure of `/skills/`:**
+
+```
+skills/
+  api-design.md           ← NOT matched (flat file, not SKILL.md)
+  code-review.md          ← NOT matched
+  etymology-nerd-formula.md ← NOT matched
+  git-workflow.md         ← NOT matched
+  testing-strategy.md     ← NOT matched
+  update-docs.md          ← NOT matched
+  worker-guidelines.md    ← NOT matched
+  research/
+    SKILL.md              ← matched (only this one)
+```
+
+Of 8 global skill files, only 1 matches the `loadSkills()` glob pattern. **7 out of 8 global skills are invisible to the skill matching system.**
+
+### Outcome-specific skills have the same problem
+
+Skills built during the capability phase by `skill-builder.ts` are written as flat markdown files in `workspaces/{outcomeId}/skills/`. These also won't match the `{category}/SKILL.md` glob pattern.
+
+### The DB registration path masks the bug
+
+Skills are also registered in the `skills` database table. The `buildSkillContext()` function reads from the DB, not from `loadSkills()`. So the keyword matching system may still find skills that were registered via the API or UI — but any code path that calls `loadSkills()` directly to scan the filesystem will miss 7/8 files.
+
+### Two parallel skill systems
+
+There are effectively two disconnected skill systems:
+1. **Database-tracked skills** — registered in the `skills` table, matched by `buildSkillContext()`
+2. **Filesystem-scanned skills** — found by `loadSkills()`, which misses most files due to the wrong glob
+
+This creates an inconsistency where the same skill may be visible through one path but invisible through another.
+
+## Impact Assessment
+
+**HIGH impact:**
+
+1. **Silent skill loss** — 7 of 8 global skills are invisible to filesystem scanning. Any code path using `loadSkills()` operates with a near-empty skill library.
+
+2. **Capability phase output wasted** — Skills built during the capability phase are written as flat files. If any downstream code relies on `loadSkills()` to find them, they won't be found.
+
+3. **Confusing debugging** — A developer adding a new skill as a flat markdown file (the obvious pattern from existing files) would find it never gets loaded. The bug is non-obvious because the glob pattern silently returns an empty/near-empty list.
+
+4. **DB path partially masks it** — Because `buildSkillContext()` uses the DB, keyword matching still works for DB-registered skills. This makes the bug intermittent and hard to reproduce — some code paths work fine, others silently fail.
+
+## Recommendation
+
+Fix the glob pattern in `loadSkills()` to match the actual file structure:
+
+```typescript
+// Before (only matches skills/{name}/SKILL.md):
+const skillFiles = glob.sync(path.join(skillsDir, '*', 'SKILL.md'));
+
+// After (matches both flat files and nested directories):
+const skillFiles = glob.sync(path.join(skillsDir, '**', '*.md'));
+```
+
+Also consider unifying the two skill systems — either always go through the DB or always scan the filesystem, but not both with different visibility.
+
+## If Left Unfixed
+
+- 7/8 global skills remain invisible to filesystem-based skill loading
+- Capability-phase skills written as flat files may not be found
+- The dual skill system (DB vs filesystem) continues to have inconsistent visibility
+- New skills added as flat files (the natural pattern) won't work through loadSkills()

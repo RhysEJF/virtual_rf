@@ -15,7 +15,9 @@ import {
 } from '../db/homr';
 import { getOutcomeById } from '../db/outcomes';
 import { getLatestDesignDoc } from '../db/design-docs';
-import type { Task, Intent, HomrDiscovery, HomrAmbiguitySignal, HomrQuestionOption } from '../db/schema';
+import { memoryService } from '../memory';
+import { getDb } from '../db/index';
+import type { Task, Intent, HomrDiscovery, HomrDiscoveryType, HomrAmbiguitySignal, HomrQuestionOption, MemoryType, MemoryImportance } from '../db/schema';
 import type { ObservationResult, ObserveTaskInput, ParsedContextStore } from './types';
 import { buildObservationPrompt, parseObservationResponse } from './prompts';
 
@@ -131,6 +133,11 @@ export async function observeTask(input: ObserveTaskInput): Promise<ObservationR
     addDiscoveryToContext(outcomeId, discovery);
   }
 
+  // Promote discoveries to cross-outcome memory (non-blocking)
+  promoteDiscoveriesToMemory(result.discoveries, outcomeId, task.id).catch((err) => {
+    console.warn('[HOMЯ Observer] Discovery promotion failed:', err);
+  });
+
   // Log activity
   logHomrActivity({
     outcome_id: outcomeId,
@@ -157,6 +164,94 @@ export async function observeTask(input: ObserveTaskInput): Promise<ObservationR
   });
 
   return result;
+}
+
+// ============================================================================
+// Discovery → Memory Promotion (Cross-Outcome Learning)
+// ============================================================================
+
+/** Map discovery types to memory types */
+const DISCOVERY_TO_MEMORY_TYPE: Record<HomrDiscoveryType, MemoryType> = {
+  blocker: 'lesson',
+  constraint: 'fact',
+  pattern: 'pattern',
+  dependency: 'fact',
+  decision: 'decision',
+};
+
+/** Map discovery types to importance levels */
+const DISCOVERY_TO_IMPORTANCE: Record<HomrDiscoveryType, MemoryImportance> = {
+  blocker: 'critical',
+  constraint: 'high',
+  pattern: 'medium',
+  dependency: 'medium',
+  decision: 'high',
+};
+
+/** Minimum content length to promote — very short discoveries are unlikely to be useful cross-outcome */
+const MIN_CONTENT_LENGTH = 20;
+
+/**
+ * Promote high-value discoveries to the cross-outcome memory system.
+ * This is the write path that enables cross-outcome learning:
+ * discoveries from Outcome A become available to workers on Outcome B.
+ *
+ * Deduplication: checks for existing memories with identical content
+ * from the same source outcome before inserting.
+ */
+async function promoteDiscoveriesToMemory(
+  discoveries: HomrDiscovery[],
+  outcomeId: string,
+  sourceTaskId: string
+): Promise<number> {
+  if (discoveries.length === 0) return 0;
+
+  const db = getDb();
+  let promoted = 0;
+
+  for (const discovery of discoveries) {
+    // Skip very short or generic content
+    if (discovery.content.length < MIN_CONTENT_LENGTH) {
+      continue;
+    }
+
+    // Skip compaction summaries
+    if (discovery.source === 'HOMЯ Compaction') {
+      continue;
+    }
+
+    // Deduplication: check for existing memory with same content from same outcome
+    const existing = db.prepare(
+      `SELECT id FROM memories WHERE content = ? AND source_outcome_id = ?`
+    ).get(discovery.content, outcomeId) as { id: string } | undefined;
+
+    if (existing) {
+      continue;
+    }
+
+    try {
+      await memoryService.storeAndAssociate({
+        content: discovery.content,
+        type: DISCOVERY_TO_MEMORY_TYPE[discovery.type] || 'lesson',
+        importance: DISCOVERY_TO_IMPORTANCE[discovery.type] || 'medium',
+        source: 'homr',
+        sourceOutcomeId: outcomeId,
+        sourceTaskId: sourceTaskId.startsWith('task_') ? sourceTaskId : undefined,
+        tags: [discovery.type, 'discovery', 'homr'],
+        confidence: 0.8,
+        outcomeId,
+      });
+      promoted++;
+    } catch (error) {
+      console.warn(`[HOMЯ Observer] Failed to promote discovery to memory:`, error);
+    }
+  }
+
+  if (promoted > 0) {
+    console.log(`[HOMЯ Observer] Promoted ${promoted}/${discoveries.length} discoveries to cross-outcome memory`);
+  }
+
+  return promoted;
 }
 
 // ============================================================================

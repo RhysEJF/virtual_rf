@@ -220,7 +220,7 @@ export default function OutcomeDetailPage(): JSX.Element {
     id: string;
     outcomeId: string;
     createdAt: number;
-    status: 'pending' | 'answered' | 'dismissed';
+    status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
     trigger: {
       type: string;
       taskId: string;
@@ -237,6 +237,11 @@ export default function OutcomeDetailPage(): JSX.Element {
       }>;
     };
     affectedTasks: string[];
+    proposedResolution?: {
+      selectedOption: string;
+      reasoning: string;
+    };
+    proposedConfidence?: number;
   }>>([]);
 
   // Fetch outcome data
@@ -318,6 +323,43 @@ export default function OutcomeDetailPage(): JSX.Element {
       toast({ type: 'error', message: 'Failed to dismiss escalation' });
       throw err;
     }
+  };
+
+  const handleHomrConfirm = async (escalationId: string): Promise<void> => {
+    const response = await fetch(`/api/outcomes/${outcomeId}/homr/escalations/${escalationId}/confirm`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      let errorMessage = 'Failed to confirm resolution';
+      try {
+        const data = await response.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        // Response body wasn't valid JSON
+      }
+      throw new Error(errorMessage);
+    }
+    toast({ type: 'success', message: 'Resolution approved - tasks resumed' });
+    setPendingEscalations(prev => prev.filter(e => e.id !== escalationId));
+    fetchOutcome();
+  };
+
+  const handleHomrReject = async (escalationId: string): Promise<void> => {
+    const response = await fetch(`/api/outcomes/${outcomeId}/homr/escalations/${escalationId}/confirm`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      let errorMessage = 'Failed to reject resolution';
+      try {
+        const data = await response.json();
+        errorMessage = data.error || errorMessage;
+      } catch {
+        // Response body wasn't valid JSON
+      }
+      throw new Error(errorMessage);
+    }
+    toast({ type: 'info', message: 'AI proposal rejected - you can now decide manually' });
+    fetchOutcome();
   };
 
   // Actions
@@ -1254,6 +1296,8 @@ export default function OutcomeDetailPage(): JSX.Element {
                 workerSummary={workerSummary}
                 onAnswer={handleHomrAnswer}
                 onDismiss={handleHomrDismiss}
+                onConfirm={handleHomrConfirm}
+                onReject={handleHomrReject}
                 onActivityClick={() => setShowHomrActivityLog(true)}
               />
             )}

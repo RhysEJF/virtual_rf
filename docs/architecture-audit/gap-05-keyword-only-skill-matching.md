@@ -1,0 +1,101 @@
+# Gap 5: Keyword-Only Skill Matching
+
+> **Verdict: CONFIRMED GAP**
+> **Severity: LOW**
+> **Fix complexity: MEDIUM-HIGH (requires embedding infrastructure)**
+
+---
+
+## Claimed Gap
+
+Skills are matched to tasks using simple keyword string matching (`includes()`) on trigger words from YAML frontmatter. There is no semantic or embedding-based matching, meaning skills that are relevant but don't share exact keywords with the task description are silently missed.
+
+## Audit Findings
+
+### Keyword matching is the only matching strategy
+
+**File:** `lib/agents/skill-manager.ts`
+
+`buildSkillContext()` uses `includes()` keyword matching on the `triggers` field from skill YAML frontmatter:
+
+```typescript
+// Simplified logic
+for (const skill of skills) {
+  const triggers = skill.triggers || [];  // From YAML frontmatter
+  for (const trigger of triggers) {
+    if (taskDescription.toLowerCase().includes(trigger.toLowerCase())) {
+      matchedSkills.push(skill);
+      break;
+    }
+  }
+}
+```
+
+This is pure string containment — no stemming, no synonyms, no fuzzy matching, no semantic similarity.
+
+### Examples of what this misses
+
+| Task description | Skill trigger | Matched? |
+|-----------------|---------------|----------|
+| "Build a REST API" | `api` | Yes |
+| "Create HTTP endpoints" | `api` | No — "endpoints" ≠ "api" |
+| "Set up authentication" | `auth`, `login` | Only if those exact words appear |
+| "Implement user sign-in flow" | `auth`, `login` | No — "sign-in" ≠ "auth" or "login" |
+
+### The skill library is currently small
+
+As of audit time, the global skills library (`/skills/`) contains ~8 skill files. With a small skill set, keyword matching is actually reasonably effective — the impact grows as the skill library scales.
+
+### No embedding infrastructure exists for skills
+
+The codebase does have embedding support for the memory system (`lib/embedding/ollama.ts`), but this is not wired to skill matching. Skills have no vector representations and no semantic search path.
+
+### YAML frontmatter triggers are manually authored
+
+Each skill file includes a `triggers:` list in its YAML frontmatter, e.g.:
+
+```yaml
+---
+name: api-design
+triggers:
+  - api
+  - rest
+  - endpoint
+  - route
+---
+```
+
+The quality of matching depends entirely on the skill author anticipating all relevant trigger words. No automated trigger expansion or synonym generation exists.
+
+## Impact Assessment
+
+**LOW impact currently, MEDIUM at scale:**
+
+1. **Small skill library limits impact** — With ~8 skills, keyword matching is adequate. Most tasks will match relevant skills through obvious keyword overlap.
+
+2. **Scales poorly** — As the skill library grows (especially with outcome-specific skills from the capability phase), the chance of relevant skills being missed due to vocabulary mismatch increases.
+
+3. **Self-reinforcing gap** — Skills that never match are never used, so their quality is never validated or improved. Over time, unused skills accumulate.
+
+4. **Manual workaround** — Users can add more trigger words to skill frontmatter, but this requires knowing which words tasks will use — a circular dependency.
+
+## Recommendation
+
+Two-phase approach:
+
+**Phase 1 (Low effort):** Enhance keyword matching with basic NLP:
+- Stemming (so "endpoints" matches "endpoint")
+- A small synonym table for common terms
+- Trigger word auto-expansion using Claude at skill creation time
+
+**Phase 2 (Higher effort):** Semantic matching:
+- Generate embeddings for skill content at skill creation/update time
+- At task claim time, embed the task description and find nearest skills
+- Use the existing `lib/embedding/ollama.ts` infrastructure
+
+## If Left Unfixed
+
+- Relevant skills may be silently missed when task descriptions use different vocabulary than skill triggers
+- Impact is minimal with the current small skill library
+- Will become more significant as the skill library grows through capability building
+- No immediate urgency — this is an optimization, not a correctness issue

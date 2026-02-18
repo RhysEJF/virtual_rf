@@ -25,6 +25,8 @@ import {
 import { getConvergenceStatus } from '@/lib/db/review-cycles';
 import { getTaskStats } from '@/lib/db/tasks';
 import type { OutcomeStatus } from '@/lib/db/schema';
+import { createPullRequest, hasGitHubCLI, isGitHubCLIAuthenticated, git } from '@/lib/git/utils';
+import path from 'path';
 
 export async function GET(
   request: NextRequest,
@@ -134,7 +136,51 @@ export async function PATCH(
         );
       }
 
-      return NextResponse.json({ outcome });
+      // Auto-create PR on achievement if configured
+      let prResult: { success: boolean; url?: string; error?: string } | null = null;
+      if (body.status === 'achieved' && outcome.create_pr_on_complete) {
+        try {
+          if (
+            outcome.working_directory &&
+            (outcome.git_mode === 'branch' || outcome.git_mode === 'worktree') &&
+            hasGitHubCLI() &&
+            isGitHubCLIAuthenticated()
+          ) {
+            const workDir = outcome.working_directory.startsWith('/')
+              ? outcome.working_directory
+              : path.join(process.cwd(), outcome.working_directory);
+
+            // Push the work branch before creating PR
+            if (outcome.work_branch) {
+              git(`checkout ${outcome.work_branch}`, workDir);
+              git(`push -u origin ${outcome.work_branch}`, workDir);
+            }
+
+            prResult = createPullRequest(
+              {
+                title: outcome.name,
+                body: `## Outcome: ${outcome.name}\n\n${outcome.brief || 'No description provided.'}\n\n---\n*Automatically created by Digital Twin on achievement*`,
+                baseBranch: outcome.base_branch || 'main',
+              },
+              workDir
+            );
+
+            if (!prResult.success) {
+              console.warn(`[Auto-PR] Failed for outcome ${id}: ${prResult.error}`);
+            }
+          } else {
+            console.warn(`[Auto-PR] Skipped for outcome ${id}: prerequisites not met (git_mode=${outcome.git_mode}, gh_cli=${hasGitHubCLI()}, gh_auth=${isGitHubCLIAuthenticated()})`);
+          }
+        } catch (err) {
+          console.error(`[Auto-PR] Error for outcome ${id}:`, err);
+          prResult = { success: false, error: String(err) };
+        }
+      }
+
+      return NextResponse.json({
+        outcome,
+        ...(prResult && { pr: prResult }),
+      });
     }
 
     // Regular update

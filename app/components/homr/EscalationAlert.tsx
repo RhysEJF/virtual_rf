@@ -23,7 +23,7 @@ interface Escalation {
   id: string;
   outcomeId: string;
   createdAt: number;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
   trigger: {
     type: string;
     taskId: string;
@@ -35,19 +35,28 @@ interface Escalation {
     options: QuestionOption[];
   };
   affectedTasks: string[];
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;
 }
 
 interface Props {
   escalation: Escalation;
   onAnswer: (escalationId: string, selectedOption: string, additionalContext?: string) => Promise<void>;
   onDismiss: (escalationId: string) => Promise<void>;
+  onConfirm?: (escalationId: string) => Promise<void>;
+  onReject?: (escalationId: string) => Promise<void>;
 }
 
-export function EscalationAlert({ escalation, onAnswer, onDismiss }: Props): JSX.Element {
+export function EscalationAlert({ escalation, onAnswer, onDismiss, onConfirm, onReject }: Props): JSX.Element {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [additionalContext, setAdditionalContext] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isPendingConfirmation = escalation.status === 'pending_confirmation';
 
   async function handleSubmit(): Promise<void> {
     if (!selectedOption) return;
@@ -77,15 +86,62 @@ export function EscalationAlert({ escalation, onAnswer, onDismiss }: Props): JSX
     }
   }
 
+  async function handleConfirm(): Promise<void> {
+    if (!onConfirm) return;
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await onConfirm(escalation.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to confirm resolution');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReject(): Promise<void> {
+    if (!onReject) return;
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await onReject(escalation.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reject resolution');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Find the proposed option label for display
+  const proposedOptionLabel = isPendingConfirmation && escalation.proposedResolution
+    ? escalation.question.options.find(o => o.id === escalation.proposedResolution?.selectedOption)?.label
+      || escalation.proposedResolution.selectedOption
+    : null;
+
   return (
-    <Card className="border-status-warning">
+    <Card className={isPendingConfirmation ? 'border-accent-primary' : 'border-status-warning'}>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-status-warning text-lg">!</span>
-          <h3 className="font-semibold text-text-primary">HOMЯ Needs Input</h3>
+          <span className={isPendingConfirmation ? 'text-accent-primary text-lg' : 'text-status-warning text-lg'}>
+            {isPendingConfirmation ? '?' : '!'}
+          </span>
+          <h3 className="font-semibold text-text-primary">
+            {isPendingConfirmation ? 'HOMЯ Proposed Resolution' : 'HOMЯ Needs Input'}
+          </h3>
         </div>
-        <Badge variant="warning">{escalation.trigger.type.replace('_', ' ')}</Badge>
+        <div className="flex items-center gap-2">
+          {isPendingConfirmation && escalation.proposedConfidence != null && (
+            <Badge variant="default">
+              {(escalation.proposedConfidence * 100).toFixed(0)}% confident
+            </Badge>
+          )}
+          <Badge variant={isPendingConfirmation ? 'default' : 'warning'}>
+            {escalation.trigger.type.replace('_', ' ')}
+          </Badge>
+        </div>
       </div>
 
       {/* Question */}
@@ -94,51 +150,65 @@ export function EscalationAlert({ escalation, onAnswer, onDismiss }: Props): JSX
         <p className="text-text-secondary text-sm">{escalation.question.context}</p>
       </div>
 
-      {/* Options */}
-      <div className="space-y-2 mb-4">
-        {escalation.question.options.map((option) => (
-          <div
-            key={option.id}
-            className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-              selectedOption === option.id
-                ? 'border-accent-primary bg-accent-primary/10'
-                : 'border-border hover:border-border-hover'
-            }`}
-            onClick={() => setSelectedOption(option.id)}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <div
-                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                  selectedOption === option.id
-                    ? 'border-accent-primary'
-                    : 'border-text-muted'
-                }`}
-              >
-                {selectedOption === option.id && (
-                  <div className="w-2 h-2 rounded-full bg-accent-primary" />
-                )}
-              </div>
-              <span className="font-medium text-text-primary">{option.label}</span>
-            </div>
-            <p className="text-sm text-text-secondary ml-6">{option.description}</p>
-            <p className="text-xs text-text-muted ml-6 mt-1">{option.implications}</p>
-          </div>
-        ))}
-      </div>
+      {/* Semi-auto: Show proposed resolution */}
+      {isPendingConfirmation && escalation.proposedResolution && (
+        <div className="mb-4 p-3 rounded-lg border border-accent-primary bg-accent-primary/5">
+          <p className="text-sm font-medium text-text-primary mb-1">
+            AI recommends: <span className="text-accent-primary">{proposedOptionLabel}</span>
+          </p>
+          <p className="text-sm text-text-secondary">{escalation.proposedResolution.reasoning}</p>
+        </div>
+      )}
 
-      {/* Additional Context */}
-      <div className="mb-4">
-        <label className="block text-sm text-text-secondary mb-1">
-          Additional context (optional)
-        </label>
-        <textarea
-          value={additionalContext}
-          onChange={(e) => setAdditionalContext(e.target.value)}
-          placeholder="Add any additional context or notes..."
-          className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg focus:outline-none focus:border-accent-primary resize-none"
-          rows={2}
-        />
-      </div>
+      {/* Options - shown for manual/pending, hidden for pending_confirmation */}
+      {!isPendingConfirmation && (
+        <div className="space-y-2 mb-4">
+          {escalation.question.options.map((option) => (
+            <div
+              key={option.id}
+              className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                selectedOption === option.id
+                  ? 'border-accent-primary bg-accent-primary/10'
+                  : 'border-border hover:border-border-hover'
+              }`}
+              onClick={() => setSelectedOption(option.id)}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    selectedOption === option.id
+                      ? 'border-accent-primary'
+                      : 'border-text-muted'
+                  }`}
+                >
+                  {selectedOption === option.id && (
+                    <div className="w-2 h-2 rounded-full bg-accent-primary" />
+                  )}
+                </div>
+                <span className="font-medium text-text-primary">{option.label}</span>
+              </div>
+              <p className="text-sm text-text-secondary ml-6">{option.description}</p>
+              <p className="text-xs text-text-muted ml-6 mt-1">{option.implications}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Additional Context - only for manual mode */}
+      {!isPendingConfirmation && (
+        <div className="mb-4">
+          <label className="block text-sm text-text-secondary mb-1">
+            Additional context (optional)
+          </label>
+          <textarea
+            value={additionalContext}
+            onChange={(e) => setAdditionalContext(e.target.value)}
+            placeholder="Add any additional context or notes..."
+            className="w-full px-3 py-2 text-sm bg-bg-primary border border-border rounded-lg focus:outline-none focus:border-accent-primary resize-none"
+            rows={2}
+          />
+        </div>
+      )}
 
       {/* Affected Tasks Info */}
       <div className="text-xs text-text-muted mb-4">
@@ -151,24 +221,45 @@ export function EscalationAlert({ escalation, onAnswer, onDismiss }: Props): JSX
       )}
 
       {/* Actions */}
-      <div className="flex justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDismiss}
-          disabled={submitting}
-        >
-          Dismiss & Continue
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleSubmit}
-          disabled={!selectedOption || submitting}
-        >
-          {submitting ? 'Submitting...' : 'Submit Decision'}
-        </Button>
-      </div>
+      {isPendingConfirmation ? (
+        <div className="flex justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleReject}
+            disabled={submitting}
+          >
+            Reject & Decide Manually
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleConfirm}
+            disabled={submitting}
+          >
+            {submitting ? 'Confirming...' : 'Approve Resolution'}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDismiss}
+            disabled={submitting}
+          >
+            Dismiss & Continue
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!selectedOption || submitting}
+          >
+            {submitting ? 'Submitting...' : 'Submit Decision'}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

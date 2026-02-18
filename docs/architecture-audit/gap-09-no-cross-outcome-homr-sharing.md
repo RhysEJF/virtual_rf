@@ -1,0 +1,120 @@
+# Gap 9: No Cross-Outcome HOMR Sharing
+
+> **Verdict: CONFIRMED GAP (KNOWN — listed as "Not Yet Built")**
+> **Severity: MEDIUM**
+> **Fix complexity: HIGH (requires cross-outcome query and injection architecture)**
+
+---
+
+## Claimed Gap
+
+HOMR observations, context, and learnings are scoped to individual outcomes. When one outcome learns something valuable (e.g., "this API requires pagination" or "always use UTC timestamps"), that learning is invisible to workers on other outcomes.
+
+## Audit Findings
+
+### HOMR tables are explicitly outcome-scoped
+
+**File:** `lib/db/schema.ts`
+
+All HOMR tables include an `outcome_id` foreign key:
+
+```sql
+-- homr_context (line ~1320)
+CREATE TABLE IF NOT EXISTS homr_context (
+  id TEXT PRIMARY KEY,
+  outcome_id TEXT NOT NULL,     -- ← scoped to outcome
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  ...
+);
+
+-- homr_observations
+-- homr_escalations
+-- homr_activity
+```
+
+All HOMR queries in `lib/db/homr.ts` filter by `outcome_id`. There is no cross-outcome query function.
+
+### CLAUDE.md explicitly lists this as not built
+
+**File:** `CLAUDE.md` (project root), "Not Yet Built" section:
+
+```markdown
+- [ ] Cross-outcome learning (HOMR discoveries shared between outcomes)
+```
+
+This is a known gap, acknowledged in the project documentation. It was intentionally deferred, not accidentally omitted.
+
+### A separate memory system exists — but it's not HOMR
+
+**File:** `lib/db/memory.ts` and `lib/db/memory-vss.ts`
+
+The codebase has a separate `memories` table that IS cross-outcome by design:
+
+```sql
+CREATE TABLE IF NOT EXISTS memories (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  tags TEXT,          -- JSON array
+  source TEXT,        -- origin (outcome_id, manual, etc.)
+  ...
+);
+```
+
+This table uses FTS5 full-text search and (optionally) vector similarity search via `memory-vss.ts`. Memories can be queried across all outcomes.
+
+However, this memory system is **not integrated with HOMR**:
+- HOMR Observer writes to `homr_context`, not `memories`
+- HOMR Steerer reads from `homr_context`, not `memories`
+- The memory system is used by the converse agent and potentially by manual memory operations
+- There is no bridge that promotes HOMR learnings to the cross-outcome memory system
+
+### What HOMR learns stays in the outcome
+
+When the HOMR Observer analyzes a task completion and extracts a learning (e.g., "External API X has a rate limit of 100/min"), that learning is stored in `homr_context` for that outcome only. If another outcome needs to interact with the same API, its workers start from scratch.
+
+### The Steerer only injects same-outcome context
+
+**File:** `lib/homr/steerer.ts`
+
+The Steerer retrieves context entries for a specific outcome and injects them into task instructions. The query is:
+
+```typescript
+const context = getHomrContext(outcome.id);
+```
+
+No cross-outcome context retrieval exists.
+
+## Impact Assessment
+
+**MEDIUM impact:**
+
+1. **Repeated mistakes** — Without cross-outcome learning, the same errors can be made independently in multiple outcomes. Each outcome's workers discover the same constraints from scratch.
+
+2. **Wasted tokens** — Re-discovering known constraints costs Claude API turns (or subscription time) that could be avoided if learnings were shared.
+
+3. **Scale tax** — As the number of outcomes grows, the impact grows linearly. With 2-3 outcomes, re-learning is a minor inefficiency. With 20+, it becomes a significant waste.
+
+4. **Partial mitigation** — The `memories` table exists as a cross-outcome memory system, but it's not wired to HOMR. The infrastructure is partially there — the gap is the bridge between HOMR and the memory system.
+
+5. **Known and intentional** — This was explicitly deferred in the project roadmap. It's a real gap but not an oversight.
+
+## Recommendation
+
+Build a bridge between HOMR and the cross-outcome memory system:
+
+1. **Promote high-value HOMR learnings** — When the Observer extracts a learning with broad applicability (not outcome-specific), copy it to the `memories` table
+2. **Cross-outcome Steerer query** — Modify the Steerer to also check the `memories` table for relevant cross-outcome context before injecting into tasks
+3. **Relevance filtering** — Not all HOMR context is cross-applicable. Use tags or semantic similarity to determine which learnings are worth sharing
+
+The existing memory system (`lib/db/memory.ts`, `lib/db/memory-vss.ts`) provides the storage and search infrastructure. The main work is:
+- Defining promotion criteria (which HOMR learnings become cross-outcome memories)
+- Wiring the Steerer to query the memory system
+- Avoiding noise (too many irrelevant cross-outcome injections)
+
+## If Left Unfixed
+
+- Each outcome operates as an isolated learning silo
+- Repeated mistakes and re-discovery across outcomes
+- The memory system exists but remains disconnected from the HOMR learning pipeline
+- Impact grows with the number of active outcomes

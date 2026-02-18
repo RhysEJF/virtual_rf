@@ -1,0 +1,132 @@
+# Architecture Audit — Executive Summary
+
+> **Audit Date:** 2026-02-17
+> **Scope:** 10 gaps identified in `architecture-audit.md`, section "Gaps & Recommendations"
+> **Purpose:** Verify each gap before designing solutions or re-architecting
+
+---
+
+## Quick Reference
+
+| # | Gap | Verdict | Severity | Fix Complexity |
+|---|-----|---------|----------|---------------|
+| 1 | `task_intent`/`task_approach` not injected into worker CLAUDE.md | **CONFIRMED** | HIGH | LOW |
+| 2 | Design doc not available to workers | **CONFIRMED (PARTIAL)** | MEDIUM | LOW |
+| 3 | `create_pr_on_complete` flag is a no-op | **CONFIRMED** | MEDIUM | MEDIUM |
+| 4 | Missing `orchestrator.ts` | **WRONG CLAIM** — file exists, CLAUDE.md has wrong path | LOW | TRIVIAL |
+| 5 | Keyword-only skill matching | **CONFIRMED** | LOW | MEDIUM-HIGH |
+| 6 | Skill directory inconsistency / `loadSkills()` bug | **CONFIRMED + REAL BUG** | HIGH | LOW |
+| 7 | Worker CLAUDE.md scope concerns | **BY DESIGN** | LOW | N/A |
+| 8 | Semi-auto mode identical to full-auto | **CONFIRMED** | MEDIUM | MEDIUM |
+| 9 | No cross-outcome HOMR sharing | **CONFIRMED (KNOWN)** | MEDIUM | HIGH |
+| 10 | Cost tracking fragility | **CONFIRMED** | LOW | LOW |
+
+---
+
+## Verdicts at a Glance
+
+### Real Gaps Requiring Fixes: 7
+
+**HIGH severity (fix first):**
+- **Gap 1** — `task_intent` and `task_approach` are populated by 5 write paths and read by 3 pre-execution agents, but `generateTaskInstructions()` in `worker.ts` never includes them. Workers operate without enriched context that users and AI actively populate. **2-line template fix.**
+- **Gap 6** — `loadSkills()` uses a glob pattern (`*/SKILL.md`) that misses 7 of 8 global skill files because they're flat markdown files, not nested directories. **Glob pattern fix.**
+
+**MEDIUM severity:**
+- **Gap 2** — Workers get a small `design_context` snippet per task but never see the full design document. Other agents (Observer, Orchestrator, Capability Planner) all read the full doc. **Template injection fix.**
+- **Gap 3** — `create_pr_on_complete` is fully wired through DB, UI, CLI — but no code checks it. The UI toggle promises "Create PR when outcome achieved" but nothing happens. **Hook into completion flow.**
+- **Gap 8** — Semi-auto mode runs identical code to full-auto. The code even has a comment: "For now, we treat semi-auto same as full-auto (can add UI later)." **UI approval flow needed.**
+- **Gap 9** — HOMR learnings are outcome-scoped. A cross-outcome `memories` table exists but isn't connected to HOMR. Listed as "Not Yet Built" in CLAUDE.md. **Bridge HOMR → memory system.**
+
+**LOW severity:**
+- **Gap 10** — Worker spawning doesn't use `--output-format json`, so cost extraction relies on regex-matching JSON fragments from text output. Works today but breaks silently if CLI format changes. **Add flag to worker spawn.**
+
+### Not Real Gaps: 2
+
+- **Gap 4** — The orchestrator file exists at `lib/ralph/orchestrator.ts`. CLAUDE.md incorrectly references it as `lib/agents/orchestrator.ts`. Documentation-only fix needed.
+- **Gap 7** — Worker CLAUDE.md scope works as designed. Workspace-isolated workers see only the generated CLAUDE.md; codebase-mode workers see both generated + root. These complement each other. Documentation would help but no code change needed.
+
+### Known and Deferred: 1
+
+- **Gap 9** — Cross-outcome HOMR sharing is explicitly listed as "Not Yet Built" in CLAUDE.md. It's a real gap but an intentional deferral, not an oversight.
+
+---
+
+## Key Themes
+
+### 1. Worker Context Starvation (Gaps 1, 2, 6)
+
+The most impactful pattern: **information flows into the system but doesn't reach the executing workers.** Pre-execution agents (complexity estimator, decomposer, Observer) have richer context than the workers that actually do the work.
+
+- Task intent/approach: populated by 5 paths, read by 3 agents, invisible to workers
+- Design doc: read by Observer, Orchestrator, Planner — workers get a snippet
+- Skills: 7/8 invisible due to glob pattern bug
+
+**Combined impact:** Workers make decisions with incomplete information. The system invests in enriching task context (AI optimization, skill building, design docs) but drops that context at the execution boundary.
+
+### 2. Wired-but-Not-Implemented Features (Gaps 3, 8)
+
+Two features have full stack wiring (schema, DB, UI, CLI) but missing business logic:
+
+- `create_pr_on_complete`: stored, displayed, toggled — never checked
+- Semi-auto mode: selectable in UI — runs as full-auto
+
+**Combined impact:** Users configure these features expecting behavior that doesn't exist. The UI makes promises the backend doesn't keep.
+
+### 3. Documentation Drift (Gaps 4, 7)
+
+Two gaps were caused or amplified by documentation not matching code:
+
+- Orchestrator path wrong in CLAUDE.md
+- Worker CLAUDE.md scope behavior undocumented
+
+**Combined impact:** Minor operational impact but compounds over time. AI agents reading CLAUDE.md for context get incorrect information.
+
+---
+
+## Recommended Fix Order
+
+Based on severity, fix complexity, and impact:
+
+| Priority | Gap | Why | Effort |
+|----------|-----|-----|--------|
+| 1 | Gap 1 | HIGH severity, 2-line fix, immediate worker improvement | ~15 min |
+| 2 | Gap 6 | HIGH severity, glob pattern fix, unlocks 7 hidden skills | ~30 min |
+| 3 | Gap 4 | TRIVIAL, fixes misleading documentation | ~5 min |
+| 4 | Gap 2 | MEDIUM severity, LOW fix, complements Gap 1 | ~30 min |
+| 5 | Gap 10 | LOW severity, LOW fix, prevents future silent breakage | ~30 min |
+| 6 | Gap 3 | MEDIUM severity, needs completion flow hook | ~2 hours |
+| 7 | Gap 8 | MEDIUM severity, needs approval UI flow | ~4 hours |
+| 8 | Gap 7 | Documentation only | ~30 min |
+| 9 | Gap 9 | Known deferral, HIGH complexity | ~1-2 days |
+| — | Gap 5 | LOW severity, MEDIUM-HIGH complexity, not urgent | Defer |
+
+---
+
+## Consequences of Inaction
+
+If no gaps are fixed:
+
+1. **Workers continue operating with incomplete context** — The most impactful issue. Every task execution is suboptimal because workers lack intent, approach, design doc, and most skills.
+
+2. **UI features mislead users** — `create_pr_on_complete` and semi-auto mode suggest capabilities that don't exist.
+
+3. **Self-improvement loop is weakened** — The improvements pipeline generates precise `task_intent`/`task_approach` values for self-improvement tasks, but workers never see them. The system's ability to improve itself is undermined at the execution step.
+
+4. **Skill library effectively has 1 skill** — Despite 8 global skills existing on disk, `loadSkills()` only finds 1. The entire skill system operates at 12.5% capacity through filesystem scanning paths.
+
+---
+
+## Files per Gap
+
+| Gap | Primary Files | Audit Doc |
+|-----|--------------|-----------|
+| 1 | `lib/ralph/worker.ts:668-779`, `lib/db/schema.ts:173-175` | [gap-01](./gap-01-task-intent-approach-not-injected.md) |
+| 2 | `lib/ralph/worker.ts:668-779`, `lib/db/outcomes.ts:572-580` | [gap-02](./gap-02-design-doc-not-available-to-workers.md) |
+| 3 | `lib/db/schema.ts:102`, `app/components/GitConfigSection.tsx:383` | [gap-03](./gap-03-create-pr-on-complete-not-implemented.md) |
+| 4 | `lib/ralph/orchestrator.ts`, `CLAUDE.md` | [gap-04](./gap-04-orchestrator-path-mismatch.md) |
+| 5 | `lib/agents/skill-manager.ts:113-126` | [gap-05](./gap-05-keyword-only-skill-matching.md) |
+| 6 | `lib/agents/skill-manager.ts:113-126`, `/skills/` | [gap-06](./gap-06-skill-directory-inconsistency.md) |
+| 7 | `lib/ralph/worker.ts:1577` | [gap-07](./gap-07-worker-claudemd-scope.md) |
+| 8 | `lib/homr/auto-resolver.ts:337` | [gap-08](./gap-08-semi-auto-identical-to-full-auto.md) |
+| 9 | `lib/db/homr.ts`, `lib/db/memory.ts`, `lib/homr/steerer.ts` | [gap-09](./gap-09-no-cross-outcome-homr-sharing.md) |
+| 10 | `lib/ralph/worker.ts:1533-1558`, `lib/claude/client.ts:71` | [gap-10](./gap-10-cost-tracking-fragility.md) |

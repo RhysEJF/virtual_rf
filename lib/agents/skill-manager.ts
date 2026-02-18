@@ -102,6 +102,7 @@ function parseSkillFile(filePath: string): ParsedSkillFile | null {
  */
 export function loadSkills(): SkillMetadata[] {
   const skills: SkillMetadata[] = [];
+  const seen = new Set<string>();
 
   if (!fs.existsSync(SKILLS_DIR)) {
     console.log('[SkillManager] Skills directory not found, creating...');
@@ -109,40 +110,79 @@ export function loadSkills(): SkillMetadata[] {
     return skills;
   }
 
-  // Scan category directories
-  const categories = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => d.name);
+  const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+
+  // 1. Load flat .md files at the root of skills/
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const filePath = path.join(SKILLS_DIR, entry.name);
+    if (seen.has(filePath)) continue;
+    seen.add(filePath);
+
+    const parsed = parseSkillFile(filePath);
+    if (!parsed) continue;
+
+    const baseName = entry.name.replace(/\.md$/, '');
+    skills.push({
+      name: parsed.metadata.name || baseName.replace(/-/g, ' '),
+      description: parsed.metadata.description || '',
+      triggers: parsed.metadata.triggers || [],
+      requires: parsed.metadata.requires || [],
+      category: 'general',
+      path: filePath,
+      content: parsed.content,
+    });
+  }
+
+  // 2. Scan category directories for nested skills
+  const categories = entries.filter(d => d.isDirectory()).map(d => d.name);
 
   for (const category of categories) {
     const categoryPath = path.join(SKILLS_DIR, category);
+    const categoryEntries = fs.readdirSync(categoryPath, { withFileTypes: true });
 
-    // Scan skill directories within category
-    const skillDirs = fs.readdirSync(categoryPath, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
+    // 2a. Flat .md files inside category dirs (e.g. research/website-analyzer.md)
+    for (const entry of categoryEntries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+      const filePath = path.join(categoryPath, entry.name);
+      if (seen.has(filePath)) continue;
+      seen.add(filePath);
 
-    for (const skillDir of skillDirs) {
-      const skillFilePath = path.join(categoryPath, skillDir, 'SKILL.md');
+      const parsed = parseSkillFile(filePath);
+      if (!parsed) continue;
 
-      if (!fs.existsSync(skillFilePath)) {
-        continue;
-      }
+      const baseName = entry.name.replace(/\.md$/, '');
+      skills.push({
+        name: parsed.metadata.name || baseName.replace(/-/g, ' '),
+        description: parsed.metadata.description || '',
+        triggers: parsed.metadata.triggers || [],
+        requires: parsed.metadata.requires || [],
+        category,
+        path: filePath,
+        content: parsed.content,
+      });
+    }
+
+    // 2b. Nested skill dirs with SKILL.md (e.g. development/nextjs-setup/SKILL.md)
+    for (const entry of categoryEntries) {
+      if (!entry.isDirectory()) continue;
+      const skillFilePath = path.join(categoryPath, entry.name, 'SKILL.md');
+      if (!fs.existsSync(skillFilePath)) continue;
+      if (seen.has(skillFilePath)) continue;
+      seen.add(skillFilePath);
 
       const parsed = parseSkillFile(skillFilePath);
       if (!parsed) continue;
 
-      const skill: SkillMetadata = {
-        name: parsed.metadata.name || skillDir.replace(/-/g, ' '),
+      skills.push({
+        name: parsed.metadata.name || entry.name.replace(/-/g, ' '),
         description: parsed.metadata.description || '',
         triggers: parsed.metadata.triggers || [],
         requires: parsed.metadata.requires || [],
         category,
         path: skillFilePath,
         content: parsed.content,
-      };
-
-      skills.push(skill);
+      });
     }
   }
 

@@ -56,12 +56,13 @@ virtual_rf/
 │   ├── agents/            # AI agent implementations
 │   │   ├── dispatcher.ts
 │   │   ├── briefer.ts
-│   │   ├── orchestrator.ts
 │   │   ├── capability-planner.ts
 │   │   ├── skill-builder.ts
 │   │   ├── tool-builder.ts
 │   │   └── reviewer.ts
 │   ├── ralph/             # Ralph worker system
+│   │   ├── worker.ts
+│   │   └── orchestrator.ts
 │   ├── db/                # Database layer (SQLite)
 │   ├── claude/            # Claude CLI client
 │   ├── workspace/         # Workspace utilities
@@ -326,6 +327,7 @@ kill -9 <PID>
 - [x] UI components: HomrStatusCard, EscalationAlert, ActivityLogDrawer (`app/components/homr/`)
 - [x] HomrDashboard with auto-resolve settings and toast notifications
 - [x] Integration with Ralph worker (observation after task completion)
+- [x] Cross-outcome learning bridge (discoveries promoted to memories table, retrieved globally by steerer)
 
 ### Repository Sync (Complete)
 - [x] Save targets per content type (local/private/team)
@@ -440,13 +442,13 @@ kill -9 <PID>
 - [ ] Agent messaging system (workers that talk to each other)
 - [ ] Telegram bridge
 - [ ] SSE for live progress updates (currently polls every 5s)
-- [ ] Cross-outcome learning (HOMЯ discoveries shared between outcomes)
+- [x] Cross-outcome learning (HOMЯ discoveries promoted to memories, retrieved by workers globally)
 - [ ] Always-on deployment (Mac Mini + Cloudflare Tunnel)
 
 ### Key Files to Understand
 - `lib/claude/client.ts` - CLI wrapper (stdin must be 'ignore')
 - `lib/ralph/worker.ts` - Autonomous worker spawning with PID tracking
-- `lib/agents/orchestrator.ts` - Two-phase orchestration controller
+- `lib/ralph/orchestrator.ts` - Two-phase orchestration controller
 - `lib/agents/capability-planner.ts` - Analyzes outcomes, plans skills/tools
 - `lib/agents/skill-builder.ts` - Builds markdown skills
 - `lib/agents/reviewer.ts` - Reviews completed work, finds issues

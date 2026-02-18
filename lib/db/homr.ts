@@ -362,7 +362,7 @@ export function getPendingEscalations(outcomeId: string): HomrEscalation[] {
   const db = getDb();
   return db.prepare(`
     SELECT * FROM homr_escalations
-    WHERE outcome_id = ? AND status = 'pending'
+    WHERE outcome_id = ? AND status IN ('pending', 'pending_confirmation')
     ORDER BY created_at DESC
   `).all(outcomeId) as HomrEscalation[];
 }
@@ -412,6 +412,75 @@ export function dismissEscalation(escalationId: string): HomrEscalation {
     SET status = 'dismissed', answered_at = ?
     WHERE id = ?
   `).run(timestamp, escalationId);
+
+  return getEscalationById(escalationId)!;
+}
+
+/**
+ * Set an escalation to pending_confirmation with a proposed resolution (semi-auto mode)
+ */
+export function proposeEscalationResolution(
+  escalationId: string,
+  proposedResolution: { selectedOption: string; reasoning: string },
+  confidence: number
+): HomrEscalation {
+  const db = getDb();
+
+  db.prepare(`
+    UPDATE homr_escalations
+    SET status = 'pending_confirmation',
+        proposed_resolution = ?,
+        proposed_confidence = ?
+    WHERE id = ?
+  `).run(JSON.stringify(proposedResolution), confidence, escalationId);
+
+  return getEscalationById(escalationId)!;
+}
+
+/**
+ * Confirm a proposed resolution (semi-auto approval)
+ */
+export function confirmEscalationResolution(escalationId: string): HomrEscalation {
+  const db = getDb();
+  const escalation = getEscalationById(escalationId);
+  if (!escalation) throw new Error(`Escalation not found: ${escalationId}`);
+  if (escalation.status !== 'pending_confirmation') {
+    throw new Error(`Escalation ${escalationId} is not pending confirmation (status: ${escalation.status})`);
+  }
+
+  const proposed = JSON.parse(escalation.proposed_resolution || '{}');
+  const timestamp = now();
+
+  db.prepare(`
+    UPDATE homr_escalations
+    SET status = 'answered',
+        answer_option = ?,
+        answer_context = ?,
+        answered_at = ?
+    WHERE id = ?
+  `).run(
+    proposed.selectedOption || null,
+    `[SEMI-AUTO CONFIRMED] ${proposed.reasoning || ''}`,
+    timestamp,
+    escalationId
+  );
+
+  return getEscalationById(escalationId)!;
+}
+
+/**
+ * Reject a proposed resolution, reverting to pending (semi-auto rejection)
+ */
+export function rejectEscalationResolution(escalationId: string): HomrEscalation {
+  const db = getDb();
+
+  db.prepare(`
+    UPDATE homr_escalations
+    SET status = 'pending',
+        proposed_resolution = NULL,
+        proposed_confidence = NULL
+    WHERE id = ?
+  `).run(escalationId);
 
   return getEscalationById(escalationId)!;
 }
@@ -735,6 +804,11 @@ export function parseEscalation(esc: HomrEscalation): {
     context: string | null;
     answeredAt: number;
   };
+  proposedResolution?: {
+    selectedOption: string;
+    reasoning: string;
+  };
+  proposedConfidence?: number;
 } {
   return {
     id: esc.id,
@@ -757,5 +831,9 @@ export function parseEscalation(esc: HomrEscalation): {
       context: esc.answer_context,
       answeredAt: esc.answered_at,
     } : undefined,
+    proposedResolution: esc.proposed_resolution
+      ? safeJsonParse(esc.proposed_resolution, undefined)
+      : undefined,
+    proposedConfidence: esc.proposed_confidence ?? undefined,
   };
 }

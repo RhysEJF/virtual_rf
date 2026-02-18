@@ -36,7 +36,7 @@ import {
   updateTask as updateTaskDb,
 } from '../db/tasks';
 import type { Task, Intent, TaskPhase, IsolationMode } from '../db/schema';
-import { getOutcomeById } from '../db/outcomes';
+import { getOutcomeById, getDesignDoc } from '../db/outcomes';
 import { createProgressEntry } from '../db/progress';
 import {
   getPendingInterventionsForWorker,
@@ -692,6 +692,19 @@ function generateTaskInstructions(
     homrContext = homr.buildTaskContext(task.id, outcomeId);
   }
 
+  // Get the full design document for architectural context
+  let designDocSection = '';
+  if (outcomeId) {
+    const designDoc = getDesignDoc(outcomeId);
+    if (designDoc?.approach) {
+      const MAX_DESIGN_DOC_LENGTH = 3000;
+      const approach = designDoc.approach.length > MAX_DESIGN_DOC_LENGTH
+        ? designDoc.approach.substring(0, MAX_DESIGN_DOC_LENGTH) + '\n\n_[Design document truncated — full document available in the design_docs table]_'
+        : designDoc.approach;
+      designDocSection = `## Design Document\n\nThis is the overall design/approach for the outcome. Use it for architectural context when making implementation decisions.\n\n${approach}\n`;
+    }
+  }
+
   // Build git instructions if configured
   let gitInstructions = '';
   if (gitConfig && gitConfig.mode === 'branch' && gitConfig.workBranch) {
@@ -742,7 +755,7 @@ ${intentSummary}
 
 ---
 ${isolationInstructions}${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
-## Your Current Task
+${designDocSection ? `${designDocSection}\n---\n` : ''}## Your Current Task
 
 **ID:** ${task.id}
 **Title:** ${task.title}
@@ -751,6 +764,8 @@ ${task.description || 'No additional description provided.'}
 
 ${task.prd_context ? `### PRD Context\n${task.prd_context}\n` : ''}
 ${task.design_context ? `### Design Context\n${task.design_context}\n` : ''}
+${task.task_intent ? `### Task Intent\n${task.task_intent}\n` : ''}
+${task.task_approach ? `### Task Approach\n${task.task_approach}\n` : ''}
 
 ---
 ${combinedSkillContext ? `\n${combinedSkillContext}\n---\n` : ''}
@@ -1189,6 +1204,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         const args = [
           '-p', ralphPrompt,
           '--dangerously-skip-permissions',
+          '--output-format', 'json',
           '--max-turns', String(taskMaxTurns),
         ];
 
@@ -1530,14 +1546,16 @@ function checkOutputForDangerousCommands(
  * Parse cost from Claude CLI JSON output.
  * The CLI outputs JSON with total_cost_usd field.
  */
-function extractCostFromOutput(output: string): number {
+function extractCostFromOutput(output: string, taskId?: string): number {
   try {
     // Claude CLI may output multiple JSON lines (streaming), find the result message
     const lines = output.split('\n').filter(l => l.trim());
 
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
-        const parsed = JSON.parse(lines[i]);
+        // Strip [stdout] / [stderr] prefixes from captured output chunks
+        const line = lines[i].replace(/^\[(stdout|stderr)\]\s*/, '');
+        const parsed = JSON.parse(line);
         if (parsed.type === 'result' && typeof parsed.total_cost_usd === 'number') {
           return parsed.total_cost_usd;
         }
@@ -1547,7 +1565,8 @@ function extractCostFromOutput(output: string): number {
     }
 
     // Try parsing the entire output as JSON (single-line response)
-    const parsed = JSON.parse(output);
+    const stripped = output.replace(/^\[(stdout|stderr)\]\s*/gm, '');
+    const parsed = JSON.parse(stripped);
     if (typeof parsed.total_cost_usd === 'number') {
       return parsed.total_cost_usd;
     }
@@ -1555,6 +1574,7 @@ function extractCostFromOutput(output: string): number {
     // Failed to parse - no cost available
   }
 
+  console.warn(`[worker] Failed to extract cost data${taskId ? ` for task ${taskId}` : ''}`);
   return 0;
 }
 
@@ -1673,7 +1693,7 @@ async function executeTask(
         const fullOutput = outputChunks.join('\n');
 
         // Extract and log cost from Claude CLI output
-        const cost = extractCostFromOutput(fullOutput);
+        const cost = extractCostFromOutput(fullOutput, task.id);
         if (cost > 0) {
           try {
             const dbWorker = getWorkerById(workerId);
@@ -2055,6 +2075,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     const args = [
       '-p', ralphPrompt,
       '--dangerously-skip-permissions',
+      '--output-format', 'json',
       '--max-turns', String(taskMaxTurns),
     ];
 

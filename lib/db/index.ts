@@ -335,6 +335,14 @@ function runMigrations(database: Database.Database): void {
     console.log(`[DB Migration] Added escalation incorporation tracking columns`);
   }
 
+  // Add semi-auto resolution columns for HOMЯ escalations
+  const hasProposedResolution = escalationCols.some(c => c.name === 'proposed_resolution');
+  if (!hasProposedResolution) {
+    database.exec(`ALTER TABLE homr_escalations ADD COLUMN proposed_resolution TEXT`);
+    database.exec(`ALTER TABLE homr_escalations ADD COLUMN proposed_confidence REAL`);
+    console.log(`[DB Migration] Added semi-auto resolution columns to homr_escalations`);
+  }
+
   // Add isolation_mode column to outcomes for workspace isolation
   const outcomesColsIsolation = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
   const hasIsolationMode = outcomesColsIsolation.some(c => c.name === 'isolation_mode');

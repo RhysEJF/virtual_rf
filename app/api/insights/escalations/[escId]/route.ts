@@ -27,7 +27,7 @@ interface EscalationDetailResponse {
   outcomeId: string;
   outcomeName: string;
   createdAt: number;
-  status: 'pending' | 'answered' | 'dismissed';
+  status: 'pending' | 'pending_confirmation' | 'answered' | 'dismissed';
   trigger: {
     type: string;
     taskId: string;

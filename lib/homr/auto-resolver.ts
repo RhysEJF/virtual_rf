@@ -8,7 +8,7 @@
 import { complete } from '../claude/client';
 import { getTaskById, getTasksByOutcome } from '../db/tasks';
 import { getOutcomeById } from '../db/outcomes';
-import { getHomrContext, getPendingEscalations, getEscalationById } from '../db/homr';
+import { getHomrContext, getPendingEscalations, getEscalationById, proposeEscalationResolution } from '../db/homr';
 import { getWorkersByOutcome } from '../db/workers';
 import type { HomrEscalation, HomrQuestionOption, Task, Outcome } from '../db/schema';
 import { resolveEscalation } from './escalator';
@@ -333,10 +333,30 @@ export async function tryAutoResolve(
     };
   }
 
-  // Semi-auto mode would stop here and wait for human confirmation
-  // For now, we treat semi-auto same as full-auto (can add UI later)
+  // Semi-auto mode: store proposed resolution and wait for human confirmation
+  if (config.mode === 'semi-auto' && result.selectedOption) {
+    proposeEscalationResolution(
+      escalationId,
+      { selectedOption: result.selectedOption, reasoning: result.reasoning },
+      result.confidence
+    );
 
-  // Auto-resolve!
+    logHomrActivity({
+      outcome_id: escalation.outcome_id,
+      type: 'auto_resolve_deferred',
+      summary: `Semi-auto: proposed "${result.selectedOption}" (confidence: ${(result.confidence * 100).toFixed(0)}%) — awaiting human confirmation`,
+      details: { escalationId, selectedOption: result.selectedOption, reasoning: result.reasoning, confidence: result.confidence },
+    });
+
+    console.log(`[Auto-Resolver] Semi-auto: proposed resolution for escalation ${escalationId}, awaiting confirmation`);
+
+    return {
+      resolved: false,
+      result,
+    };
+  }
+
+  // Full-auto: resolve immediately
   if (!result.selectedOption) {
     return {
       resolved: false,

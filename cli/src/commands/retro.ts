@@ -173,7 +173,7 @@ triggerCommand.action(async (outcomeId: string, options: TriggerOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -263,7 +263,7 @@ statusCommand.action(async (options: StatusOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -376,7 +376,7 @@ historyCommand.action(async (options: HistoryOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -487,7 +487,7 @@ showCommand.action(async (jobId: string, options: ShowOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -680,7 +680,7 @@ createCommand.action(async (jobId: string, proposalNumber: string | undefined, o
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -745,7 +745,7 @@ command
 
     } catch (error) {
       if (error instanceof NetworkError) {
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }

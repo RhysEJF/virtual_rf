@@ -392,7 +392,7 @@ See: [docs/vision/MEMORY.md](./vision/MEMORY.md)
 |------|---------|----------|-----------|
 | 2026-02-04 | Cross-Outcome Memory | Must be 100% local | Insights are valuable, no data leakage |
 | 2026-02-04 | Cross-Outcome Memory | Use Ollama + sqlite-vss | Free, runs on Mac, good quality |
-| 2026-02-04 | Cross-Outcome Memory | Three retrieval sources (Vector + BM25 + Graph) | James's approach: catches semantic, exact, and code context |
+| 2026-02-04 | Cross-Outcome Memory | Three retrieval sources (Vector + BM25 + Graph) | Recommended approach: catches semantic, exact, and code context |
 | 2026-02-04 | Cross-Outcome Memory | Query expansion to 5 queries | Better recall for related concepts |
 | 2026-02-04 | Cross-Outcome Memory | Max 5 memories per injection | Context window limits |
 | 2026-02-04 | Cross-Outcome Memory | 0.7 minimum similarity threshold | Quality over quantity |

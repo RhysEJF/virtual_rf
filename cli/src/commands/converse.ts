@@ -1,7 +1,7 @@
 /**
  * Converse Command
  *
- * Interactive REPL for natural language conversation with Digital Twin.
+ * Interactive REPL for natural language conversation with Flow.
  * Creates a session on start and maintains context across messages.
  * Uses the /api/converse-agent endpoint with Claude as an agent with tools.
  */
@@ -387,7 +387,7 @@ async function runRepl(): Promise<void> {
     await initSession();
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -511,7 +511,7 @@ async function runRepl(): Promise<void> {
 
 export const converseCommand = new Command('converse')
   .alias('talk')
-  .description('Start an interactive conversation with Digital Twin')
+  .description('Start an interactive conversation with Flow')
   .option('--session <id>', 'Resume an existing session by ID')
   .option('--intent', 'Use intent-classification mode instead of agent mode')
   .action(async (options: { session?: string; intent?: boolean }) => {

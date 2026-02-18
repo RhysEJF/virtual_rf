@@ -53,7 +53,7 @@ personal/
 
 # Personal files that may still exist in root during migration
 Meeting Transcription.txt
-james-call-*.txt
+*-call-transcript*.txt
 interesting-repos.md
 architecture-audit.md
 Untitled
@@ -64,6 +64,12 @@ skills/market-intelligence.md
 skills/etymology-nerd-formula.md
 skills/development/
 skills/research/
+
+# Claude Code local settings
+.claude/
+
+# Personal archive data (keep locally, don't ship)
+archive/ralph-wiggum-method/
 
 # Historical design notes (archived to archive/)
 /Ralph/

@@ -28,7 +28,7 @@ interface AggregatedStats {
 }
 
 interface ChildOutcomesListProps {
-  children: ChildOutcomeInfo[];
+  childOutcomes: ChildOutcomeInfo[];
   aggregatedStats: AggregatedStats | null;
   parentId: string;
   onCreateChild: () => void;
@@ -46,7 +46,7 @@ const statusConfig: Record<OutcomeStatus, { label: string; variant: 'default' | 
  * Shows aggregated progress and list of children
  */
 export function ChildOutcomesList({
-  children,
+  childOutcomes,
   aggregatedStats,
   parentId,
   onCreateChild,
@@ -63,9 +63,9 @@ export function ChildOutcomesList({
           <CardHeader>
             <CardTitle>Aggregated Progress</CardTitle>
             <span className="text-text-tertiary text-sm">
-              Across {children.length} {children.length === 1 ? 'child' : 'children'}
-              {aggregatedStats.total_descendants > children.length && (
-                <> + {aggregatedStats.total_descendants - children.length} descendants</>
+              Across {childOutcomes.length} {childOutcomes.length === 1 ? 'child' : 'children'}
+              {aggregatedStats.total_descendants > childOutcomes.length && (
+                <> + {aggregatedStats.total_descendants - childOutcomes.length} descendants</>
               )}
             </span>
           </CardHeader>
@@ -100,14 +100,14 @@ export function ChildOutcomesList({
         <CardHeader>
           <div className="flex items-center gap-2">
             <CardTitle>Children</CardTitle>
-            <Badge variant="default">{children.length}</Badge>
+            <Badge variant="default">{childOutcomes.length}</Badge>
           </div>
           <Button variant="secondary" size="sm" onClick={onCreateChild}>
             + Add Child
           </Button>
         </CardHeader>
         <CardContent>
-          {children.length === 0 ? (
+          {childOutcomes.length === 0 ? (
             <div className="text-center py-6">
               <p className="text-text-secondary text-sm mb-2">No child outcomes yet</p>
               <p className="text-text-tertiary text-xs mb-4">
@@ -119,7 +119,7 @@ export function ChildOutcomesList({
             </div>
           ) : (
             <div className="space-y-3">
-              {children.map((child) => {
+              {childOutcomes.map((child) => {
                 const status = statusConfig[child.status];
                 const childProgress = child.total_tasks > 0
                   ? (child.completed_tasks / child.total_tasks) * 100

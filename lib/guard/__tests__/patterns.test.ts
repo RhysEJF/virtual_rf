@@ -92,7 +92,7 @@ function expect<T>(actual: T): {
 // Test Constants
 // ============================================================================
 
-const WORKSPACE_PATH = '/Users/rhysfishernewairblack/flow-data/workspaces/out_test123';
+const WORKSPACE_PATH = '/Users/testuser/flow-data/workspaces/out_test123';
 
 // ============================================================================
 // Dangerous Command Tests

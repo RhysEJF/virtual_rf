@@ -159,7 +159,7 @@ export async function PATCH(
             prResult = createPullRequest(
               {
                 title: outcome.name,
-                body: `## Outcome: ${outcome.name}\n\n${outcome.brief || 'No description provided.'}\n\n---\n*Automatically created by Digital Twin on achievement*`,
+                body: `## Outcome: ${outcome.name}\n\n${outcome.brief || 'No description provided.'}\n\n---\n*Automatically created by Flow on achievement*`,
                 baseBranch: outcome.base_branch || 'main',
               },
               workDir

@@ -41,8 +41,8 @@ function TreeIcon({ className }: { className?: string }): JSX.Element {
 type FilterStatus = 'all' | 'active' | 'dormant' | 'achieved';
 type ViewMode = 'flat' | 'tree';
 
-const FILTER_STORAGE_KEY = 'virtualrf_outcome_filter';
-const VIEW_MODE_STORAGE_KEY = 'virtualrf_view_mode';
+const FILTER_STORAGE_KEY = 'flow_outcome_filter';
+const VIEW_MODE_STORAGE_KEY = 'flow_view_mode';
 
 interface MatchedOutcome {
   id: string;
@@ -357,7 +357,7 @@ export default function Dashboard(): JSX.Element {
 
               <div className="flex items-center justify-between pt-3 border-t border-border">
                 <p className="text-text-tertiary text-xs">
-                  Your request: "{matchState.originalInput.substring(0, 50)}{matchState.originalInput.length > 50 ? '...' : ''}"
+                  Your request: &quot;{matchState.originalInput.substring(0, 50)}{matchState.originalInput.length > 50 ? '...' : ''}&quot;
                 </p>
                 <Button variant="secondary" size="sm" onClick={handleCreateNew}>
                   Create New Outcome
@@ -450,7 +450,7 @@ export default function Dashboard(): JSX.Element {
                 </p>
                 {filterStatus === 'all' && (
                   <p className="text-text-tertiary text-sm">
-                    Start by describing what you want to achieve. Try: "Build a simple calculator app" or "Research competitors in the AI space"
+                    Start by describing what you want to achieve. Try: &quot;Build a simple calculator app&quot; or &quot;Research competitors in the AI space&quot;
                   </p>
                 )}
               </CardContent>

@@ -228,7 +228,7 @@ export function CreateChildModal({
             {mode === 'create' && (
               <>
                 <p className="text-text-tertiary text-sm">
-                  Create a new child of <span className="text-text-secondary">"{parentName}"</span>
+                  Create a new child of <span className="text-text-secondary">&quot;{parentName}&quot;</span>
                 </p>
 
                 <div>
@@ -263,7 +263,7 @@ export function CreateChildModal({
             {mode === 'adopt' && (
               <>
                 <p className="text-text-tertiary text-sm">
-                  Add an existing outcome as a child of <span className="text-text-secondary">"{parentName}"</span>
+                  Add an existing outcome as a child of <span className="text-text-secondary">&quot;{parentName}&quot;</span>
                 </p>
 
                 {optionsLoading ? (
@@ -298,7 +298,7 @@ export function CreateChildModal({
             {mode === 'set-parent' && (
               <>
                 <p className="text-text-tertiary text-sm">
-                  Set the parent of <span className="text-text-secondary">"{parentName}"</span>
+                  Set the parent of <span className="text-text-secondary">&quot;{parentName}&quot;</span>
                 </p>
 
                 {currentParentId && (
@@ -328,7 +328,7 @@ export function CreateChildModal({
                       ))}
                     </select>
                     <p className="text-text-tertiary text-xs mt-1">
-                      Select "None" to make this a root-level outcome.
+                      Select &quot;None&quot; to make this a root-level outcome.
                     </p>
                   </div>
                 )}

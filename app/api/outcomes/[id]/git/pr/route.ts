@@ -64,7 +64,7 @@ export async function POST(
     const result = createPullRequest(
       {
         title: outcome.name,
-        body: `## Outcome: ${outcome.name}\n\n${outcome.brief || 'No description provided.'}\n\n---\n*Created by Digital Twin*`,
+        body: `## Outcome: ${outcome.name}\n\n${outcome.brief || 'No description provided.'}\n\n---\n*Created by Flow*`,
         baseBranch: outcome.base_branch || 'main',
       },
       workDir

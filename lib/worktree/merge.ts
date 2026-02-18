@@ -5,7 +5,7 @@
  * Includes conflict detection and resolution tracking.
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { getDb, now } from '../db';
 import { getRepoRoot, getCurrentBranch } from './manager';
 import type { MergeQueueEntry, MergeQueueStatus } from '../db/schema';
@@ -208,7 +208,11 @@ export function mergeWorkerBranch(
     }
 
     // Perform the actual merge
-    git(`merge --no-ff -m "${message}" ${branchName}`, repoRoot);
+    execFileSync('git', ['merge', '--no-ff', '-m', message, branchName], {
+      cwd: repoRoot || process.cwd(),
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
     return { success: true, merged: true };
   } catch (error) {

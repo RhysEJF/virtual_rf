@@ -1,6 +1,6 @@
-# RF CLI Patterns
+# Flow CLI Patterns
 
-Established patterns for the Digital Twin CLI (`rf` command). Follow these conventions when adding new commands.
+Established patterns for the Flow CLI (`flow` command). Follow these conventions when adding new commands.
 
 ## Project Structure
 
@@ -25,7 +25,7 @@ cli/
 
 **package.json:**
 - Type: ESM (`"type": "module"` implied via NodeNext)
-- Bin entry: `"rf": "./dist/index.js"`
+- Bin entry: `"flow": "./dist/index.js"`
 - Dependencies: `commander` (CLI framework), `chalk` (output styling)
 
 **tsconfig.json:**
@@ -46,8 +46,8 @@ import { statusCommand, listCommand, showCommand } from './commands/index.js';
 const program = new Command();
 
 program
-  .name('rf')
-  .description('CLI for Digital Twin API - manage outcomes and workers')
+  .name('flow')
+  .description('CLI for Flow API - manage outcomes and workers')
   .version('0.1.0');
 
 // Register commands
@@ -174,7 +174,7 @@ try {
   // API calls and logic
 } catch (error) {
   if (error instanceof NetworkError) {
-    console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+    console.error(chalk.red('Error:'), 'Could not connect to Flow API');
     console.error(chalk.gray('Make sure the server is running (npm run dev)'));
     process.exit(1);
   }
@@ -362,7 +362,7 @@ export const exampleCommand = new Command('example')
 
     } catch (error) {
       if (error instanceof NetworkError) {
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }

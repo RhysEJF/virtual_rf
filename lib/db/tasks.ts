@@ -151,10 +151,8 @@ export async function createTaskWithBulkCheck(
 
   // Dynamically import to avoid circular dependency
   const { proactiveDecomposeIfBulk } = await import('../agents/task-decomposer');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type IntentType = any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type ApproachType = any;
+  type IntentType = any; // dynamic import avoids circular dependency
+  type ApproachType = any; // dynamic import avoids circular dependency
 
   // Run proactive bulk detection
   const result = await proactiveDecomposeIfBulk(

@@ -46,7 +46,7 @@ function parseEnvFile(content: string): Map<string, string> {
  */
 function serializeEnvFile(env: Map<string, string>): string {
   const lines: string[] = [
-    '# API Keys for Virtual RF',
+    '# API Keys for Flow',
     '# Managed by the application - do not edit manually',
     '',
   ];

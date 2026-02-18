@@ -1,6 +1,6 @@
 # RF CLI
 
-Command-line inteflowace for the Digital Twin API. Manage outcomes and workers from your terminal.
+Command-line inteflowace for the Flow API. Manage outcomes and workers from your terminal.
 
 ## Installation
 
@@ -15,7 +15,7 @@ npm link  # Makes 'flow' command available globally
 ## Prerequisites
 
 - Node.js 18+
-- Digital Twin server running (`npm run dev` from the main project)
+- Flow server running (`npm run dev` from the main project)
 
 ## Commands
 
@@ -125,7 +125,7 @@ Info
   Updated:    1h ago
 
 Intent
-  Build a command-line inteflowace that talks to the Digital Twin...
+  Build a command-line inteflowace that talks to the Flow...
   (use --intent to see full text)
 
 Tasks
@@ -464,7 +464,7 @@ Summary
 
 ### `flow converse`
 
-Starts an interactive conversational REPL session for natural language interaction with Digital Twin.
+Starts an interactive conversational REPL session for natural language interaction with Flow.
 
 ```bash
 # Start new conversation
@@ -492,7 +492,7 @@ flow converse --session ses_abc123xyz
 ```
 $ flow converse
 
-Digital Twin CLI v0.1.0
+Flow CLI v0.1.0
 Type your request, or use /help for commands
 
 > What outcomes are currently active?
@@ -588,7 +588,7 @@ The CLI provides clear error messages for common issues:
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Could not connect to Digital Twin API" | Server not running | Run `npm run dev` from main project |
+| "Could not connect to Flow API" | Server not running | Run `npm run dev` from main project |
 | "Outcome not found" | Invalid outcome ID | Check ID with `flow list` |
 | "Worker not found" | Invalid worker ID | Check ID with `flow show <outcome-id>` |
 | "A worker is already running" | Worker conflict | Use `--parallel` flag |

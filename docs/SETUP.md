@@ -1,6 +1,6 @@
-# Digital Twin - Setup Guide
+# Flow - Setup Guide
 
-> Complete guide to setting up the Digital Twin system on a new machine.
+> Complete guide to setting up Flow on a new machine.
 
 **Last Updated:** 2026-02-04
 
@@ -32,21 +32,26 @@
 git clone <your-repo-url> flow
 cd flow
 
-# 2. Install Node.js dependencies
+# 2. Create the user data directory
+# Flow stores all user data (database, workspaces, skills) in ~/flow-data/
+# This MUST exist before first run, otherwise data goes into the repo directory
+mkdir -p ~/flow-data/{data,workspaces,skills}
+
+# 3. Install Node.js dependencies
 npm install
 
-# 3. Build the CLI
+# 4. Build the CLI
 cd cli && npm install && npm run build && npm link && cd ..
 
-# 4. Initialize the database (auto-creates on first run)
+# 5. Start the dev server (database auto-initializes on first run)
 npm run dev
 
-# 5. (Optional) Set up Ollama for vector search
+# 6. (Optional) Set up Ollama for vector search
 brew install ollama
 brew services start ollama
 ollama pull nomic-embed-text
 
-# 6. (Optional) Generate memory embeddings
+# 7. (Optional) Generate memory embeddings
 npx tsx scripts/generate-embeddings.ts
 ```
 
@@ -74,7 +79,21 @@ git clone <your-repo-url> flow
 cd flow
 ```
 
-### 3. Install Dependencies
+### 3. Create User Data Directory
+
+Flow separates app code from user data. All runtime data (database, workspaces, skills) lives in `~/flow-data/`. **This directory must exist before first run** — otherwise the app falls back to storing data inside the repo directory.
+
+```bash
+mkdir -p ~/flow-data/{data,workspaces,skills}
+```
+
+| Subdirectory | Purpose |
+|-------------|---------|
+| `data/` | SQLite database (`twin.db`) — auto-created on first run |
+| `workspaces/` | Runtime working directories for each outcome |
+| `skills/` | Your personal global skill library |
+
+### 4. Install Dependencies
 
 ```bash
 # Main application
@@ -84,11 +103,11 @@ npm install
 cd cli
 npm install
 npm run build
-npm link  # Makes 'rf' command available globally
+npm link  # Makes 'flow' command available globally
 cd ..
 ```
 
-### 4. Claude Code CLI
+### 5. Claude Code CLI
 
 The worker system requires the Claude Code CLI to be installed and authenticated.
 
@@ -111,19 +130,19 @@ claude --version
 - No API key needed - it authenticates via browser login
 - Run `claude` once to complete authentication
 
-### 5. Database Setup
+### 6. Database Setup
 
 The SQLite database auto-initializes on first access. No manual setup required.
 
-**Database location:** `data/twin.db`
+**Database location:** `~/flow-data/data/twin.db`
 
 **To reset the database:**
 ```bash
-rm data/twin.db
+rm ~/flow-data/data/twin.db
 # Database will recreate on next server start
 ```
 
-### 6. Ollama Setup (Optional but Recommended)
+### 7. Ollama Setup (Optional but Recommended)
 
 Ollama enables vector similarity search for the Cross-Outcome Memory system.
 
@@ -180,19 +199,19 @@ After building and linking the CLI (`npm link` in the `cli/` directory):
 
 ```bash
 # System status
-rf status
+flow status
 
 # List outcomes
-rf list
+flow list
 
 # Show outcome details
-rf show <outcome-id>
+flow show <outcome-id>
 
 # Start a worker
-rf start <outcome-id>
+flow start <outcome-id>
 
 # Live monitoring with auto-resolve
-rf homr <outcome-id> --yolo
+flow homr <outcome-id> --yolo
 ```
 
 ---
@@ -213,7 +232,7 @@ No environment variables are strictly required. Optional configuration:
 ```
 flow/
 ├── app/                    # Next.js application
-├── cli/                    # CLI tool (rf command)
+├── cli/                    # CLI tool (flow command)
 ├── data/                   # SQLite database
 ├── docs/                   # Documentation
 ├── lib/                    # Core libraries
@@ -270,7 +289,7 @@ npm run typecheck
 
 ### Memory search returns no results
 
-1. Ensure memories exist: `sqlite3 data/twin.db "SELECT COUNT(*) FROM memories;"`
+1. Ensure memories exist: `sqlite3 ~/flow-data/data/twin.db "SELECT COUNT(*) FROM memories;"`
 2. Ensure Ollama is running for vector search
 3. Run embedding generation: `npx tsx scripts/generate-embeddings.ts`
 
@@ -341,11 +360,11 @@ See `package.json` for full list. Key dependencies:
 
 2. **Start a worker:**
    - Click "Start Worker" on an outcome
-   - Or use CLI: `rf start <outcome-id>`
+   - Or use CLI: `flow start <outcome-id>`
 
 3. **Monitor progress:**
    - Use the HOMЯ tab to watch worker progress
-   - Or use CLI: `rf homr <outcome-id> --supervise`
+   - Or use CLI: `flow homr <outcome-id> --supervise`
 
 ---
 

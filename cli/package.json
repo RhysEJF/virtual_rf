@@ -2,7 +2,7 @@
   "name": "flow-cli",
   "version": "0.1.0",
   "type": "module",
-  "description": "Command-line interface for Digital Twin API - outcome and worker management",
+  "description": "Command-line interface for Flow - outcome and worker management",
   "main": "dist/index.js",
   "bin": {
     "flow": "./dist/index.js"
@@ -16,7 +16,7 @@
   },
   "keywords": [
     "cli",
-    "digital-twin",
+    "flow",
     "outcomes",
     "workers"
   ],

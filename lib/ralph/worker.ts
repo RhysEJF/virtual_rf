@@ -11,7 +11,7 @@
  * - Loops until all tasks complete or max iterations reached
  */
 
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess, execSync, execFileSync } from 'child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -624,12 +624,12 @@ function checkoutWorkBranch(workBranch: string, baseBranch?: string): string | n
 
     if (branchExists) {
       // Branch exists, just check it out
-      execSync(`git checkout ${workBranch}`, { encoding: 'utf-8', stdio: 'pipe' });
+      execFileSync('git', ['checkout', workBranch], { encoding: 'utf-8', stdio: 'pipe' });
       console.log(`[Worker] Checked out existing branch: ${workBranch}`);
     } else {
       // Create new branch from base
       const base = baseBranch || 'main';
-      execSync(`git checkout -b ${workBranch} ${base}`, { encoding: 'utf-8', stdio: 'pipe' });
+      execFileSync('git', ['checkout', '-b', workBranch, base], { encoding: 'utf-8', stdio: 'pipe' });
       console.log(`[Worker] Created and checked out new branch: ${workBranch} from ${base}`);
     }
 
@@ -645,7 +645,7 @@ function checkoutWorkBranch(workBranch: string, baseBranch?: string): string | n
  */
 function restoreBranch(branchName: string): void {
   try {
-    execSync(`git checkout ${branchName}`, { encoding: 'utf-8', stdio: 'pipe' });
+    execFileSync('git', ['checkout', branchName], { encoding: 'utf-8', stdio: 'pipe' });
     console.log(`[Worker] Restored branch: ${branchName}`);
   } catch (err) {
     console.error(`[Worker] Failed to restore branch ${branchName}:`, err);

@@ -70,7 +70,7 @@ This is the feature that transforms Digital Twin from "a tool you use at your de
 │   └─────────────┘    └─────────────┘    └─────────────┘    │
 │        │                    │                   │           │
 │        ▼                    ▼                   ▼           │
-│   NLP/Classifier       rf commands         Markdown        │
+│   NLP/Classifier       flow commands       Markdown        │
 │   or /commands         via API             for chat        │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -84,40 +84,40 @@ This is the feature that transforms Digital Twin from "a tool you use at your de
 
 #### 1. Slash Commands (Direct Mapping to CLI)
 ```
-/status              → rf status
-/list                → rf list
-/show out_abc123     → rf show out_abc123
-/start out_abc123    → rf start out_abc123
-/stop wrk_xyz789     → rf stop wrk_xyz789
-/tasks out_abc123    → rf task list out_abc123
-/escalations         → rf homr escalations --pending
+/status              → flow status
+/list                → flow list
+/show out_abc123     → flow show out_abc123
+/start out_abc123    → flow start out_abc123
+/stop wrk_xyz789     → flow stop wrk_xyz789
+/tasks out_abc123    → flow task list out_abc123
+/escalations         → flow homr escalations --pending
 ```
 
 #### 2. Natural Language (Intent Classification)
 ```
 "Build a landing page for my startup"
   → Detected: create_outcome
-  → rf new "Build a landing page for my startup"
+  → flow new "Build a landing page for my startup"
 
 "What's the status of the landing page?"
   → Detected: check_status
-  → rf show $(rf list --name="landing page" --format=id | head -1)
+  → flow show $(flow list --name="landing page" --format=id | head -1)
 
 "Add dark mode support"
   → Detected: iterate_outcome
-  → rf outcome iterate out_abc123 --feedback="Add dark mode support"
+  → flow outcome iterate out_abc123 --feedback="Add dark mode support"
 
 "How's everything going?"
   → Detected: check_status
-  → rf status
+  → flow status
 
 "Are there any typecheck errors?"
   → Detected: audit_outcome
-  → rf audit
+  → flow audit
 
 "Does it meet the success criteria?"
   → Detected: review_outcome
-  → rf review out_abc123
+  → flow review out_abc123
 ```
 
 #### 3. Quick Replies (For Escalations)
@@ -579,10 +579,10 @@ bot.launch();
 
 ## Why This Matters
 
-From James's original call:
+From early design discussions:
 > "The vision is I'm gonna be eventually be just chatting to a Telegram"
 
-The Conversational API is what makes Digital Twin truly personal:
+The Conversational API is what makes Flow truly personal:
 - **Accessible** - Use from anywhere, any device
 - **Immediate** - Respond to escalations in real-time
 - **Natural** - Chat like you would with a human assistant

@@ -27,7 +27,7 @@
 
 Cross-Outcome Memory enables workers to leverage learnings from past outcomes when working on new tasks. Instead of bloating CLAUDE.md files with accumulated knowledge, we maintain a separate memory layer that injects relevant learnings at runtime based on task context.
 
-**Key Insight (James Phoenix):**
+**Key Insight:**
 > "Rather than stuff Claude MD, I want you to think of like having your memory outside of Claude MD. And then when you do a task, you inject a piece of memory for that specific run for that specific task rather than bloating out the claude.md files."
 
 ---
@@ -46,7 +46,7 @@ Cross-Outcome Memory enables workers to leverage learnings from past outcomes wh
 
 ### The Three Retrieval Sources
 
-Following James's proven approach, we use three complementary retrieval methods:
+Following a proven approach, we use three complementary retrieval methods:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -550,7 +550,7 @@ ollama pull nomic-embed-text
 
 ## References
 
-- James Phoenix call transcripts (james-call-2.txt, james-call-3.txt)
+- Design call transcripts
 - [Guided Quick Markdown Search](https://example.com) - Query expansion pattern
 - HOMЯ Protocol (docs/homr/VISION.md) - Discovery system we're building on
 - [sqlite-vss](https://github.com/asg017/sqlite-vss) - Vector search extension

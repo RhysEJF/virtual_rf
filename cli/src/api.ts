@@ -1,7 +1,7 @@
 /**
  * API Client Module
  *
- * Provides a typed fetch wrapper for communicating with the Digital Twin API.
+ * Provides a typed fetch wrapper for communicating with the Flow API.
  * Supports GET, POST, PATCH, DELETE methods with proper error handling.
  */
 

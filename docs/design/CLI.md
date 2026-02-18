@@ -1,6 +1,6 @@
 # CLI - Design
 
-> Implementation details for the RF CLI tool.
+> Implementation details for the Flow CLI tool.
 
 ---
 
@@ -194,7 +194,7 @@ import { statusCommand, listCommand, showCommand, newCommand, startCommand, stop
 const program = new Command();
 
 program
-  .name('rf')
+  .name('flow')
   .description('CLI for Digital Twin API')
   .version('0.1.0');
 
@@ -275,7 +275,7 @@ npm install
 # Build TypeScript
 npm run build
 
-# Link globally (makes 'rf' available)
+# Link globally (makes 'flow' available)
 npm link
 
 # Development (watch mode)

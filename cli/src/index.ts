@@ -7,7 +7,7 @@ const program = new Command();
 
 program
   .name('flow')
-  .description('CLI for Digital Twin API - manage outcomes and workers')
+  .description('CLI for Flow - manage outcomes and workers')
   .version('0.1.0');
 
 // Register commands

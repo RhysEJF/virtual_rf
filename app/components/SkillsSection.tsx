@@ -325,7 +325,7 @@ export function SkillsSection({ outcomeId }: SkillsSectionProps): JSX.Element {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <p className="text-[10px] text-text-tertiary">
-                      No repositories configured. Add one in "Where Your Work Goes" above.
+                      No repositories configured. Add one in &quot;Where Your Work Goes&quot; above.
                     </p>
                   </div>
                 )}

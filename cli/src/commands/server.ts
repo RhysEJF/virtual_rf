@@ -1,7 +1,7 @@
 /**
  * Server Command
  *
- * Start the Digital Twin Next.js dev server from anywhere.
+ * Start the Flow Next.js dev server from anywhere.
  */
 
 import { Command } from 'commander';
@@ -21,7 +21,7 @@ function getProjectRoot(): string {
 }
 
 export const serverCommand = new Command('server')
-  .description('Start the Digital Twin dev server')
+  .description('Start the Flow dev server')
   .option('-p, --port <port>', 'Port to run on', '3000')
   .action(async (options: { port: string }) => {
     const projectRoot = getProjectRoot();
@@ -33,7 +33,7 @@ export const serverCommand = new Command('server')
       process.exit(1);
     }
 
-    console.log(chalk.cyan('Starting Digital Twin server...'));
+    console.log(chalk.cyan('Starting Flow server...'));
     console.log(chalk.gray(`Directory: ${projectRoot}`));
     console.log(chalk.gray(`Port: ${options.port}`));
     console.log();

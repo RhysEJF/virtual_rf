@@ -92,12 +92,12 @@ export const stopCommand = command
       }
 
       console.log();
-      console.log(chalk.gray(`Use 'rf start ${worker.outcome_id}' to start a new worker`));
+      console.log(chalk.gray(`Use 'flow start ${worker.outcome_id}' to start a new worker`));
       console.log();
     } catch (error) {
       if (error instanceof NetworkError) {
         console.error();
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }

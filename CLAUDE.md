@@ -4,7 +4,7 @@
 
 ## Overview
 
-Flow is the Digital Twin system - an AI-powered personal assistant that routes requests, spawns AI workers, and self-improves over time.
+Flow is an AI-powered personal assistant that routes requests, spawns AI workers, and self-improves over time.
 
 ## Directory Layout
 
@@ -13,7 +13,12 @@ Flow separates the **app** (this repo) from **user data** (`~/flow-data/`):
 - **App directory** (`~/flow/`): Shareable git repo with all source code
 - **Data directory** (`~/flow-data/`): Private user data — database, workspaces, personal skills
 
-Path resolution is centralized in `lib/config/paths.ts`. If `~/flow-data/` doesn't exist, the app falls back to `process.cwd()` paths for backwards compatibility.
+Path resolution is centralized in `lib/config/paths.ts`. **Important: `~/flow-data/` must be created before first run.** If it doesn't exist, the app falls back to storing data inside the repo directory (legacy mode), which mixes user data with app code.
+
+**First-time setup:**
+```bash
+mkdir -p ~/flow-data/{data,workspaces,skills}
+```
 
 ## Documentation
 

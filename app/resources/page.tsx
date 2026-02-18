@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/app/components/ui/Card';
 import { Button } from '@/app/components/ui/Button';
@@ -71,6 +71,14 @@ interface OutputFile {
 type TabType = 'skills' | 'tools' | 'documents' | 'files';
 
 export default function ResourcesPage(): JSX.Element {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg-primary p-8">Loading...</div>}>
+      <ResourcesPageContent />
+    </Suspense>
+  );
+}
+
+function ResourcesPageContent(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();

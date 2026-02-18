@@ -13,7 +13,7 @@
 
 The Persistent Learnings Layer is the cross-outcome memory system that accumulates wisdom across all work. While HOMЯ observes and steers within a single outcome, learnings persist globally - enabling workers to ask "how did we solve this before?" and receive relevant context from any past work.
 
-This completes James's three core primitives:
+This completes the three core primitives:
 - **Tasks** - What needs to be done (implemented)
 - **Orchestration** - How to sequence and coordinate (implemented via HOMЯ)
 - **Memory** - What was learned across iterations (**this layer**)
@@ -88,7 +88,7 @@ When HOMЯ observes a completed task and extracts discoveries, the Learnings Lay
 - **Assigns initial confidence** - Based on discovery type and source
 - **Stores globally** - In learnings table, not per-outcome
 
-**COIA Format** (from James's RALPH system):
+**COIA Format** (from the RALPH system):
 ```markdown
 ### [Date] - [Brief Title]
 
@@ -171,9 +171,9 @@ The system tracks:
 
 ### Story 4: Institutional Knowledge
 
-**Before:** Rhys remembers "we solved this OAuth thing a few months ago" but can't find where.
+**Before:** The user remembers "we solved this OAuth thing a few months ago" but can't find where.
 
-**After:** Learnings browser shows all learnings, searchable. Rhys can manually boost/demote, add tags, mark obsolete.
+**After:** Learnings browser shows all learnings, searchable. The user can manually boost/demote, add tags, mark obsolete.
 
 ---
 

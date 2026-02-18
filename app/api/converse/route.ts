@@ -960,7 +960,7 @@ async function handleReviewOutcome(
 }
 
 async function handleHelp(): Promise<{ message: string; actions: ActionTaken[] }> {
-  const message = `**Digital Twin - Conversational Interface**
+  const message = `**Flow - Conversational Interface**
 
 Here's what I can help you with:
 

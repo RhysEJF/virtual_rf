@@ -15,7 +15,7 @@ Digital Twin documentation is split into two types:
 
 **Why separate them?**
 
-As James Phoenix noted: "The PRD shows WHAT the app will do, the Design shows HOW. You can change the design doc, but the PRD stays the same in terms of its original intent."
+As noted in compound engineering research: "The PRD shows WHAT the app will do, the Design shows HOW. You can change the design doc, but the PRD stays the same in terms of its original intent."
 
 - Vision docs are stable - they capture intent and track if we've achieved it
 - Design docs can evolve - implementation details change without changing the goal
@@ -44,7 +44,7 @@ As James Phoenix noted: "The PRD shows WHAT the app will do, the Design shows HO
 | Module | Vision | Design | Purpose |
 |--------|--------|--------|---------|
 | **API** | [API.md](./API.md) | [Design](../design/API.md) | Unified conversational API layer |
-| **CLI** | [CLI.md](./CLI.md) | [Design](../design/CLI.md) | Terminal interface (`rf` command) |
+| **CLI** | [CLI.md](./CLI.md) | [Design](../design/CLI.md) | Terminal interface (`flow` command) |
 | **Conversational** | [CONVERSATIONAL-API.md](./CONVERSATIONAL-API.md) | - | Telegram/chat interface |
 | **Deployment** | [DEPLOYMENT.md](./DEPLOYMENT.md) | [Design](../design/DEPLOYMENT.md) | Always-on hosting and chat interfaces |
 | **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Design](../design/DISPATCHER.md) | Request routing and classification |

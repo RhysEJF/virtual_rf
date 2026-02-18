@@ -235,22 +235,22 @@ The CLI (`cli/` directory) provides command-line access to the API.
 
 ```bash
 # List outcomes
-$ rf list
+$ flow list
 
 # Show outcome details
-$ rf show out_123
+$ flow show out_123
 
 # Create new outcome
-$ rf new "Build a landing page"
+$ flow new "Build a landing page"
 
 # Start workers
-$ rf start out_123
+$ flow start out_123
 
 # Check status
-$ rf status
+$ flow status
 
 # Stop workers
-$ rf stop out_123
+$ flow stop out_123
 ```
 
 **Files:**

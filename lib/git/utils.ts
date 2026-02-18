@@ -5,7 +5,7 @@
  * Uses the user's existing git authentication (SSH keys, credential helpers).
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 
 // ============================================================================
 // Core Git Execution
@@ -412,11 +412,7 @@ export function createPullRequest(
   }
 
   const { title, body, baseBranch, draft } = options;
-  const args = [
-    'pr', 'create',
-    '--title', `"${title.replace(/"/g, '\\"')}"`,
-    '--body', `"${body.replace(/"/g, '\\"')}"`,
-  ];
+  const args = ['pr', 'create', '--title', title, '--body', body];
 
   if (baseBranch) {
     args.push('--base', baseBranch);
@@ -427,7 +423,7 @@ export function createPullRequest(
   }
 
   try {
-    const output = execSync(`gh ${args.join(' ')}`, {
+    const output = execFileSync('gh', args, {
       cwd: path || process.cwd(),
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],

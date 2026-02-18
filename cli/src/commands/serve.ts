@@ -109,7 +109,7 @@ command
 
     } catch (error) {
       if (error instanceof NetworkError) {
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }
@@ -175,7 +175,7 @@ startCommand.action(async (outcomeId: string, options: StartOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -237,7 +237,7 @@ stopCommand.action(async (outcomeId: string, options: StopOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       console.error(chalk.gray('Make sure the server is running (npm run dev)'));
       process.exit(1);
     }
@@ -298,7 +298,7 @@ listCommand.action(async (outcomeId: string, options: OutputOptions) => {
 
   } catch (error) {
     if (error instanceof NetworkError) {
-      console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
       process.exit(1);
     }
     if (error instanceof ApiError) {

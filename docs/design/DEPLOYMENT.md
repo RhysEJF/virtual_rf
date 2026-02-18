@@ -108,7 +108,7 @@ brew install cloudflared
 cloudflared tunnel login
 
 # Create tunnel
-cloudflared tunnel create digital-twin
+cloudflared tunnel create flow
 
 # Configure tunnel
 cat > ~/.cloudflared/config.yml << EOF
@@ -116,16 +116,16 @@ tunnel: <TUNNEL_ID>
 credentials-file: /Users/you/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
-  - hostname: rf.yourdomain.com
+  - hostname: flow.yourdomain.com
     service: http://localhost:3000
   - service: http_status:404
 EOF
 
 # Route DNS
-cloudflared tunnel route dns digital-twin rf.yourdomain.com
+cloudflared tunnel route dns flow flow.yourdomain.com
 
 # Run tunnel
-cloudflared tunnel run digital-twin
+cloudflared tunnel run flow
 ```
 
 **As a Service:**
@@ -147,7 +147,7 @@ sudo cloudflared service install
 ```bash
 # Set webhook URL (requires HTTPS - tunnel provides this)
 curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-  -d "url=https://rf.yourdomain.com/api/telegram/webhook"
+  -d "url=https://flow.yourdomain.com/api/telegram/webhook"
 ```
 
 **Bot Permissions:**
@@ -295,7 +295,7 @@ function checkRateLimit(userId: string): boolean {
 ```bash
 # Daily backup script
 #!/bin/bash
-BACKUP_DIR="/Users/you/backups/digital-twin"
+BACKUP_DIR="/Users/you/backups/flow"
 DB_PATH="/Users/you/flow-data/data/twin.db"
 DATE=$(date +%Y-%m-%d)
 
@@ -306,13 +306,13 @@ sqlite3 $DB_PATH ".backup '$BACKUP_DIR/twin-$DATE.db'"
 find $BACKUP_DIR -name "twin-*.db" -mtime +30 -delete
 
 # Optional: sync to cloud
-# rclone sync $BACKUP_DIR remote:digital-twin-backups
+# rclone sync $BACKUP_DIR remote:flow-backups
 ```
 
 **Schedule via cron:**
 ```bash
 # crontab -e
-0 3 * * * /Users/you/scripts/backup-digital-twin.sh
+0 3 * * * /Users/you/scripts/backup-flow.sh
 ```
 
 ### Workspace Backup
@@ -355,7 +355,7 @@ export async function GET() {
 
 Use external service (UptimeRobot, Better Uptime) to ping:
 ```
-https://rf.yourdomain.com/api/health
+https://flow.yourdomain.com/api/health
 ```
 
 Alert via Telegram if down:
@@ -418,7 +418,7 @@ For M1/M2/M3 with unified memory, the GPU isn't used by Claude CLI, so full RAM 
 
 ### Verification
 
-- [ ] `curl https://rf.yourdomain.com/api/health` returns healthy
+- [ ] `curl https://flow.yourdomain.com/api/health` returns healthy
 - [ ] Telegram bot responds to `/status`
 - [ ] Can create outcome via Telegram
 - [ ] Workers spawn and complete tasks
@@ -457,7 +457,7 @@ For M1/M2/M3 with unified memory, the GPU isn't used by Claude CLI, so full RAM 
 
 ```bash
 # Check tunnel status
-cloudflared tunnel info digital-twin
+cloudflared tunnel info flow
 
 # View tunnel logs
 journalctl -u cloudflared -f  # Linux

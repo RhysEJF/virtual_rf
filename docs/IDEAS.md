@@ -360,7 +360,7 @@ This is more complex because it requires:
 |-------|-------|
 | **Status** | `proposed` |
 | **Added** | 2026-02-03 |
-| **Source** | James conversation (james-call-3.txt) - Memory architecture discussion |
+| **Source** | Design conversation - Memory architecture discussion |
 
 **Problem:**
 Each outcome is an island. HOMЯ discovers patterns and constraints during one outcome, but those learnings don't carry forward. A worker solving a similar problem next month starts from scratch.
@@ -392,7 +392,7 @@ interface Learning {
 }
 ```
 
-**2. COIA Format (from James's RALPH system)**
+**2. COIA Format (from the RALPH system)**
 ```markdown
 ### [Date] - [Brief Title]
 
@@ -429,7 +429,7 @@ const relevantLearnings = await searchLearnings({
 
 **References:**
 - [Cross-Outcome Session Search](#5-cross-outcome-session-search) - Related idea
-- [LEARNINGS.md format](james-call-3.txt) - COIA pattern from James's book project
+- COIA pattern from RALPH system design
 - [HOMЯ Observer](../lib/homr/observer.ts) - Current discovery extraction
 
 ---
@@ -440,7 +440,7 @@ const relevantLearnings = await searchLearnings({
 |-------|-------|
 | **Status** | `proposed` |
 | **Added** | 2026-02-03 |
-| **Source** | James conversation - Task orchestration discussion |
+| **Source** | Design conversation - Task orchestration discussion |
 
 **Problem:**
 Currently, workers claim tasks by simple priority number. This doesn't account for:
@@ -472,7 +472,7 @@ function calculateTaskScore(task: Task): number {
 **Effort:** Small
 
 **References:**
-- James's formula: `priority + type_bonus + blocking_bonus + age_bonus`
+- Priority formula:`priority + type_bonus + blocking_bonus + age_bonus`
 - Current implementation: `lib/db/tasks.ts` - `claimNextTask()`
 
 ---
@@ -483,7 +483,7 @@ function calculateTaskScore(task: Task): number {
 |-------|-------|
 | **Status** | `proposed` |
 | **Added** | 2026-02-03 |
-| **Source** | James conversation - Two-phase generation pattern |
+| **Source** | Design conversation - Two-phase generation pattern |
 
 **Problem:**
 Current review is single-pass: one Reviewer agent checks all work. This misses issues that require specialized attention (security, performance, accessibility, etc.).
@@ -517,7 +517,7 @@ const allIssues = mergeReviewResults(results);
 **Effort:** Medium
 
 **References:**
-- James's "Generate then polish" pattern
+- "Generate then polish" pattern
 - Current implementation: `lib/agents/reviewer.ts`
 
 ---
@@ -528,7 +528,7 @@ const allIssues = mergeReviewResults(results);
 |-------|-------|
 | **Status** | `proposed` |
 | **Added** | 2026-02-03 |
-| **Source** | James conversation - "Metrics not vibes" philosophy |
+| **Source** | Design conversation - "Metrics not vibes" philosophy |
 
 **Problem:**
 We have no systematic way to measure if changes improve the system. Questions like "Does the new capability planner work better?" require manual testing and gut feel.
@@ -571,7 +571,7 @@ console.log(`Pass rate: ${results.passRate}%`);
 **Effort:** Medium
 
 **References:**
-- James's eval approach in his codebase
+- Eval approach pattern
 - Anthropic's eval patterns
 - [improvement-analyzer.ts](../lib/agents/improvement-analyzer.ts) - Could generate evals from escalation patterns
 

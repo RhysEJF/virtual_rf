@@ -7,7 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { getOutcomeById } from '../db/outcomes';
 import {
   getEffectiveRepository,
@@ -109,7 +109,7 @@ function isGitRepo(repoPath: string): boolean {
  */
 function gitAdd(repoPath: string, filePath: string): void {
   const cwd = expandPath(repoPath);
-  execSync(`git add "${filePath}"`, { cwd, stdio: 'pipe' });
+  execFileSync('git', ['add', filePath], { cwd, stdio: 'pipe' });
 }
 
 /**
@@ -118,7 +118,7 @@ function gitAdd(repoPath: string, filePath: string): void {
 function gitCommit(repoPath: string, message: string): { committed: boolean; hash?: string } {
   const cwd = expandPath(repoPath);
   try {
-    execSync(`git commit -m "${message}"`, { cwd, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', message], { cwd, stdio: 'pipe' });
     // Get the commit hash
     const hash = execSync('git rev-parse HEAD', { cwd, stdio: 'pipe' }).toString().trim();
     return { committed: true, hash };

@@ -78,9 +78,9 @@ export const chatCommand = new Command('chat')
     } catch (error) {
       if (error instanceof NetworkError) {
         if (options.json) {
-          console.log(JSON.stringify({ error: 'Could not connect to Digital Twin API' }));
+          console.log(JSON.stringify({ error: 'Could not connect to Flow API' }));
         } else {
-          console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+          console.error(chalk.red('Error:'), 'Could not connect to Flow API');
           console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         }
         process.exit(1);

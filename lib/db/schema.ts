@@ -1,7 +1,7 @@
 /**
  * Database schema types and SQL definitions
  *
- * Data Model (per James's compound engineering research):
+ * Data Model (based on compound engineering research):
  * - Outcomes: High-level goals (replaces projects as primary unit)
  * - Design Docs: HOW to achieve the outcome (can change without changing intent)
  * - Tasks: Executable work items (generated from PRD + Design Doc, atomic claiming)

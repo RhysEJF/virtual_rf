@@ -43,7 +43,7 @@ export const rejectCommand = new Command('reject')
 
     } catch (error) {
       if (error instanceof NetworkError) {
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }

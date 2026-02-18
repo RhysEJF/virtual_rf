@@ -53,7 +53,7 @@ export interface IntentClassification {
 // Classification Prompt
 // ============================================================================
 
-const INTENT_CLASSIFICATION_PROMPT = `You are an intent classifier for a personal AI workforce management system called "Digital Twin".
+const INTENT_CLASSIFICATION_PROMPT = `You are an intent classifier for a personal AI workforce management system called "Flow".
 
 The system manages "outcomes" (projects with tasks) executed by AI "workers".
 

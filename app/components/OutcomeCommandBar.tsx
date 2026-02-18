@@ -296,7 +296,7 @@ export function OutcomeCommandBar({ outcomeId, outcomeName, onSuccess, initialIn
       {state === 'error' && (
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-text-primary">Couldn't Process Request</h3>
+            <h3 className="text-sm font-medium text-text-primary">Couldn&apos;t Process Request</h3>
             <button
               onClick={handleFullReset}
               className="text-xs text-text-tertiary hover:text-text-secondary"

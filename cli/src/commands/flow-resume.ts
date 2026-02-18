@@ -81,7 +81,7 @@ export const flowResumeCommand = command
           console.log();
         }
 
-        console.log(chalk.gray(`Use 'rf flow pause ${outcomeId}' to stop the workers`));
+        console.log(chalk.gray(`Use 'flow pause ${outcomeId}' to stop the workers`));
         console.log();
         return;
       }
@@ -121,13 +121,13 @@ export const flowResumeCommand = command
       }
 
       console.log();
-      console.log(chalk.gray(`Use 'rf show ${outcomeId}' to monitor progress`));
-      console.log(chalk.gray(`Use 'rf flow pause ${outcomeId}' to pause the worker`));
+      console.log(chalk.gray(`Use 'flow show ${outcomeId}' to monitor progress`));
+      console.log(chalk.gray(`Use 'flow pause ${outcomeId}' to pause the worker`));
       console.log();
     } catch (error) {
       if (error instanceof NetworkError) {
         console.error();
-        console.error(chalk.red('Error:'), 'Could not connect to Digital Twin API');
+        console.error(chalk.red('Error:'), 'Could not connect to Flow API');
         console.error(chalk.gray('Make sure the server is running (npm run dev)'));
         process.exit(1);
       }

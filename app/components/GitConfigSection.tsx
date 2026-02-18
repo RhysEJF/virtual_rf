@@ -438,7 +438,7 @@ export function GitConfigSection({ outcomeId, outcomeName, config, onUpdate }: P
           /* Not Configured - show configure button */
           <div>
             <p className="text-sm text-text-tertiary mb-3">
-              Configure where work is saved and how it's shared.
+              Configure where work is saved and how it&apos;s shared.
             </p>
             <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
               Configure

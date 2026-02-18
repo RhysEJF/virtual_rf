@@ -918,7 +918,7 @@ export default function OutcomeDetailPage(): JSX.Element {
       {isParent && (
         <div className="mb-6">
           <ChildOutcomesList
-            children={children}
+            childOutcomes={children}
             aggregatedStats={aggregatedStats}
             parentId={outcomeId}
             onCreateChild={() => setShowCreateChildModal(true)}
@@ -1440,7 +1440,7 @@ export default function OutcomeDetailPage(): JSX.Element {
                         <p className="text-text-tertiary text-sm mb-2">No workers started yet</p>
                         {isDraft && hasPendingTasks && (
                           <p className="text-text-tertiary text-xs">
-                            Click "Start Worker" to begin execution
+                            Click &quot;Start Worker&quot; to begin execution
                           </p>
                         )}
                       </div>

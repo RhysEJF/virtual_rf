@@ -53,7 +53,7 @@ interface OutcomeTreeViewProps {
   filterStatus?: 'all' | 'active' | 'dormant' | 'achieved';
 }
 
-const EXPAND_STATE_KEY = 'virtualrf_tree_expand_state';
+const EXPAND_STATE_KEY = 'flow_tree_expand_state';
 
 const statusConfig: Record<
   OutcomeStatus,

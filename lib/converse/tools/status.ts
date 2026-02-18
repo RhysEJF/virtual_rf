@@ -34,7 +34,7 @@ export function getSystemStatus(): SystemStatusResult {
   const runningWorkers = dbGetActiveWorkers();
 
   // Dynamically import to avoid circular dependency
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+
   const { getPendingEscalations } = require('../../db/homr');
 
   // Count pending escalations across active outcomes
@@ -85,7 +85,7 @@ export function getActiveOutcomes(): ActiveOutcomesResult {
   const outcomes = getOutcomesWithCounts().filter((o) => o.status === 'active');
 
   // Dynamically import to avoid circular dependency
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+
   const { getPendingEscalations } = require('../../db/homr');
 
   const outcomesWithEscalations = outcomes.map((outcome) => {

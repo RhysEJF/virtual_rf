@@ -97,7 +97,8 @@ interface RalphConfig {
 - `lib/db/tasks.ts` - Task claiming
 - `lib/db/workers.ts` - Worker state
 - `lib/db/progress.ts` - Progress recording
-- `lib/agents/skill-manager.ts` - Skill loading
+- `lib/agents/skill-manager.ts` - Global skill auto-discovery (DB search)
+- `lib/agents/skill-builder.ts` - Outcome skill loading (`loadOutcomeSkills`, `getSkillContent`)
 - `lib/workspace/detector.ts` - Workspace paths
 
 **Used by:**
@@ -201,6 +202,28 @@ process.kill(pid, 'SIGTERM');
 // Stop: send SIGKILL if SIGTERM fails
 setTimeout(() => process.kill(pid, 'SIGKILL'), 5000);
 ```
+
+---
+
+## Skill Context Injection
+
+`startRalphWorker` loads outcome skills before the work loop and passes them to every task's CLAUDE.md:
+
+```typescript
+// Before work loop
+const outcomeSkills = loadOutcomeSkills(outcomeId);
+// Builds "## Available Skills" section with full content
+
+// Inside generateTaskInstructions(), two sources combine:
+const combinedSkillContext = [
+  skillContext,              // Auto-discovered global skills (searchSkills)
+  additionalSkillContext     // Outcome skills (loadOutcomeSkills)
+].filter(Boolean).join('\n\n');
+```
+
+**Generated CLAUDE.md sections:**
+- `## Available Skills` — Outcome-specific skills (full content, always present if skills exist)
+- `## Relevant Skills` — Auto-discovered global skills (matched by name/keywords, max 2)
 
 ---
 

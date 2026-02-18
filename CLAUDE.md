@@ -329,6 +329,9 @@ kill -9 <PID>
 - [x] Skills Library page (`/skills`) with Global/Outcome tabs
 - [x] SkillsSection component on outcome detail page
 - [x] Skill content viewer with click-to-expand
+- [x] Skill scanner finds flat `.md`, category subdirs, and nested `SKILL.md` patterns
+- [x] Reverse skill search — query contains skill name/keywords (not vice versa)
+- [x] `startRalphWorker` loads and injects outcome skills (matches orchestrator behavior)
 
 ### Review & Iteration (Complete)
 - [x] Review cycle system with convergence tracking

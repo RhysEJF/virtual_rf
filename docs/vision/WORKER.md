@@ -58,11 +58,13 @@ Workers send heartbeats every 30 seconds:
 
 ### Skill Context Injection
 
-Before spawning Claude, the worker:
-1. Checks task's `required_skills`
-2. Loads matching skill documents
-3. Injects skill content into CLAUDE.md
-4. Claude sees skills as part of its instructions
+Skills reach workers through two complementary paths:
+
+1. **Outcome skills** (primary) — On worker start, `loadOutcomeSkills()` reads all `.md` files from the outcome's `skills/` directory. These are injected as an `## Available Skills` section in every task's CLAUDE.md, with full skill content included.
+
+2. **Auto-discovery** (secondary) — `searchSkills()` matches the task title + description against global skills in the database. Skills whose name or description keywords appear in the query are injected as a `## Relevant Skills` section.
+
+Both paths combine — outcome skills provide outcome-specific methodology, while auto-discovery surfaces relevant global skills the worker might not know about.
 
 ### Progress Tracking
 
@@ -242,7 +244,8 @@ Each worker receives a **generated per-task CLAUDE.md** written to its task work
 3. ~~**Retry logic** - Failed tasks increment `attempts`. When should we give up?~~
    **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3). Circuit breaker pattern provides additional protection.
 
-4. **Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.
+4. ~~**Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.~~
+   **Partially resolved:** Outcome skills are loaded in full (they're purpose-built and relevant). Auto-discovery limits to 2 global skills per task. Remaining concern is outcomes with many skills.
 
 ---
 

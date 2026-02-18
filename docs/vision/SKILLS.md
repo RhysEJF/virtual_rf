@@ -88,9 +88,20 @@ requires:
 ...
 ```
 
-### Trigger Matching
+### Skill Search & Matching
 
-When a worker claims a task, the system searches for relevant skills by matching trigger keywords against the task title and description.
+Skills are discovered through two mechanisms:
+
+1. **Name/keyword matching** — `searchSkills()` checks if the task's title + description contains the skill's name, category, or description keywords. This is a reverse search: the query (long) is checked for the presence of skill identifiers (short), not vice versa.
+
+2. **Trigger matching** — Skills with explicit `triggers` in their frontmatter are matched when any trigger keyword appears in the task query.
+
+### Skill Scanner
+
+The scanner (`scanSkillsDirectory()`) finds skills in three patterns:
+- Flat `.md` files at the root of `skills/` (e.g., `skills/market-intelligence.md`)
+- Flat `.md` files inside category subdirectories (e.g., `skills/research/website-analyzer.md`)
+- Nested `SKILL.md` files in structured directories (e.g., `skills/development/nextjs-setup/SKILL.md`)
 
 ### API Key Requirements
 

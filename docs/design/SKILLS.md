@@ -173,21 +173,37 @@ Create a new global skill.
 
 ---
 
-## Trigger Matching
+## Skill Search
+
+`searchSkills()` in `lib/db/skills.ts` uses a **reverse containment** strategy — checking if the (long) query text contains the (short) skill identifiers:
 
 ```typescript
-const searchQuery = `${task.title} ${task.description}`;
-const matchedSkills = searchSkillsByTriggers(searchQuery);
-
-function searchSkillsByTriggers(query: string): Skill[] {
+function searchSkills(query: string): Skill[] {
   const queryLower = query.toLowerCase();
-  return getAllSkills().filter(skill => {
-    const triggers = JSON.parse(skill.triggers || '[]');
-    return triggers.some(trigger =>
-      queryLower.includes(trigger.toLowerCase())
-    );
+  const all = db.prepare('SELECT * FROM skills ORDER BY usage_count DESC').all();
+
+  return all.filter(skill => {
+    // Query contains skill name?
+    if (queryLower.includes(skill.name.toLowerCase())) return true;
+    // Query contains non-general category?
+    if (skill.category !== 'general' && queryLower.includes(skill.category)) return true;
+    // Query contains significant description words? (threshold: 2+ words, or 1 for short descriptions)
+    const descWords = skill.description.split(/\s+/).filter(w => w.length >= 4);
+    const matchCount = descWords.filter(w => queryLower.includes(w)).length;
+    return matchCount >= (descWords.length <= 3 ? 1 : 2);
   });
 }
+```
+
+## Trigger Matching
+
+`findRelevantSkills()` in `lib/agents/skill-manager.ts` combines DB search with trigger keyword matching:
+
+```typescript
+// Trigger matches are prioritized over DB results
+const triggerMatches = loadedSkills.filter(skill =>
+  skill.triggers.some(trigger => queryLower.includes(trigger.toLowerCase()))
+);
 ```
 
 ---

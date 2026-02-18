@@ -96,17 +96,43 @@ export function getSkillsByCategory(category: string): Skill[] {
 }
 
 /**
- * Search skills by name or description
+ * Search skills by name or description.
+ *
+ * Strategy: check if the query text contains the skill name, description keywords,
+ * or category. This is the reverse of a naive LIKE — we want skills whose identity
+ * appears *within* the (typically longer) search query, not the other way around.
  */
 export function searchSkills(query: string): Skill[] {
   const db = getDb();
-  const pattern = `%${query}%`;
-  const stmt = db.prepare(`
+  const queryLower = query.toLowerCase();
+
+  // Get all skills and filter in JS — the set is small enough that this is fine
+  const all = db.prepare(`
     SELECT * FROM skills
-    WHERE name LIKE ? OR description LIKE ? OR category LIKE ?
     ORDER BY usage_count DESC, name
-  `);
-  return stmt.all(pattern, pattern, pattern) as Skill[];
+  `).all() as Skill[];
+
+  return all.filter(skill => {
+    // Check if query contains the skill name
+    if (skill.name && queryLower.includes(skill.name.toLowerCase())) {
+      return true;
+    }
+    // Check if query contains the category
+    if (skill.category && skill.category !== 'general' && queryLower.includes(skill.category.toLowerCase())) {
+      return true;
+    }
+    // Check if query contains significant words from the description (3+ chars)
+    if (skill.description) {
+      const descWords = skill.description.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+      const matchCount = descWords.filter(w => queryLower.includes(w)).length;
+      // Require at least 2 description words to match, or 1 if description is very short
+      const threshold = descWords.length <= 3 ? 1 : 2;
+      if (matchCount >= threshold) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 /**

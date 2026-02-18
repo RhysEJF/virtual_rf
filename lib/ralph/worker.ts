@@ -51,6 +51,7 @@ import {
   areSkillDependenciesMet,
   resolveSkillDependencies,
 } from '../agents/skill-dependency-resolver';
+import { loadOutcomeSkills, getSkillContent as getOutcomeSkillContent } from '../agents/skill-builder';
 import * as homr from '../homr';
 import * as guard from '../guard';
 import { estimateTaskComplexity, assessTurnLimitRisk, ComplexityEstimate } from '../agents/task-complexity-estimator';
@@ -1015,6 +1016,32 @@ export async function startRalphWorker(
     // This allows capability tasks to be processed first
   }
 
+  // Load outcome-specific skills for context injection
+  const outcomeSkills = loadOutcomeSkills(outcomeId);
+  let outcomeSkillContext = '';
+  if (outcomeSkills.length > 0) {
+    const lines = ['## Available Skills\n'];
+    lines.push('The following skills have been built for this outcome:\n');
+    for (const skill of outcomeSkills) {
+      const content = getOutcomeSkillContent(outcomeId, skill.name);
+      if (content) {
+        const kebabName = skill.name.toLowerCase().replace(/\s+/g, '-');
+        lines.push(`### ${skill.name}`);
+        lines.push(`**Triggers:** ${skill.triggers.join(', ') || 'N/A'}`);
+        lines.push(`**Read full skill:** \`../skills/${kebabName}.md\`\n`);
+        // Include full content so the worker has it without reading the file
+        lines.push(content);
+        lines.push('');
+      }
+    }
+    lines.push(`\n**How to use skills:**`);
+    lines.push(`1. Check if your current task matches any skill triggers above`);
+    lines.push(`2. Follow the skill's methodology step-by-step`);
+    lines.push(`3. Use the skill's output template for deliverables\n`);
+    outcomeSkillContext = lines.join('\n');
+    appendLog(`Loaded ${outcomeSkills.length} outcome skills for context injection`);
+  }
+
   // Start the work loop
   (async () => {
     let iteration = 0;
@@ -1185,7 +1212,7 @@ export async function startRalphWorker(
           outcome.name,
           intent,
           task,
-          undefined,
+          outcomeSkillContext || undefined,
           outcomeId,
           gitConfig,
           outcome.isolation_mode || 'workspace',

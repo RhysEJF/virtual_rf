@@ -282,7 +282,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-02-05)
+## Current Progress (Updated 2026-02-20)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -472,10 +472,16 @@ kill -9 <PID>
 6. **Review Phase**: Reviewer checks work, creates fix tasks if needed
 7. **Iterate**: User can request changes even after completion
 
+### Telegram Integration (Complete)
+- [x] Telegram bot via `claude-code-telegram` (`~/claude-code-telegram/`)
+- [x] Claude Code sessions spawned from Telegram using Claude subscription (no API key needed)
+- [x] Dedicated workspace at `~/telegram-workspace/` with CLAUDE.md context
+- [x] `skills/flow-cli.md` teaches the Telegram Claude how to use Flow CLI
+- [x] Rate limit retry handling for concurrent session throttling
+
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
 - [ ] Agent messaging system (workers that talk to each other)
-- [ ] Telegram bridge
 - [ ] SSE for live progress updates (currently polls every 5s)
 - [x] Cross-outcome learning (HOMЯ discoveries promoted to memories, retrieved by workers globally)
 - [ ] Always-on deployment (Mac Mini + Cloudflare Tunnel)

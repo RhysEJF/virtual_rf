@@ -195,7 +195,7 @@ Each worker receives a **generated per-task CLAUDE.md** written to its task work
 
 1. `generateTaskInstructions()` in `lib/ralph/worker.ts` builds a task-specific CLAUDE.md containing:
    - Outcome name and intent summary
-   - Full design document (truncated at 3000 chars if large)
+   - Full design document (no truncation — workers get the complete design doc)
    - Isolation/git/HOMR context
    - Task description, PRD context, design context, intent, and approach
    - Matched skill content
@@ -245,7 +245,7 @@ Each worker receives a **generated per-task CLAUDE.md** written to its task work
    **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3). Circuit breaker pattern provides additional protection.
 
 4. ~~**Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.~~
-   **Partially resolved:** Outcome skills are loaded in full (they're purpose-built and relevant). Auto-discovery limits to 2 global skills per task. Remaining concern is outcomes with many skills.
+   **Partially resolved:** Outcome skills are loaded in full (they're purpose-built and relevant). Auto-discovery limits to 2 global skills per task. Design doc is now included in full (no truncation). Remaining concern is outcomes with many skills — see [harness engineering research](../research/harness-engineering.md#5-agentsmd-as-table-of-contents-not-encyclopedia) for the "table of contents" approach as a future improvement.
 
 ---
 

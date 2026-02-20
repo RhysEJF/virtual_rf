@@ -110,3 +110,8 @@ User Input
 - [HOMЯ Protocol](../homr/VISION.md) - Intelligent orchestration layer
 - [IDEAS.md](../IDEAS.md) - Future improvement ideas
 - [VISION.md](../../VISION.md) - Original north star document (historical)
+
+### Research
+
+- [Harness Engineering](../research/harness-engineering.md) - Gap analysis vs Flow (deterministic quality gates, teaching errors, garbage collection agents)
+- [Agent Teams](../research/agent-teams.md) - Integration patterns for Ralph Worker engine (inner execution engine, real-time review teammate)

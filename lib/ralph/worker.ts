@@ -699,11 +699,7 @@ function generateTaskInstructions(
   if (outcomeId) {
     const designDoc = getDesignDoc(outcomeId);
     if (designDoc?.approach) {
-      const MAX_DESIGN_DOC_LENGTH = 3000;
-      const approach = designDoc.approach.length > MAX_DESIGN_DOC_LENGTH
-        ? designDoc.approach.substring(0, MAX_DESIGN_DOC_LENGTH) + '\n\n_[Design document truncated — full document available in the design_docs table]_'
-        : designDoc.approach;
-      designDocSection = `## Design Document\n\nThis is the overall design/approach for the outcome. Use it for architectural context when making implementation decisions.\n\n${approach}\n`;
+      designDocSection = `## Design Document\n\nThis is the overall design/approach for the outcome. Use it for architectural context when making implementation decisions.\n\n${designDoc.approach}\n`;
     }
   }
 

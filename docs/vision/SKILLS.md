@@ -41,14 +41,16 @@ Think of skills as "employee training manuals" that workers read before starting
 
 ## Key Concepts
 
-### Two Skill Types
+### Three Skill Types
 
 | Type | Location | Scope |
 |------|----------|-------|
-| **Global** | `/skills/` | Available to all outcomes |
-| **Outcome** | `/workspaces/out_{id}/skills/` | Built for specific outcome |
+| **App** | `~/flow/skills/` | Ship with the app (internal dev guides + external-facing skills) |
+| **User** | `~/flow-data/skills/` | Your personal global skill library |
+| **Outcome** | `~/flow-data/workspaces/out_{id}/skills/` | Built for specific outcome |
 
-Global skills are general-purpose (e.g., "web-research", "competitive-analysis").
+App skills include internal development guides (e.g., `cli-patterns.md`, `update-docs.md`) and external-facing skills (e.g., `flow-cli.md` — teaches an external Claude Code instance how to use the Flow CLI).
+User skills are general-purpose (e.g., "market-intelligence", "campaign-planning").
 Outcome skills are built during capability phase for that outcome's specific needs.
 
 ### Repository Sync

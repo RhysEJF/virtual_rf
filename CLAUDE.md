@@ -477,7 +477,8 @@ kill -9 <PID>
 - [x] Claude Code sessions spawned from Telegram using Claude subscription (no API key needed)
 - [x] Dedicated workspace at `~/telegram-workspace/` with CLAUDE.md context
 - [x] `skills/flow-cli.md` teaches the Telegram Claude how to use Flow CLI
-- [x] Rate limit retry handling for concurrent session throttling
+- [x] SDK monkey-patch for `rate_limit_event` handling (claude-agent-sdk v0.1.38 bug)
+- [x] Security hardened: user ID whitelist, macOS sandbox, excluded commands trimmed to git+npm, dev mode closed
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

@@ -26,11 +26,12 @@ The architecture must support all three without rebuilding.
 | API-first architecture | Complete |
 | Always-on deployment (Mac Mini) | Not Started |
 | Cloudflare Tunnel | Not Started |
-| Telegram bot | Not Started |
+| Telegram bot (via claude-code-telegram) | Complete |
+| Telegram → Flow integration | Complete |
 | CLI thin client | Not Started |
 | Push notifications | Not Started |
 
-**Overall:** Local development complete, remote access not yet built
+**Overall:** Telegram chat interface operational. Always-on deployment not yet built.
 
 ---
 
@@ -56,28 +57,35 @@ Why: Polish workflows, debug issues, refine prompts.
 Limitation: Must be at your computer.
 
 
-PHASE 2: ALWAYS-ON + CHAT (Next)
-─────────────────────────────────
+PHASE 2a: TELEGRAM CHAT (Current)
+──────────────────────────────────
 ┌─────────────────┐     ┌─────────────────┐
 │   Your Phone    │     │   Your Laptop   │
 │   Telegram      │     │   Browser       │
 └────────┬────────┘     └────────┬────────┘
          │                       │
-         │    ┌──────────────────┘
-         │    │
-         ▼    ▼
+         ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐
+│ claude-code-    │     │  localhost:3000  │
+│ telegram (bot)  │     │  Flow UI        │
+└────────┬────────┘     └─────────────────┘
+         │
+         ▼
 ┌─────────────────────────────────────────┐
-│   Cloudflare Tunnel                     │
-└───────────────────┬─────────────────────┘
-                    │
-┌───────────────────▼─────────────────────┐
-│   Mac Mini (always-on)                  │
-│   Next.js + SQLite + Claude CLI         │
-│   Running 24/7 at home                  │
+│   Your Laptop                           │
+│   Claude Code CLI (via SDK)             │
+│   ~/telegram-workspace/ (sandboxed)     │
+│   Flow CLI available as a skill         │
 └─────────────────────────────────────────┘
 
-Why: Access from anywhere. Mobile-first interaction.
-Benefit: Walk around, have ideas, spawn work.
+Why: Chat from phone, spawn Flow outcomes remotely.
+Limitation: Laptop must be on with bot running.
+
+
+PHASE 2b: ALWAYS-ON (Next)
+───────────────────────────
+Same as 2a but on a Mac Mini with Cloudflare Tunnel.
+Benefit: Walk around, have ideas, spawn work 24/7.
 
 
 PHASE 3: EXECUTIVE INTERFACE (Future)
@@ -242,7 +250,8 @@ But the **same API** powers it all.
 
 2. **Offline resilience** - What if tunnel goes down? Queue commands?
 
-3. **Security** - How to authenticate Telegram users?
+3. ~~**Security** - How to authenticate Telegram users?~~
+   **Resolved:** Telegram user ID whitelist (server-side enforced, not spoofable). macOS Seatbelt sandbox for bash commands. Sandbox excluded commands trimmed to only `git` and `npm`. Development mode backdoor closed.
 
 4. **Resource limits** - How many concurrent workers on a Mac Mini?
 

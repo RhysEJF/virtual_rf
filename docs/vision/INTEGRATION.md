@@ -6,12 +6,13 @@
 
 ## Purpose
 
-Digital Twin doesn't exist in isolation. It integrates with:
+Flow doesn't exist in isolation. It integrates with:
 
 1. **Claude CLI** - The AI engine that powers all agents
-2. **Git** - Version control for code outputs
-3. **GitHub** - PR workflows and collaboration
-4. **Environment** - API keys and configuration
+2. **Telegram** - Mobile chat interface via `claude-code-telegram`
+3. **Git** - Version control for code outputs
+4. **GitHub** - PR workflows and collaboration
+5. **Environment** - API keys and configuration
 
 ---
 
@@ -21,12 +22,13 @@ Digital Twin doesn't exist in isolation. It integrates with:
 |------------|--------|
 | Claude CLI wrapper | Complete |
 | Claude availability detection | Complete |
+| Telegram → Claude Code → Flow | Complete |
 | Git commit/branch support | Complete |
 | Git worktree support | Complete |
 | GitHub PR creation (via gh) | Complete |
 | API key management | Complete |
 
-**Overall:** Complete and production-ready
+**Overall:** Complete and production-ready. Telegram chat interface operational via `claude-code-telegram`.
 
 ---
 

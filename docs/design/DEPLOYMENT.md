@@ -136,30 +136,44 @@ sudo cloudflared service install
 # Starts automatically on boot
 ```
 
-### Telegram Bot Setup
+### Telegram Bot Setup (Implemented)
 
-**Create Bot:**
-1. Message @BotFather on Telegram
-2. `/newbot` → name it (e.g., "RF Assistant")
-3. Save the bot token
+Uses `claude-code-telegram` — a Python bot that spawns Claude Code sessions from Telegram messages.
 
-**Webhook Configuration:**
+**Repo:** `~/claude-code-telegram/`
+**Workspace:** `~/telegram-workspace/` (sandboxed working directory)
+**Config:** `~/claude-code-telegram/.env` (gitignored)
+
+**Architecture:**
+```
+Telegram message → Bot (Python, polling mode)
+  → Auth middleware (user ID whitelist)
+  → Rate limiter (token bucket)
+  → ClaudeSDKManager (spawns Claude Code via claude-agent-sdk)
+    → Claude reads ~/telegram-workspace/CLAUDE.md
+    → CLAUDE.md points to Flow CLI skill
+    → Claude can run `flow` commands to manage outcomes
+```
+
+**Start the bot:**
 ```bash
-# Set webhook URL (requires HTTPS - tunnel provides this)
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-  -d "url=https://flow.yourdomain.com/api/telegram/webhook"
+cd ~/claude-code-telegram
+CLAUDECODE= nohup poetry run python -m src.main > /tmp/telegram-bot.log 2>&1 &
 ```
 
-**Bot Permissions:**
-- Enable inline mode (optional)
-- Set commands list:
-```
-outcomes - List active outcomes
-status - Current worker status
-switch - Switch outcome context
-pause - Pause active workers
-help - Show available commands
-```
+**Key:** `CLAUDECODE=` unsets the env var so Claude CLI doesn't refuse to spawn inside another session.
+
+**Security layers:**
+- Telegram user ID whitelist (`ALLOWED_USERS` in .env)
+- macOS Seatbelt sandbox for bash commands (confined to `APPROVED_DIRECTORY`)
+- Sandbox excluded commands: only `git` and `npm` (needed for Flow)
+- `DEVELOPMENT_MODE=false` (no open-door fallback)
+- Polling mode (no exposed ports/webhooks)
+- Rate limiting + $50/user daily cost cap
+
+**SDK bug workaround:** The `claude-agent-sdk` v0.1.38 crashes on `rate_limit_event` messages from the CLI. A monkey-patch in `sdk_integration.py` converts unknown message types to `SystemMessage` so iteration continues.
+
+**Flow integration:** The workspace CLAUDE.md instructs Claude about Flow CLI. Claude can start the Flow server (`npm run dev` — unsandboxed via excluded commands) and manage outcomes via `flow` CLI commands.
 
 ---
 

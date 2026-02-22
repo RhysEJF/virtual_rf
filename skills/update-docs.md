@@ -101,6 +101,30 @@ For each affected module, read both its vision doc AND design doc to understand 
 
 Ensure both docs still read coherently after updates.
 
+### Step 6: Sync Doc Site
+
+After updating vision/design docs, sync the documentation site:
+
+```bash
+npm run docs:sync
+```
+
+Then verify the build succeeds:
+
+```bash
+npm run docs:build
+```
+
+Check that:
+- Updated pages render correctly in the sidebar
+- New pages (if any) have entries in the appropriate `meta.json`
+- Links between pages aren't broken
+
+If you added a **new doc file** that isn't in the sync mapping, update `docs-site/scripts/sync-content.ts`:
+1. Add an entry to the `MAPPINGS` array
+2. Add a sidebar entry to the relevant `META_DEFS` section
+3. Re-run `npm run docs:sync` and verify
+
 ## Example Updates
 
 ### Vision Doc - Adding a capability:
@@ -168,3 +192,6 @@ Retry a failed task.
 - [ ] Open Questions are current
 - [ ] Code examples in design docs are accurate
 - [ ] Both docs read coherently
+- [ ] Doc site synced (`npm run docs:sync`)
+- [ ] Doc site builds without errors (`npm run docs:build`)
+- [ ] New pages appear in sidebar with correct ordering

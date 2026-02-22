@@ -1,0 +1,88 @@
+---
+title: System Overview
+description: High-level architecture of Flow's AI workforce management system.
+---
+
+## System Diagram
+
+```
+User Input
+    │
+    ▼
+┌─────────────┐
+│ DISPATCHER  │ ← Classifies requests, routes to handlers
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────┐
+│ ORCHESTRATION   │ ← Manages two-phase execution
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌───────┐ ┌───────┐
+│SKILLS │ │WORKER │ ← Capability phase builds skills
+└───────┘ └───┬───┘   Execution phase runs tasks
+              │
+              ├────────────────────┐
+              ▼                    ▼
+       ┌────────────┐      ┌────────────┐
+       │   HOMR     │ ←──→ │  REVIEW    │
+       └──────┬─────┘      └──────┬─────┘
+              │                   │
+              └─────────┬─────────┘
+                        ▼
+                 ┌────────────┐
+                 │ SUPERVISOR │ ← Monitors for stuck/failed states
+                 └────────────┘
+```
+
+## Supporting Systems
+
+- **Database** — SQLite via better-sqlite3, persists all state
+- **UI** — Next.js 14 App Router with earthy matte theme
+- **Integration** — Claude CLI wrapper, Git operations
+- **Analytics** — Escalation patterns, improvement proposals, cost tracking
+
+## Two-Document System
+
+Flow's documentation follows a dual-document pattern:
+
+| Doc Type | Contains |
+|----------|----------|
+| **Vision** (`docs/vision/`) | WHAT — purpose, behaviors, success criteria, status |
+| **Design** (`docs/design/`) | HOW — implementation, APIs, file paths, code snippets |
+
+Vision docs are stable (they capture intent), design docs evolve (implementation details change).
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript 5.x (strict mode) |
+| Styling | Tailwind CSS |
+| Database | SQLite via better-sqlite3 |
+| AI | Claude Code CLI |
+| Validation | Zod |
+
+## Data Flow
+
+1. **Input** — User submits request via CommandBar, CLI, or Telegram
+2. **Classification** — Dispatcher routes to appropriate handler
+3. **Planning** — Orchestrator creates capability and execution phases
+4. **Building** — Skill/tool builders create capabilities
+5. **Execution** — Ralph Workers claim and complete tasks
+6. **Observation** — HOMR analyzes outputs, injects context
+7. **Review** — Reviewer checks success criteria
+8. **Learning** — Discoveries promoted to cross-outcome memory
+
+## Module Deep Dives
+
+- [Dispatcher](/docs/modules/dispatcher/vision) — request routing
+- [Worker](/docs/modules/worker/vision) — task execution
+- [Orchestration](/docs/modules/orchestration/vision) — phase management
+- [Skills](/docs/modules/skills/vision) — capability system
+- [HOMR](/docs/homr/vision) — intelligent orchestration
+- [Review](/docs/modules/review/vision) — quality assurance
+- [Supervisor](/docs/modules/supervisor/vision) — safety monitoring

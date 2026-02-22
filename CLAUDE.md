@@ -31,6 +31,7 @@ mkdir -p ~/flow-data/{data,workspaces,skills}
 | [docs/IDEAS.md](./docs/IDEAS.md) | Future improvement ideas |
 | [archive/VISION.md](./archive/VISION.md) | Original vision (historical reference) |
 | [archive/DESIGN.md](./archive/DESIGN.md) | Original design spec (historical reference) |
+| **[docs-site/](./docs-site/)** | **Fumadocs documentation site** (run `npm run docs:dev`) |
 
 **When working on a specific module**, read its vision doc first (e.g., `docs/vision/WORKER.md` before changing `lib/ralph/worker.ts`).
 
@@ -83,7 +84,11 @@ mkdir -p ~/flow-data/{data,workspaces,skills}
 │   ├── ralph-wiggum-method/
 │   ├── VISION.md          #   Original vision doc
 │   └── DESIGN.md          #   Original design spec
-├── docs/                  # App documentation
+├── docs/                  # App documentation (source of truth)
+├── docs-site/             # Fumadocs documentation site
+│   ├── app/               #   Next.js 15 app (port 3001)
+│   ├── content/docs/      #   Synced + new MDX content
+│   └── scripts/           #   sync-content.ts
 └── CLAUDE.md
 ```
 
@@ -121,6 +126,11 @@ npm run build        # Production build
 
 # Database
 # DB auto-initializes on first access
+
+# Documentation site
+npm run docs:dev     # Start doc site (localhost:3001)
+npm run docs:sync    # Sync source docs → doc site content
+npm run docs:build   # Build static doc site
 ```
 
 ## Coding Standards
@@ -238,7 +248,7 @@ Users can request changes after completion via the Iterate section:
 ## Database Tables
 
 - `outcomes` - Outcomes with intent, design_doc, git config, save targets
-- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed)
+- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed), with `gates` JSON column for human-in-the-loop checkpoints
 - `workers` - Ralph worker instances with PID tracking
 - `progress_entries` - Episodic memory of worker iterations (full_output capture)
 - `review_cycles` - Review history with issues found and convergence tracking
@@ -479,6 +489,20 @@ kill -9 <PID>
 - [x] `skills/flow-cli.md` teaches the Telegram Claude how to use Flow CLI
 - [x] SDK monkey-patch for `rate_limit_event` handling (claude-agent-sdk v0.1.38 bug)
 - [x] Security hardened: user ID whitelist, macOS sandbox, excluded commands trimmed to git+npm, dev mode closed
+
+### Task Gates — Human-in-the-Loop (Complete)
+- [x] `gates` JSON column on tasks table with migration
+- [x] `TaskGate` types: `document_required`, `human_approval`
+- [x] Gate check in `claimNextTask()` (between dependency and skill checks)
+- [x] Auto-escalation creation for pending gates
+- [x] Gate satisfaction on escalation resolution (`lib/homr/escalator.ts`)
+- [x] Gate escalations blocked from auto-resolve (`lib/homr/auto-resolver.ts`)
+- [x] API endpoints: `/api/tasks/[id]/gates`, `/api/tasks/[id]/gates/[gateId]/satisfy`
+- [x] UI: gated badge, gate section in ExpandableTaskCard, gate-specific EscalationAlert styling
+- [x] CLI: `flow gate list/add/satisfy`, `flow task add --gate`
+- [x] Converse tools: `addGate`, `satisfyGate`, `listGates`
+- [x] Worker diagnostic logging for gated tasks
+- [x] Gate response data injection into worker CLAUDE.md
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

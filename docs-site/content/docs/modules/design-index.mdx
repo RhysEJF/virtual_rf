@@ -1,0 +1,85 @@
+---
+title: "Design Doc Index"
+description: "Implementation details, APIs, and technical specifications for each module."
+---
+
+---
+
+## How to Use These Docs
+
+**Design docs describe HOW** - the implementation, APIs, file structures, and technical details.
+
+**For WHAT and WHY**, see the corresponding [Vision Docs](/docs/modules/readme/vision).
+
+| When you want to... | Read |
+|---------------------|------|
+| Understand what a module does | Vision doc |
+| Find API endpoints and request/response formats | Design doc |
+| Understand the architecture philosophy | Vision doc |
+| Find file paths and implementation details | Design doc |
+| Know the success criteria | Vision doc |
+| See code examples and patterns | Design doc |
+
+---
+
+## Module Index
+
+| Module | Design Doc | Vision Doc | Description |
+|--------|------------|------------|-------------|
+| **API** | [API.md](api) | [Vision](/docs/modules/api/vision) | Conversational API and session management |
+| **CLI** | [CLI.md](cli) | [Vision](/docs/modules/cli/vision) | Terminal interface (`flow` command) |
+| **Deployment** | [DEPLOYMENT.md](deployment) | [Vision](/docs/modules/deployment/vision) | Mac Mini, Cloudflare Tunnel, Telegram |
+| **Dispatcher** | [DISPATCHER.md](dispatcher) | [Vision](/docs/modules/dispatcher/vision) | Request classification and routing implementation |
+| **Orchestration** | [ORCHESTRATION.md](orchestration) | [Vision](/docs/modules/orchestration/vision) | Two-phase execution flow and APIs |
+| **Worker** | [WORKER.md](worker) | [Vision](/docs/modules/worker/vision) | Ralph worker process management |
+| **Skills** | [SKILLS.md](skills) | [Vision](/docs/modules/skills/vision) | Skill loading, parsing, and matching |
+| **Review** | [REVIEW.md](review) | [Vision](/docs/modules/review/vision) | Review cycle implementation |
+| **Supervisor** | [SUPERVISOR.md](supervisor) | [Vision](/docs/modules/supervisor/vision) | Monitoring loop and alert system |
+| **Database** | [DATABASE.md](database) | [Vision](/docs/modules/database/vision) | Schema, queries, and migrations |
+| **UI** | [UI.md](ui) | [Vision](/docs/modules/ui/vision) | Components, styling, and patterns |
+| **Integration** | [INTEGRATION.md](integration) | [Vision](/docs/modules/integration/vision) | Claude CLI, Git, GitHub, Environment |
+| **Analytics** | [ANALYTICS.md](analytics) | [Vision](/docs/modules/analytics/vision) | Logging schemas and tracking |
+
+---
+
+## Design Doc Structure
+
+Each design doc follows this structure:
+
+```markdown
+# Module Name - Design
+
+## Overview
+Brief technical summary
+
+## Architecture
+- File organization
+- Key classes/functions
+- Data flow diagrams
+
+## Implementation
+- Code patterns
+- Configuration
+- Key algorithms
+
+## API Specification
+- Endpoints
+- Request/Response formats
+- Error handling
+
+## Dependencies
+- What this module uses
+- What uses this module
+
+## Configuration
+- Environment variables
+- Thresholds and defaults
+```
+
+---
+
+## Related Documents
+
+- [Vision Docs](/docs/modules/readme/vision) - WHAT each module does
+- [IDEAS.md](/docs/architecture/ideas) - Future improvement ideas
+- [CLAUDE.md](../../CLAUDE.md) - Project coding standards

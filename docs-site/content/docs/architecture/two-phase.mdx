@@ -1,0 +1,51 @@
+---
+title: Two-Phase Orchestration
+description: How Flow separates capability building from task execution.
+---
+
+## Overview
+
+Every outcome in Flow goes through two distinct phases before completion. This separation ensures workers have the right skills and tools before they attempt the actual work.
+
+## Phase 1: Capability
+
+Before any task execution begins, the system analyzes the outcome's approach and determines what **capabilities** are needed:
+
+- **Skills** — markdown instruction files injected into worker context
+- **Tools** — TypeScript CLI tools workers can invoke
+
+The Capability Planner uses six pattern detection strategies to identify required capabilities from the approach text. If a needed capability doesn't exist, a task is created to build it.
+
+### Detection Strategies
+
+1. **Explicit mentions** — "needs a skill for X"
+2. **Domain keywords** — known patterns that imply skills
+3. **Tool requirements** — references to external systems
+4. **Repeated patterns** — work that should be codified
+5. **Complex workflows** — multi-step processes needing standardization
+6. **Quality gates** — verification steps needing automation
+
+## Phase 2: Execution
+
+Once all capabilities are ready (`capability_ready = 2`), the orchestrator transitions to the execution phase. Workers can now claim tasks and use the built skills/tools.
+
+### Dependency Checking
+
+At task claim time, the system checks:
+1. Are all `required_capabilities` built and ready?
+2. Are all `depends_on` tasks completed?
+3. Is the task still `pending`?
+
+If any capability is missing, a dynamic capability task is created and the execution task is deferred.
+
+## Phase Transition
+
+The transition from capability to execution is automatic:
+1. Orchestrator monitors capability task completion
+2. When all capability tasks are done, `capability_ready` is set to `2`
+3. Execution tasks become claimable
+4. Workers pick up execution tasks in priority order
+
+## Deduplication
+
+The system prevents duplicate capability tasks through title and type matching. If a capability task already exists (even if failed), a new one won't be created.

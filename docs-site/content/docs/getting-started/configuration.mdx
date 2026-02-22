@@ -1,0 +1,67 @@
+---
+title: Configuration
+description: System settings, isolation modes, and customization options.
+---
+
+## Directory Layout
+
+Flow separates the **app** from **user data**:
+
+| Directory | Purpose |
+|-----------|---------|
+| `~/flow/` | App code (git repo, shareable) |
+| `~/flow-data/` | User data (database, workspaces, skills) |
+
+Path resolution is centralized in `lib/config/paths.ts`. If `~/flow-data/` doesn't exist, the app falls back to storing data inside the repo directory.
+
+## Isolation Modes
+
+Workers can operate in two isolation modes:
+
+### Workspace Mode (Default)
+Workers are restricted to their task workspace directory. They cannot access the main codebase. Best for:
+- Building standalone tools or scripts
+- Research tasks
+- Content generation
+
+### Codebase Mode
+Workers can access the full Flow codebase. Use for:
+- Feature development on Flow itself
+- Bug fixes
+- Refactoring
+
+Configure the default:
+
+```bash
+# CLI
+flow config isolation-mode workspace  # or 'codebase'
+```
+
+Or set per-outcome in the UI via the Isolation Mode section on the outcome detail page.
+
+## System Settings
+
+System-wide settings are stored in the `system_config` table and accessible via the `/api/config` endpoint or the Settings page.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `default_isolation_mode` | `workspace` | Default worker isolation |
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | 3000 | Server port |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
+
+## Auto-Resolve Settings
+
+HOMR escalation auto-resolution has three modes:
+
+| Mode | Behavior |
+|------|----------|
+| **Manual** | All escalations require human input |
+| **Semi-Auto** | Auto-resolve high-confidence escalations |
+| **Full-Auto** | Auto-resolve all escalations, auto-spawn workers |
+
+Configure per-outcome on the HOMR dashboard panel.

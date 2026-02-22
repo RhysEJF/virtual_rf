@@ -1,0 +1,70 @@
+---
+title: Data Model
+description: Database schema and key tables in Flow's SQLite database.
+---
+
+## Overview
+
+Flow uses SQLite via better-sqlite3 with auto-initialization on first access. The database lives at `~/flow-data/data/twin.db`.
+
+## Core Tables
+
+### outcomes
+The primary work unit. Contains intent (what), design_doc (how), git config, and save targets.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | TEXT | Primary key |
+| `title` | TEXT | Short description |
+| `intent` | TEXT | Structured PRD |
+| `design_doc` | TEXT | Approach document |
+| `status` | TEXT | pending/active/completed/archived |
+| `capability_ready` | INTEGER | 0=needed, 1=building, 2=ready |
+| `isolation_mode` | TEXT | workspace/codebase |
+
+### tasks
+Individual work items belonging to outcomes.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | TEXT | Primary key |
+| `outcome_id` | TEXT | FK to outcomes |
+| `title` | TEXT | Task description |
+| `status` | TEXT | pending/claimed/running/completed/failed |
+| `depends_on` | TEXT | JSON array of task IDs |
+| `required_capabilities` | TEXT | JSON array of capability names |
+
+### workers
+Ralph worker instances with process tracking.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | TEXT | Primary key |
+| `outcome_id` | TEXT | FK to outcomes |
+| `pid` | INTEGER | OS process ID for stop/pause |
+| `status` | TEXT | running/paused/stopped/completed |
+
+### progress_entries
+Episodic memory of each worker iteration with full output capture.
+
+## HOMR Tables
+
+| Table | Purpose |
+|-------|---------|
+| `homr_context` | Cross-task memory and learnings |
+| `homr_observations` | AI analysis of task outputs |
+| `homr_escalations` | Ambiguity detection results |
+| `homr_activity` | Activity log for monitoring |
+
+## Supporting Tables
+
+| Table | Purpose |
+|-------|---------|
+| `skills` | Registered global skills |
+| `interventions` | Human instructions to workers |
+| `supervisor_alerts` | Stuck/failed worker alerts |
+| `repositories` | External git repos for syncing |
+| `outcome_items` | Tracked files with sync status |
+| `guard_blocks` | Blocked dangerous commands |
+| `system_config` | Global key-value settings |
+| `review_cycles` | Review history with convergence tracking |

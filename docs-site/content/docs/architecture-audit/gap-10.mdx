@@ -1,0 +1,127 @@
+---
+title: "Gap 10: Cost Tracking Fragility"
+description: "**Verdict: CONFIRMED GAP**"
+---
+
+> **Severity: LOW**
+> **Fix complexity: LOW (use --output-format json flag)**
+
+---
+
+## Claimed Gap
+
+Cost tracking relies on parsing Claude CLI text output to extract cost information. If the output format changes, cost tracking silently breaks. The system should use structured output (`--output-format json`) for reliable cost extraction.
+
+## Audit Findings
+
+### `extractCostFromOutput()` parses JSON from output
+
+**File:** `lib/ralph/worker.ts:1533-1558`
+
+```typescript
+function extractCostFromOutput(output: string): \{ inputTokens: number; outputTokens: number; totalCost: number \} | null \{
+  // Attempts to parse JSON cost data from Claude CLI output
+  const jsonMatch = output.match(/\\{[^\}]*"input_tokens"[^\}]*\\}/);
+  if (jsonMatch) \{
+    const parsed = JSON.parse(jsonMatch[0]);
+    return \{
+      inputTokens: parsed.input_tokens || 0,
+      outputTokens: parsed.output_tokens || 0,
+      totalCost: parsed.total_cost || 0,
+    \};
+  \}
+  return null;
+\}
+```
+
+This function regex-matches for a JSON-like object containing `"input_tokens"` in the full text output of the Claude CLI process. If the JSON format changes, the key names change, or the output structure changes, extraction silently fails (returns `null`).
+
+### Claude CLI wrapper DOES use `--output-format json`
+
+**File:** `lib/claude/client.ts:71`
+
+```typescript
+args.push('--output-format', 'json');
+// This ensures structured output for the client wrapper
+```
+
+The Claude CLI client wrapper used for non-worker operations (dispatcher, briefer, etc.) correctly requests JSON output. This demonstrates that structured output is a known capability.
+
+### Worker spawning does NOT use `--output-format json`
+
+**File:** `lib/ralph/worker.ts:1189-1193` and `lib/ralph/worker.ts:2055-2059`
+
+The worker spawns the Claude CLI process with arguments that do NOT include `--output-format json`:
+
+```typescript
+const args = [
+  '--dangerously-skip-permissions',
+  '--print',
+  // No --output-format json flag
+];
+```
+
+This means the worker's Claude process outputs human-readable text, and the cost extractor must parse this unstructured text to find cost information.
+
+### The inconsistency is between worker and client paths
+
+| Code Path | Uses `--output-format json`? | Cost extraction method |
+|-----------|----------------------------|----------------------|
+| `lib/claude/client.ts` | Yes ✅ | Parses structured JSON directly |
+| `lib/ralph/worker.ts` (worker spawn) | No ❌ | Regex matches JSON fragment from text output |
+
+### Silent failure mode
+
+When `extractCostFromOutput()` fails to find the expected JSON pattern, it returns `null`. The caller handles this by setting cost to 0:
+
+- No error is logged
+- No warning is raised
+- The progress entry is recorded with `cost: 0`
+- The dashboard shows $0.00 cost for that iteration
+
+This means cost tracking can silently break without any visible indication. The system continues to function, but all cost data becomes zeros.
+
+### Current reliability
+
+The regex pattern works with current Claude CLI output format. The fragility is about future-proofing — if Anthropic changes the CLI output format (which they've done before), cost tracking breaks silently.
+
+## Impact Assessment
+
+**LOW impact:**
+
+1. **Works today** — The current implementation successfully extracts costs from Claude CLI output most of the time. This is a fragility concern, not a current failure.
+
+2. **Silent failure is concerning** — When cost extraction does fail, there's no indication. Users could see $0.00 costs and not realize the tracking is broken.
+
+3. **Known fix is trivial** — Adding `--output-format json` to worker spawning would give structured output, eliminating the regex fragility entirely. The client wrapper already demonstrates this approach.
+
+4. **Cost data is informational** — Cost tracking is used for dashboard display and budgeting awareness. It doesn't affect worker behavior or task routing. Inaccurate cost data is inconvenient but not dangerous.
+
+## Recommendation
+
+Add `--output-format json` to worker CLI spawning, matching what `lib/claude/client.ts` already does:
+
+```typescript
+const args = [
+  '--dangerously-skip-permissions',
+  '--print',
+  '--output-format', 'json',  // Add this
+];
+```
+
+Then update `extractCostFromOutput()` to parse structured JSON directly instead of regex-matching fragments from text output.
+
+Also add a warning log when cost extraction returns null, so silent failures become visible:
+
+```typescript
+if (!costData) \{
+  console.warn(`[worker] Failed to extract cost data for task $\{task.id\}`);
+\}
+```
+
+## If Left Unfixed
+
+- Cost tracking continues to work with current CLI output format
+- Risk of silent breakage if Anthropic changes CLI output format
+- No immediate operational impact — this is a maintenance/resilience concern
+- Failed cost extractions produce $0.00 entries with no warning

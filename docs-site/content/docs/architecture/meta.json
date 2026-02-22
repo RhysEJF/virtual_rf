@@ -1,0 +1,12 @@
+{
+  "title": "Architecture",
+  "pages": [
+    "index",
+    "two-phase",
+    "data-model",
+    "hierarchical-outcomes",
+    "enriched-tasks",
+    "ideas",
+    "roadmap"
+  ]
+}

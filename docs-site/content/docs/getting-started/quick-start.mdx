@@ -1,0 +1,96 @@
+---
+title: Quick Start
+description: Create your first outcome and start an AI worker in 5 minutes.
+---
+
+## Prerequisites
+
+Make sure you've completed the [Installation](/docs/getting-started/installation) steps first.
+
+## 1. Start the Dev Server
+
+```bash
+cd ~/flow
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## 2. Create an Outcome
+
+Use the command bar at the top of the dashboard. Type a natural-language description of what you want:
+
+> "Build a CLI tool that converts CSV files to JSON"
+
+Flow's **Dispatcher** classifies your request and creates an **Outcome** with a structured intent.
+
+## 3. Optimize the Intent
+
+On the outcome detail page, click **Optimize Intent**. Flow uses Claude to transform your description into a structured PRD with specific items and success criteria.
+
+## 4. Generate an Approach
+
+Click **Optimize Approach** to generate a design document describing how the work should be implemented.
+
+## 5. Generate Tasks
+
+Click **Generate Tasks**. Flow breaks the approach into individual tasks that workers can execute.
+
+## 6. Start a Worker
+
+Click **Start Worker** or use the CLI:
+
+```bash
+flow start <outcome-id>
+```
+
+The Ralph Worker will:
+1. Claim a pending task
+2. Create a workspace
+3. Spawn a Claude CLI process
+4. Execute the task autonomously
+5. Move on to the next task
+
+## 7. Monitor Progress
+
+Watch the worker's progress on the outcome page. The **HOMR** panel shows observations and any escalations that need your input.
+
+You can also monitor from the CLI:
+
+```bash
+flow homr <outcome-id> --supervise
+```
+
+Or go fully hands-off:
+
+```bash
+flow homr <outcome-id> --yolo
+```
+
+## Using the CLI
+
+For a terminal-first workflow:
+
+```bash
+# List all outcomes
+flow list
+
+# Show outcome details
+flow show <id>
+
+# Start a worker
+flow start <id>
+
+# Chat with Flow
+flow converse
+```
+
+## Using Conversational Mode
+
+For a more natural interaction:
+
+```bash
+flow converse
+```
+
+This opens a REPL where you can talk to Flow in plain English. It has 30+ tools for interacting with the full system.

@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "docs:sync": "cd docs-site && npx tsx scripts/sync-content.ts",
+    "docs:dev": "cd docs-site && npm run dev",
+    "docs:build": "cd docs-site && npm run sync && npx next build"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",

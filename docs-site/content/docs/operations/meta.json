@@ -1,0 +1,11 @@
+{
+  "title": "Operations",
+  "pages": [
+    "deployment",
+    "integration",
+    "memory",
+    "analytics",
+    "repo-config-design",
+    "repo-inheritance-design"
+  ]
+}

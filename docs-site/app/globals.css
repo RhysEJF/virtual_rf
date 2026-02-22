@@ -1,0 +1,51 @@
+/* Flow's earthy light theme - overrides fumadocs defaults */
+:root {
+  --color-fd-background: #f4efe6;
+  --color-fd-foreground: #1f1a17;
+  --color-fd-muted: #efe6d8;
+  --color-fd-muted-foreground: #5c5349;
+  --color-fd-popover: #f4efe6;
+  --color-fd-popover-foreground: #1f1a17;
+  --color-fd-card: #efe6d8;
+  --color-fd-card-foreground: #1f1a17;
+  --color-fd-border: rgba(203, 187, 167, 0.6);
+  --color-fd-primary: #7c9a6c;
+  --color-fd-primary-foreground: #fff;
+  --color-fd-secondary: #e7dbc8;
+  --color-fd-secondary-foreground: #1f1a17;
+  --color-fd-accent: rgba(124, 154, 108, 0.15);
+  --color-fd-accent-foreground: #1f1a17;
+  --color-fd-ring: #7c9a6c;
+}
+
+/* Flow's earthy dark theme */
+.dark,
+[data-theme="dark"] {
+  --color-fd-background: #1c1916;
+  --color-fd-foreground: #f1e8dc;
+  --color-fd-muted: #24201c;
+  --color-fd-muted-foreground: #c6bbad;
+  --color-fd-popover: #24201c;
+  --color-fd-popover-foreground: #f1e8dc;
+  --color-fd-card: #24201c;
+  --color-fd-card-foreground: #f1e8dc;
+  --color-fd-border: rgba(58, 51, 43, 0.8);
+  --color-fd-primary: #93a883;
+  --color-fd-primary-foreground: #1c1916;
+  --color-fd-secondary: #2d2722;
+  --color-fd-secondary-foreground: #f1e8dc;
+  --color-fd-accent: rgba(147, 168, 131, 0.15);
+  --color-fd-accent-foreground: #f1e8dc;
+  --color-fd-ring: #93a883;
+}
+
+body {
+  font-feature-settings: 'rlig' 1, 'calt' 1;
+  text-rendering: optimizeLegibility;
+}
+
+/* Serif headings for editorial hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.01em;
+}

@@ -1,0 +1,14 @@
+{
+  "title": "Core Modules",
+  "pages": [
+    "index",
+    "design-index",
+    "dispatcher",
+    "worker",
+    "orchestration",
+    "skills",
+    "review",
+    "supervisor",
+    "database"
+  ]
+}

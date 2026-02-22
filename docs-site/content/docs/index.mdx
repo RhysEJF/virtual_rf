@@ -1,0 +1,52 @@
+---
+title: Introduction
+description: Flow is an AI workforce management system that routes requests, spawns autonomous workers, and self-improves over time.
+---
+
+## What is Flow?
+
+Flow is a personal AI workforce management system. You describe what you want to achieve — an **outcome** — and Flow handles the rest: planning the work, building any skills or tools needed, spawning autonomous AI workers to execute tasks, reviewing the results, and learning from each cycle.
+
+Think of it as a team of AI agents managed by a single interface. You set the goal, they figure out the how.
+
+## Core Loop
+
+```
+You describe an outcome
+    → Dispatcher classifies and routes it
+    → Orchestrator plans two phases:
+        1. Capability Phase — build skills & tools
+        2. Execution Phase — workers complete tasks
+    → HOMR observes, steers, and escalates
+    → Reviewer checks quality
+    → System learns for next time
+```
+
+## Key Concepts
+
+### Outcomes
+The unit of work. An outcome has an **intent** (what you want), an **approach** (how to do it), and **tasks** generated from the intent. Workers execute the tasks.
+
+### Two-Phase Orchestration
+Every outcome goes through two phases. First, the **Capability Phase** builds any skills or tools the workers will need. Then the **Execution Phase** uses those capabilities to complete the actual work.
+
+### Ralph Worker
+The autonomous execution engine. Ralph claims a task, creates a workspace, spawns a Claude CLI process, monitors progress, records output, and moves on to the next task. Named after Ralph Wiggum — simple on the surface, surprisingly effective.
+
+### HOMR Protocol
+The intelligent orchestration layer above the workers. HOMR **observes** task outputs, **steers** future work with context injection, **escalates** ambiguities to you, and **auto-resolves** when confident enough. It's the system's self-awareness.
+
+### Skills
+Reusable markdown instruction files that get injected into worker context. Three levels: app skills (ship with Flow), user skills (your personal library), and outcome skills (built during capability phase).
+
+## Architecture
+
+Flow is built with Next.js 14, TypeScript, SQLite, and the Claude Code CLI. It separates the **app** (this repo) from **user data** (`~/flow-data/`), so the codebase stays clean and shareable.
+
+See the [Architecture Overview](/docs/architecture) for the full system diagram and data model.
+
+## Next Steps
+
+- [Installation](/docs/getting-started/installation) — set up Flow on your machine
+- [Quick Start](/docs/getting-started/quick-start) — create your first outcome in 5 minutes
+- [Core Modules](/docs/modules) — deep dive into each subsystem

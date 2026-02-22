@@ -1,0 +1,24 @@
+{
+  "root": true,
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "getting-started",
+    "---Architecture---",
+    "architecture",
+    "---Core Modules---",
+    "modules",
+    "---HOMR Protocol---",
+    "homr",
+    "---Interfaces---",
+    "interfaces",
+    "---Operations---",
+    "operations",
+    "---Research---",
+    "research",
+    "---Architecture Audit---",
+    "architecture-audit",
+    "---Archive---",
+    "archive"
+  ]
+}

@@ -1,0 +1,157 @@
+---
+title: "Database"
+description: "SQLite-based persistence layer for all system state."
+---
+
+---
+
+## Purpose
+
+All state in Digital Twin is persisted to SQLite. The database:
+
+1. Stores outcomes, tasks, workers, and their relationships
+2. Provides atomic operations for safe multi-worker access
+3. Tracks history (progress, reviews, activity)
+4. Enables queries for UI and analytics
+
+---
+
+## Status
+
+| Capability | Status |
+|------------|--------|
+| Core tables (outcomes, tasks, workers) | Complete |
+| Support tables (progress, reviews, skills) | Complete |
+| Analytics tables (activity, costs, bottlenecks) | Complete |
+| Atomic task claiming | Complete |
+| WAL mode for concurrency | Complete |
+| Auto-migrations | Complete |
+| Orphan cleanup | Complete |
+| Task dependencies (depends_on) | Complete |
+| Dependency validation and cycle detection | Complete |
+| Workspace isolation mode (isolation_mode) | Complete |
+| System configuration (system_config) | Complete |
+| Task gates (human-in-the-loop) | Complete |
+
+**Overall:** Complete and production-ready (20+ tables)
+
+---
+
+## Key Concepts
+
+### Core Entities
+
+| Entity | Purpose | Key Relationships |
+|--------|---------|-------------------|
+| **Outcomes** | Goals/projects | Parent of tasks, workers |
+| **Tasks** | Executable work | Belongs to outcome, claimed by worker |
+| **Workers** | Execution instances | Belongs to outcome, has current task |
+| **Design Docs** | Approach documents | Belongs to outcome, versioned |
+
+### Support Entities
+
+| Entity | Purpose |
+|--------|---------|
+| **Progress Entries** | Worker episodic memory (full output capture) |
+| **Review Cycles** | Review history with convergence tracking |
+| **Skills** | Registered global skills |
+| **Interventions** | Human instructions to workers |
+| **Supervisor Alerts** | Safety alerts from monitoring |
+| **Repositories** | External git repos for syncing skills/tools (per-outcome) |
+| **Outcome Items** | Tracked files (skills, tools, outputs) with sync status |
+
+### Repository Inheritance
+
+Repositories can be configured per-outcome with inheritance through the outcome hierarchy:
+
+- Each outcome can specify its own repository OR inherit from parent
+- Save targets (`output_target`, `skill_target`, etc.) can be `local`, `repo`, or `inherit`
+- The `getEffectiveRepository()` function walks up the hierarchy to find the applicable repo
+- This enables different repositories for different clients/teams while supporting nested outcomes
+
+### Analytics Entities
+
+| Entity | Purpose |
+|--------|---------|
+| **Activity Log** | Event feed for dashboard |
+| **Cost Log** | API cost tracking |
+| **Bottleneck Log** | Failure analysis for improvements |
+| **Improvement Suggestions** | Auto-generated ideas |
+| **Analysis Jobs** | Background analysis job tracking |
+
+### Atomic Task Claiming
+
+Multiple workers can safely race to claim tasks. Uses SQLite's IMMEDIATE transactions to ensure only one worker wins each task. Losers retry for the next one.
+
+### Heartbeat Mechanism
+
+Workers send heartbeats every 30 seconds. Stale workers (no heartbeat > 5 min) are detected and their tasks released.
+
+### Task Dependencies
+
+Tasks can depend on other tasks via the `depends_on` column (JSON array of task IDs):
+
+| Concept | Description |
+|---------|-------------|
+| **depends_on** | Array of task IDs that must complete before this task can be claimed |
+| **blocked_by** | Computed at runtime - incomplete tasks from depends_on list |
+| **is_blocked** | Boolean - true if any blocking tasks exist |
+
+The system prevents:
+- Circular dependencies (A→B→A)
+- Cross-outcome dependencies (tasks must be in same outcome)
+- Invalid task references
+
+Workers automatically skip blocked tasks when claiming work.
+
+### Task Gates (Human-in-the-Loop)
+
+Tasks can have gates — declarative checkpoints that block claiming until a human satisfies them:
+
+| Concept | Description |
+|---------|-------------|
+| **gates** | JSON array of `TaskGate` objects stored on the task |
+| **gate types** | `document_required` (needs human input) or `human_approval` (needs explicit approval) |
+| **gate status** | `pending` or `satisfied` |
+| **auto-escalation** | Each pending gate auto-creates a HOMЯ escalation for visibility |
+| **response_data** | Human's answer/content, injected into worker CLAUDE.md |
+
+Gates are checked in `claimNextTask()` after dependency checks and before skill checks. Both dependencies AND gates must be satisfied before a task can be claimed.
+
+---
+
+## Behaviors
+
+1. **Single source of truth** - All state lives in the database
+2. **Concurrent-safe** - WAL mode and atomic transactions prevent conflicts
+3. **Self-healing** - Orphan cleanup handles crashed processes
+4. **Additive migrations** - Schema changes never drop data
+
+---
+
+## Success Criteria
+
+- Multiple workers can run without data conflicts
+- No data loss from crashes or restarts
+- Queries are fast enough for UI responsiveness
+- History is preserved for auditing and debugging
+
+---
+
+## Open Questions
+
+1. **Database size** - `full_output` in progress_entries can grow large. Need archival strategy?
+
+2. **Query performance** - No indexes defined explicitly. May need as data grows.
+
+3. **Backup strategy** - SQLite is a single file. Easy to backup but no automated process.
+
+4. **Multi-instance** - What if we run multiple Digital Twin instances? Currently assumes single instance.
+
+---
+
+## Related
+
+- **Design:** [DATABASE.md](/docs/modules/database/design) - Full schema definitions, SQL, and CRUD operations
+- **Vision:** [WORKER.md](worker) - How workers use atomic claiming
+- **Vision:** [ANALYTICS.md](analytics) - How analytics tables are used

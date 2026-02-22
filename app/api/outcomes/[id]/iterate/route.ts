@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById, updateOutcome } from '@/lib/db/outcomes';
-import { createTask } from '@/lib/db/tasks';
+import { createTask, createEscalationsForPendingGates } from '@/lib/db/tasks';
 import { claudeComplete } from '@/lib/claude/client';
 import { startRalphWorker } from '@/lib/ralph/worker';
 
@@ -20,6 +20,7 @@ interface ParsedTask {
   description: string;
   priority: number;
   depends_on?: string[];
+  gates?: Array<{ type: 'document_required' | 'human_approval'; label: string; description?: string }>;
 }
 
 export async function POST(
@@ -79,12 +80,19 @@ Respond with ONLY a JSON array of tasks, no other text:
     "title": "Short task title",
     "description": "Detailed description of what needs to change and how",
     "priority": 1,
-    "depends_on": []
+    "depends_on": [],
+    "gates": []
   }
 ]
 
 Priority: 1 = critical/blocking, 2 = important, 3 = nice to have
 depends_on: Array of task references (e.g., ["task_0", "task_1"]) for tasks that must complete first. Use empty array for independent tasks.
+gates: Optional array of human-in-the-loop checkpoints. Gate types:
+- "document_required": User must provide information/content before the task can run
+- "human_approval": User must explicitly approve before the task can run
+Only add gates when feedback clearly implies human input/approval is needed. Most tasks should NOT have gates.
+Examples: "I need to review the design before coding" → human_approval gate on coding task.
+"They'll need my brand guidelines" → document_required gate on the design task.
 
 If the feedback is unclear or too vague, create a single task to investigate and clarify.`;
 
@@ -134,10 +142,16 @@ If the feedback is unclear or too vague, create a single task to investigate and
         priority: task.priority || 2,
         from_review: true, // Mark as coming from user feedback
         depends_on: resolvedDeps.length > 0 ? resolvedDeps : undefined,
+        gates: task.gates,
       });
       if (newTask) {
         createdTasks.push(newTask.id);
         taskIdMap[`task_${i}`] = newTask.id;
+
+        // Auto-create escalations for any gates
+        if (task.gates && task.gates.length > 0) {
+          createEscalationsForPendingGates(newTask.id, outcomeId);
+        }
       }
     }
 

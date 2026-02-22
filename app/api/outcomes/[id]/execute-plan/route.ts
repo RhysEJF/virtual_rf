@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById, updateOutcome, getDesignDoc, upsertDesignDoc, hasChildren } from '@/lib/db/outcomes';
-import { createTask } from '@/lib/db/tasks';
+import { createTask, createEscalationsForPendingGates } from '@/lib/db/tasks';
 import { getWorkersByOutcome } from '@/lib/db/workers';
 import { startRalphWorker, stopAllWorkersForOutcome } from '@/lib/ralph/worker';
 import type { Worker } from '@/lib/db/schema';
@@ -152,7 +152,11 @@ export async function POST(
 
           case 'create_tasks': {
             const data = action.data || {};
-            const tasksToCreate = (data.tasks || []) as { title: string; description?: string; priority?: number; depends_on?: string[] }[];
+            const tasksToCreate = (data.tasks || []) as {
+              title: string; description?: string; priority?: number;
+              depends_on?: string[];
+              gates?: Array<{ type: 'document_required' | 'human_approval'; label: string; description?: string }>;
+            }[];
 
             let created = 0;
             for (const taskData of tasksToCreate) {
@@ -163,8 +167,15 @@ export async function POST(
                 priority: taskData.priority || 2,
                 from_review: false,
                 depends_on: taskData.depends_on,
+                gates: taskData.gates,
               });
-              if (newTask) created++;
+              if (newTask) {
+                created++;
+                // Auto-create escalations for any gates
+                if (taskData.gates && taskData.gates.length > 0) {
+                  createEscalationsForPendingGates(newTask.id, outcomeId);
+                }
+              }
             }
 
             results.push({

@@ -96,7 +96,8 @@ export type SteeringActionType =
   | 'update_task'
   | 'create_task'
   | 'update_priority'
-  | 'mark_obsolete';
+  | 'mark_obsolete'
+  | 'add_gate';
 
 /**
  * A steering action to be executed
@@ -140,12 +141,19 @@ export interface MarkObsoleteAction extends SteeringAction {
   taskId: string;
 }
 
+export interface AddGateAction extends SteeringAction {
+  type: 'add_gate';
+  taskId: string;
+  gate: { type: 'document_required' | 'human_approval'; label: string; description?: string };
+}
+
 export type AnySteeringAction =
   | InjectContextAction
   | UpdateTaskAction
   | CreateTaskAction
   | UpdatePriorityAction
-  | MarkObsoleteAction;
+  | MarkObsoleteAction
+  | AddGateAction;
 
 /**
  * Result of steering after observation

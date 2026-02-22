@@ -21,7 +21,7 @@ import {
   incrementHomrContextStat,
   logHomrActivity,
 } from '../db/homr';
-import { getPendingTasks, createTask, getTaskById, updateTask } from '../db/tasks';
+import { getPendingTasks, createTask, getTaskById, updateTask, addGateToTask, createEscalationsForPendingGates } from '../db/tasks';
 import type {
   Task,
   HomrDiscovery,
@@ -559,6 +559,20 @@ async function executeSteeringAction(action: AnySteeringAction, outcomeId: strin
           description: `**MARKED OBSOLETE BY HOMЯ:**\n${action.reason}\n\n---\n\n${task.description || ''}`,
         });
         console.log(`[HOMЯ Steerer] Marked task ${action.taskId} as obsolete`);
+      }
+      break;
+    }
+
+    case 'add_gate': {
+      const gate = addGateToTask(action.taskId, action.gate);
+      if (gate) {
+        const task = getTaskById(action.taskId);
+        if (task) {
+          createEscalationsForPendingGates(action.taskId, task.outcome_id);
+        }
+        console.log(`[HOMЯ Steerer] Added ${action.gate.type} gate to task ${action.taskId}: ${action.gate.label}`);
+      } else {
+        console.log(`[HOMЯ Steerer] Failed to add gate to task ${action.taskId}`);
       }
       break;
     }
@@ -1137,7 +1151,8 @@ export type EscalationDecisionAction =
   | 'update_priority'     // Change task priority
   | 'add_dependency'      // Add a dependency between tasks
   | 'update_description'  // Append to task description
-  | 'record_decision';    // Record the decision in context store
+  | 'record_decision'     // Record the decision in context store
+  | 'add_gate';           // Add a human-in-the-loop gate to a task
 
 /**
  * Result of applying an escalation decision

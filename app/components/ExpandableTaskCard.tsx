@@ -89,6 +89,12 @@ export function ExpandableTaskCard({
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Gate creation state
+  const [showAddGate, setShowAddGate] = useState(false);
+  const [newGateType, setNewGateType] = useState<'document_required' | 'human_approval'>('document_required');
+  const [newGateLabel, setNewGateLabel] = useState('');
+  const [addingGate, setAddingGate] = useState(false);
+
   // Skills state
   const [skills, setSkills] = useState<TaskSkillStatus[]>([]);
   const [availableSkills, setAvailableSkills] = useState<AvailableSkill[]>([]);
@@ -371,6 +377,29 @@ export function ExpandableTaskCard({
       console.error('Failed to optimize:', err);
     } finally {
       setOptimizing(false);
+    }
+  };
+
+  // Add gate to task
+  const handleAddGate = async () => {
+    if (!newGateLabel.trim()) return;
+    setAddingGate(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/gates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: newGateType, label: newGateLabel.trim() }),
+      });
+      if (response.ok) {
+        setShowAddGate(false);
+        setNewGateLabel('');
+        setNewGateType('document_required');
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to add gate:', err);
+    } finally {
+      setAddingGate(false);
     }
   };
 
@@ -805,15 +834,73 @@ export function ExpandableTaskCard({
           )}
 
           {/* Gates Section (Human-in-the-Loop) */}
-          {task.parsed_gates && task.parsed_gates.length > 0 && (
+          {(task.status === 'pending' || (task.parsed_gates && task.parsed_gates.length > 0)) && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs text-text-tertiary uppercase tracking-wide">
-                  Gates ({task.parsed_gates.filter(g => g.status === 'pending').length} pending)
+                  Gates {task.parsed_gates && task.parsed_gates.length > 0
+                    ? `(${task.parsed_gates.filter(g => g.status === 'pending').length} pending)`
+                    : ''}
                 </label>
+                {task.status === 'pending' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAddGate(!showAddGate)}
+                    className="text-xs h-6 px-2"
+                  >
+                    + Add Gate
+                  </Button>
+                )}
               </div>
+
+              {/* Add Gate Form */}
+              {showAddGate && (
+                <div className="mb-2 p-3 bg-bg-tertiary border border-border rounded-lg space-y-2">
+                  <select
+                    value={newGateType}
+                    onChange={(e) => setNewGateType(e.target.value as 'document_required' | 'human_approval')}
+                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                  >
+                    <option value="document_required">Document Required</option>
+                    <option value="human_approval">Human Approval</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={newGateLabel}
+                    onChange={(e) => setNewGateLabel(e.target.value)}
+                    placeholder="e.g., User interview responses"
+                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleAddGate}
+                      disabled={addingGate || !newGateLabel.trim()}
+                      className="text-xs"
+                    >
+                      {addingGate ? 'Adding...' : 'Add'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setShowAddGate(false); setNewGateLabel(''); }}
+                      className="text-xs"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {(!task.parsed_gates || task.parsed_gates.length === 0) && !showAddGate && (
+                <p className="text-text-tertiary text-sm">
+                  No gates — add a gate to require human input before this task can be claimed by a worker.
+                </p>
+              )}
+
               <div className="space-y-2">
-                {task.parsed_gates.map((gate) => (
+                {(task.parsed_gates || []).map((gate) => (
                   <div
                     key={gate.id}
                     className={`flex items-center justify-between px-3 py-2 rounded text-xs border ${

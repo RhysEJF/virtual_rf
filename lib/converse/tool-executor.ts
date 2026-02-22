@@ -13,6 +13,7 @@ import * as taskTools from './tools/tasks';
 import * as homrTools from './tools/homr';
 import * as capabilityTools from './tools/capabilities';
 import * as retroTools from './tools/retro';
+import * as gateTools from './tools/gates';
 import type { OutcomeStatus, IsolationMode } from '../db/schema';
 
 export interface ToolCall {
@@ -236,6 +237,38 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
       }
 
       // =====================================================================
+      // Gate Tools (Human-in-the-Loop)
+      // =====================================================================
+      case 'addGate': {
+        const taskId = args.task_id as string;
+        const type = args.type as string;
+        const label = args.label as string;
+        const description = args.description as string | undefined;
+        if (!taskId) return { success: false, error: 'task_id is required' };
+        if (!type) return { success: false, error: 'type is required' };
+        if (!label) return { success: false, error: 'label is required' };
+        const result = gateTools.addGate(taskId, type as 'document_required' | 'human_approval', label, description);
+        return { success: result.success, data: result.gate, error: result.error };
+      }
+
+      case 'satisfyGate': {
+        const taskId = args.task_id as string;
+        const gateId = args.gate_id as string;
+        const responseData = args.response_data as string | undefined;
+        if (!taskId) return { success: false, error: 'task_id is required' };
+        if (!gateId) return { success: false, error: 'gate_id is required' };
+        const result = gateTools.satisfyGateAction(taskId, gateId, responseData);
+        return { success: result.success, data: result.gate, error: result.error };
+      }
+
+      case 'listGates': {
+        const taskId = args.task_id as string | undefined;
+        const outcomeId = args.outcome_id as string | undefined;
+        const result = gateTools.listGates(taskId, outcomeId);
+        return { success: true, data: result };
+      }
+
+      // =====================================================================
       // Task Tools
       // =====================================================================
       case 'getTask': {
@@ -256,13 +289,14 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const title = args.title as string;
         const description = args.description as string | undefined;
         const priority = args.priority as number | undefined;
+        const gates = args.gates as Array<{ type: string; label: string; description?: string }> | undefined;
         if (!outcomeId) {
           return { success: false, error: 'outcome_id is required' };
         }
         if (!title) {
           return { success: false, error: 'title is required' };
         }
-        const result = taskTools.addTask(outcomeId, title, description, priority);
+        const result = taskTools.addTask(outcomeId, title, description, priority, gates as any);
         return {
           success: result.success,
           data: {

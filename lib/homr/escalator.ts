@@ -802,6 +802,25 @@ export async function resolveEscalation(
   }
 
   // =========================================================================
+  // If this escalation was created for a gate, satisfy it
+  // =========================================================================
+  if (escalation.trigger_type.startsWith('gate:')) {
+    const { satisfyGate, parseGates, getTaskById } = require('../db/tasks');
+    const triggerTask = getTaskById(escalation.trigger_task_id);
+    if (triggerTask) {
+      const gates = parseGates(triggerTask.gates);
+      const linkedGate = gates.find((g: { escalation_id: string | null }) => g.escalation_id === escalationId);
+      if (linkedGate) {
+        const positiveOptions = ['approve', 'document_provided'];
+        if (positiveOptions.includes(answer.selectedOption)) {
+          satisfyGate(triggerTask.id, linkedGate.id, answer.additionalContext, `escalation:${escalationId}`);
+          console.log(`[HOMЯ Escalator] Satisfied gate ${linkedGate.id} on task ${triggerTask.id} via escalation`);
+        }
+      }
+    }
+  }
+
+  // =========================================================================
   // Store answer pattern for future reference
   // =========================================================================
   const storedPattern = storeAnswerPattern(

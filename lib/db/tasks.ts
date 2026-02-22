@@ -11,7 +11,7 @@ import { join } from 'path';
 import { paths } from '../config/paths';
 import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
-import type { Task, TaskStatus, TaskPhase, CapabilityType } from './schema';
+import type { Task, TaskStatus, TaskPhase, CapabilityType, TaskGate, GateType } from './schema';
 import { touchOutcome, updateOutcome } from './outcomes';
 
 // ============================================================================
@@ -42,6 +42,8 @@ export interface CreateTaskInput {
   estimated_turns?: number;
   // Decomposition tracking - set when this task is a subtask from decomposition
   decomposed_from_task_id?: string;
+  // Human-in-the-loop gates
+  gates?: Array<{ type: GateType; label: string; description?: string }>;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -58,6 +60,23 @@ export function createTask(input: CreateTaskInput): Task {
     ? JSON.stringify(input.required_capabilities)
     : '[]';
 
+  // Process gates: generate IDs, set initial status
+  let gatesJson = '[]';
+  if (input.gates && input.gates.length > 0) {
+    const gates: TaskGate[] = input.gates.map(g => ({
+      id: generateId('gate'),
+      type: g.type,
+      label: g.label,
+      description: g.description || g.label,
+      status: 'pending' as const,
+      escalation_id: null,
+      satisfied_at: null,
+      satisfied_by: null,
+      response_data: null,
+    }));
+    gatesJson = JSON.stringify(gates);
+  }
+
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
@@ -65,9 +84,9 @@ export function createTask(input: CreateTaskInput): Task {
       from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, depends_on, required_capabilities,
       complexity_score, estimated_turns, decomposed_from_task_id,
-      created_at, updated_at
+      gates, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -90,6 +109,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.complexity_score ?? null,
     input.estimated_turns ?? null,
     input.decomposed_from_task_id || null,
+    gatesJson,
     timestamp,
     timestamp
   );
@@ -665,6 +685,13 @@ export function claimNextTask(
         continue;
       }
 
+      // Check human-in-the-loop gates
+      const gateCheck = areGatesSatisfied(candidate.id);
+      if (!gateCheck.satisfied) {
+        console.log(`[claimNextTask] Skipping task ${candidate.id} - ${gateCheck.pendingGates.length} unsatisfied gate(s)`);
+        continue;
+      }
+
       // Check skill dependencies if present
       if (candidate.required_skills) {
         const skillDeps = checkTaskSkillDependencies(candidate.id);
@@ -968,6 +995,8 @@ export interface UpdateTaskInput {
   // Decomposition tracking
   decomposition_status?: 'in_progress' | 'completed' | 'failed' | null;
   decomposed_from_task_id?: string | null;
+  // Human-in-the-loop gates (raw JSON string)
+  gates?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -1063,6 +1092,10 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.decomposed_from_task_id !== undefined) {
     updates.push('decomposed_from_task_id = ?');
     values.push(input.decomposed_from_task_id);
+  }
+  if (input.gates !== undefined) {
+    updates.push('gates = ?');
+    values.push(input.gates);
   }
 
   values.push(id);
@@ -1504,4 +1537,204 @@ export function getCapabilityTaskForCapability(
   }
 
   return null;
+}
+
+// ============================================================================
+// Task Gate Operations (Human-in-the-Loop)
+// ============================================================================
+
+/**
+ * Parse the gates JSON field from a task into a TaskGate array.
+ */
+export function parseGates(gates: string | null): TaskGate[] {
+  if (!gates) return [];
+  try {
+    const parsed = JSON.parse(gates);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if all gates on a task are satisfied.
+ * Returns the satisfaction status and list of pending gates.
+ */
+export function areGatesSatisfied(taskId: string): {
+  satisfied: boolean;
+  pendingGates: TaskGate[];
+  allGates: TaskGate[];
+} {
+  const task = getTaskById(taskId);
+  if (!task) return { satisfied: true, pendingGates: [], allGates: [] };
+
+  const gates = parseGates(task.gates);
+  if (gates.length === 0) return { satisfied: true, pendingGates: [], allGates: gates };
+
+  const pendingGates = gates.filter(g => g.status === 'pending');
+  return {
+    satisfied: pendingGates.length === 0,
+    pendingGates,
+    allGates: gates,
+  };
+}
+
+/**
+ * Add a gate to a task. Only works on pending tasks.
+ * Returns the created TaskGate.
+ */
+export function addGateToTask(
+  taskId: string,
+  input: { type: GateType; label: string; description?: string }
+): TaskGate | null {
+  const task = getTaskById(taskId);
+  if (!task || task.status !== 'pending') return null;
+
+  const gates = parseGates(task.gates);
+  const gate: TaskGate = {
+    id: generateId('gate'),
+    type: input.type,
+    label: input.label,
+    description: input.description || input.label,
+    status: 'pending',
+    escalation_id: null,
+    satisfied_at: null,
+    satisfied_by: null,
+    response_data: null,
+  };
+
+  gates.push(gate);
+  updateTask(taskId, { gates: JSON.stringify(gates) });
+  return gate;
+}
+
+/**
+ * Satisfy a gate on a task.
+ */
+export function satisfyGate(
+  taskId: string,
+  gateId: string,
+  responseData?: string,
+  satisfiedBy?: string
+): TaskGate | null {
+  const task = getTaskById(taskId);
+  if (!task) return null;
+
+  const gates = parseGates(task.gates);
+  const gate = gates.find(g => g.id === gateId);
+  if (!gate) return null;
+
+  gate.status = 'satisfied';
+  gate.satisfied_at = now();
+  gate.satisfied_by = satisfiedBy || 'human';
+  gate.response_data = responseData || null;
+
+  updateTask(taskId, { gates: JSON.stringify(gates) });
+  return gate;
+}
+
+/**
+ * Remove a gate from a task.
+ */
+export function removeGate(taskId: string, gateId: string): boolean {
+  const task = getTaskById(taskId);
+  if (!task) return false;
+
+  const gates = parseGates(task.gates);
+  const index = gates.findIndex(g => g.id === gateId);
+  if (index === -1) return false;
+
+  gates.splice(index, 1);
+  updateTask(taskId, { gates: JSON.stringify(gates) });
+  return true;
+}
+
+/**
+ * Link a gate to an escalation.
+ */
+export function linkGateToEscalation(
+  taskId: string,
+  gateId: string,
+  escalationId: string
+): boolean {
+  const task = getTaskById(taskId);
+  if (!task) return false;
+
+  const gates = parseGates(task.gates);
+  const gate = gates.find(g => g.id === gateId);
+  if (!gate) return false;
+
+  gate.escalation_id = escalationId;
+  updateTask(taskId, { gates: JSON.stringify(gates) });
+  return true;
+}
+
+/**
+ * Get all tasks with unsatisfied (pending) gates for an outcome.
+ */
+export function getTasksWithPendingGates(outcomeId: string): { task: Task; pendingGates: TaskGate[] }[] {
+  const tasks = getTasksByOutcome(outcomeId);
+  const result: { task: Task; pendingGates: TaskGate[] }[] = [];
+
+  for (const task of tasks) {
+    if (task.status !== 'pending') continue;
+    const gates = parseGates(task.gates);
+    const pendingGates = gates.filter(g => g.status === 'pending');
+    if (pendingGates.length > 0) {
+      result.push({ task, pendingGates });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Auto-create escalations for pending gates that don't already have one.
+ * Uses the DB-level createEscalation to avoid Claude call overhead.
+ */
+export function createEscalationsForPendingGates(taskId: string, outcomeId: string): void {
+  const task = getTaskById(taskId);
+  if (!task) return;
+
+  const gates = parseGates(task.gates);
+  const pendingGatesWithoutEscalation = gates.filter(g => g.status === 'pending' && !g.escalation_id);
+
+  if (pendingGatesWithoutEscalation.length === 0) return;
+
+  // Import createEscalation from homr DB functions
+  const { createEscalation } = require('./homr');
+
+  for (const gate of pendingGatesWithoutEscalation) {
+    let questionText: string;
+    let options: Array<{ id: string; label: string; description: string; implications: string }>;
+
+    if (gate.type === 'document_required') {
+      questionText = `Input needed: ${gate.label}`;
+      options = [
+        { id: 'document_provided', label: 'Document Provided', description: 'The required input/document has been provided', implications: 'Gate will be satisfied and the task can proceed' },
+        { id: 'not_ready', label: 'Not Ready Yet', description: 'The input is not yet available', implications: 'Task remains blocked until input is provided' },
+      ];
+    } else {
+      questionText = `Approval needed: ${gate.label}`;
+      options = [
+        { id: 'approve', label: 'Approve', description: 'Approve this gate to proceed', implications: 'Gate will be satisfied and the task can proceed' },
+        { id: 'reject', label: 'Reject', description: 'Do not approve yet', implications: 'Task remains blocked' },
+      ];
+    }
+
+    const escalation = createEscalation({
+      outcome_id: outcomeId,
+      trigger_type: `gate:${gate.type}`,
+      trigger_task_id: taskId,
+      trigger_evidence: [gate.description],
+      question_text: questionText,
+      question_context: `Task "${task.title}" has a gate that requires human input before it can proceed.\n\nGate: ${gate.label}\nDescription: ${gate.description}`,
+      question_options: options,
+      affected_tasks: [taskId],
+    });
+
+    if (escalation) {
+      linkGateToEscalation(taskId, gate.id, escalation.id);
+    }
+  }
 }

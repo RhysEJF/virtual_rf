@@ -43,6 +43,11 @@ function classifyEscalation(escalation: HomrEscalation): EscalationType {
   const questionLower = escalation.question_text.toLowerCase();
   const triggerType = escalation.trigger_type.toLowerCase();
 
+  // Gate escalations must never auto-resolve — they require human input
+  if (triggerType.startsWith('gate:')) {
+    return 'security';
+  }
+
   if (questionLower.includes('complex') || questionLower.includes('turn limit')) {
     return 'complexity';
   }

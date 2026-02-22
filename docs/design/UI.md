@@ -74,7 +74,7 @@ app/
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| ExpandableTaskCard | `ExpandableTaskCard.tsx` | Task details (~17.9KB) |
+| ExpandableTaskCard | `ExpandableTaskCard.tsx` | Task details with gate indicators and satisfy buttons (~20KB) |
 | ProgressView | `ProgressView.tsx` | Real-time progress |
 | ActivityFeed | `ActivityFeed.tsx` | Event timeline |
 

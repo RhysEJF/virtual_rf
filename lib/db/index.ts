@@ -570,6 +570,14 @@ function runMigrations(database: Database.Database): void {
     database.exec(`CREATE INDEX IF NOT EXISTS idx_conv_messages_created ON conversation_messages(session_id, created_at)`);
   }
 
+  // Add gates column to tasks for human-in-the-loop checkpoints
+  const tasksColsGates = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const hasGates = tasksColsGates.some(c => c.name === 'gates');
+  if (!hasGates) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN gates TEXT DEFAULT '[]'`);
+    console.log(`[DB Migration] Added gates column to tasks`);
+  }
+
   // Add task_id column to progress_entries for linking to HOMЯ observations
   const progressColsTaskId = database.prepare(`PRAGMA table_info(progress_entries)`).all() as { name: string }[];
   const hasTaskId = progressColsTaskId.some(c => c.name === 'task_id');

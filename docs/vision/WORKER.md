@@ -38,6 +38,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Capability dependency checking | Complete |
 | Dynamic capability task creation | Complete |
 | Workspace isolation enforcement | Complete |
+| Task gate enforcement (human-in-the-loop) | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -164,6 +165,17 @@ Workers now check capability dependencies before claiming tasks:
 5. **Phase Ordering** - Capability tasks run before execution tasks (priority-based)
 
 This enables just-in-time capability building without requiring all capabilities upfront.
+
+### Task Gate Enforcement
+
+Workers check for human-in-the-loop gates before claiming tasks:
+
+1. **Gate Types** - `document_required` (needs human input) and `human_approval` (needs explicit approval)
+2. **Claim Blocking** - `claimNextTask()` checks gates after dependencies, before skill checks. Tasks with unsatisfied gates are skipped.
+3. **Diagnostic Logging** - When no tasks can be claimed but gated tasks exist, the worker logs which tasks are waiting on human input.
+4. **Response Data Injection** - When gates are satisfied with `response_data`, that content is injected into the worker's CLAUDE.md as a "Human Input" section, giving the worker access to the human's answers.
+
+Gates integrate with HOMЯ escalations — each pending gate auto-creates an escalation, and answering the escalation satisfies the gate.
 
 ### Workspace Isolation Enforcement
 

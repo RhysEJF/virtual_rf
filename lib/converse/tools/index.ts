@@ -242,6 +242,77 @@ export const converseTools: ToolDefinition[] = [
   },
 
   // =========================================================================
+  // Gate Tools (Human-in-the-Loop)
+  // =========================================================================
+  {
+    name: 'addGate',
+    description:
+      'Add a gate (human-in-the-loop checkpoint) to a task. Use for "add a gate to task", "require human input for task", "gate this task on approval".',
+    parameters: {
+      task_id: {
+        type: 'string',
+        description: 'Task ID to add the gate to',
+        required: true,
+      },
+      type: {
+        type: 'string',
+        description: 'Gate type: "document_required" (needs human input/document) or "human_approval" (needs explicit approval)',
+        required: true,
+        enum: ['document_required', 'human_approval'],
+      },
+      label: {
+        type: 'string',
+        description: 'Short label describing what is needed (e.g., "Interview answers from user")',
+        required: true,
+      },
+      description: {
+        type: 'string',
+        description: 'Detailed description of what the gate requires',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'satisfyGate',
+    description:
+      'Satisfy a gate on a task (mark as complete with optional response data). Use for "satisfy gate", "provide input for gate", "approve gate".',
+    parameters: {
+      task_id: {
+        type: 'string',
+        description: 'Task ID the gate belongs to',
+        required: true,
+      },
+      gate_id: {
+        type: 'string',
+        description: 'Gate ID to satisfy',
+        required: true,
+      },
+      response_data: {
+        type: 'string',
+        description: 'Human input / response data (for document_required gates)',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'listGates',
+    description:
+      'List gates on a task or across an outcome. Use for "show gates", "what gates are pending", "list gates for task".',
+    parameters: {
+      task_id: {
+        type: 'string',
+        description: 'Task ID to list gates for',
+        required: false,
+      },
+      outcome_id: {
+        type: 'string',
+        description: 'Outcome ID to list all pending gates across',
+        required: false,
+      },
+    },
+  },
+
+  // =========================================================================
   // Task Tools
   // =========================================================================
   {
@@ -280,6 +351,12 @@ export const converseTools: ToolDefinition[] = [
         type: 'number',
         description: 'Priority (lower = higher priority, default 100)',
         required: false,
+      },
+      gates: {
+        type: 'array',
+        description: 'Gates that must be satisfied before this task can be claimed. Array of objects with type ("document_required" or "human_approval") and label.',
+        required: false,
+        items: { type: 'object' },
       },
     },
   },

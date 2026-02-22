@@ -121,6 +121,7 @@ CREATE TABLE tasks (
   required_skills TEXT,           -- JSON array
   task_intent TEXT,
   task_approach TEXT,
+  gates TEXT DEFAULT '[]',         -- JSON array of TaskGate objects (human-in-the-loop)
   created_at TEXT,
   updated_at TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)

@@ -48,6 +48,7 @@ The UI is the user's window into Digital Twin. It provides:
 | Workspace isolation toggle (per-outcome) | Complete |
 | Workspace isolation default (settings) | Complete |
 | Workspace app server management | Complete |
+| Task gate indicators and satisfy buttons | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 

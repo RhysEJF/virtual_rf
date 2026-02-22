@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand } from './commands/index.js';
 
 const program = new Command();
 
@@ -50,6 +50,7 @@ program.addCommand(converseCommand);
 program.addCommand(capabilityCommand);
 program.addCommand(serverCommand);
 program.addCommand(serveCommand);
+program.addCommand(gateCommand);
 
 /**
  * Display all available commands with their descriptions

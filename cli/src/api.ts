@@ -121,10 +121,25 @@ export interface Task {
 }
 
 // Extended task with parsed dependency info (returned by API)
+export interface TaskGate {
+  id: string;
+  type: string;
+  label: string;
+  description: string;
+  status: string;
+  escalation_id: string | null;
+  satisfied_at: number | null;
+  satisfied_by: string | null;
+  response_data: string | null;
+}
+
 export interface TaskWithDependencies extends Task {
   dependency_ids: string[];     // Parsed depends_on
   blocked_by: string[];         // Task IDs that are blocking this task
   blocks: string[];             // Task IDs that this task blocks
+  parsed_gates?: TaskGate[];
+  has_pending_gates?: boolean;
+  pending_gate_count?: number;
 }
 
 // Worker types

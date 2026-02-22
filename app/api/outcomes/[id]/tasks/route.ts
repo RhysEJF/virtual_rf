@@ -12,6 +12,8 @@ import {
   createTask,
   createTasksBatch,
   getTaskStats,
+  parseGates,
+  createEscalationsForPendingGates,
   type CreateTaskInput,
 } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
@@ -51,15 +53,20 @@ export async function GET(
       }
     }
 
-    // Enrich tasks with blocked_by information
+    // Enrich tasks with blocked_by and gate information
     const enrichedTasks = tasks.map(task => {
       const dependencyIds = parseDependsOn(task.depends_on);
       const blockedBy = getBlockingTasks(task.id);
+      const parsedGates = parseGates(task.gates);
+      const pendingGates = parsedGates.filter(g => g.status === 'pending');
       return {
         ...task,
         dependency_ids: dependencyIds,
         blocked_by: blockedBy.map(bt => bt.id),
         is_blocked: blockedBy.length > 0,
+        parsed_gates: parsedGates,
+        has_pending_gates: pendingGates.length > 0,
+        pending_gate_count: pendingGates.length,
       };
     });
 
@@ -161,7 +168,13 @@ export async function POST(
       task_intent: body.task_intent,
       task_approach: body.task_approach,
       depends_on: dependsOn,
+      gates: body.gates,
     });
+
+    // Auto-create escalations for any gates
+    if (body.gates && body.gates.length > 0) {
+      createEscalationsForPendingGates(task.id, id);
+    }
 
     return NextResponse.json({ task }, { status: 201 });
   } catch (error) {

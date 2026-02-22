@@ -227,6 +227,22 @@ const combinedSkillContext = [
 
 ---
 
+## Task Gate Context Injection
+
+When a task has satisfied gates with `response_data`, the worker injects that content into the generated CLAUDE.md:
+
+```markdown
+## Human Input
+The following human input was provided for this task:
+
+### Interview answers from user
+[The human's response data here]
+```
+
+This ensures workers have access to human-provided answers, documents, or approvals when executing gated tasks.
+
+---
+
 ## Intervention Handling
 
 ```typescript

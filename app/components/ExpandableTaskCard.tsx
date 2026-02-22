@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
-import type { Task, TaskStatus } from '@/lib/db/schema';
+import type { Task, TaskStatus, TaskGate } from '@/lib/db/schema';
 
 interface TaskSkillStatus {
   name: string;
@@ -40,6 +40,9 @@ export interface TaskWithDependencies extends Task {
   dependency_ids?: string[];
   blocked_by?: string[];
   is_blocked?: boolean;
+  parsed_gates?: TaskGate[];
+  has_pending_gates?: boolean;
+  pending_gate_count?: number;
 }
 
 interface ExpandableTaskCardProps {
@@ -473,6 +476,11 @@ export function ExpandableTaskCard({
                   Blocked ({blockedByIds.length})
                 </Badge>
               )}
+              {task.has_pending_gates && (
+                <Badge variant="warning" className="text-[10px]" title="Awaiting human input">
+                  Gated ({task.pending_gate_count})
+                </Badge>
+              )}
               <Badge variant={status.variant}>
                 {status.label}
               </Badge>
@@ -793,6 +801,76 @@ export function ExpandableTaskCard({
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Gates Section (Human-in-the-Loop) */}
+          {task.parsed_gates && task.parsed_gates.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-text-tertiary uppercase tracking-wide">
+                  Gates ({task.parsed_gates.filter(g => g.status === 'pending').length} pending)
+                </label>
+              </div>
+              <div className="space-y-2">
+                {task.parsed_gates.map((gate) => (
+                  <div
+                    key={gate.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded text-xs border ${
+                      gate.status === 'satisfied'
+                        ? 'bg-status-success/10 border-status-success/30'
+                        : 'bg-status-warning/10 border-status-warning/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>{gate.status === 'satisfied' ? '✓' : '⏳'}</span>
+                      <span className={gate.status === 'satisfied' ? 'text-status-success' : 'text-status-warning'}>
+                        {gate.label}
+                      </span>
+                      <span className="text-[10px] opacity-60 uppercase">{gate.type.replace('_', ' ')}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {gate.status === 'satisfied' && gate.satisfied_at && (
+                        <span className="text-[10px] text-text-tertiary">
+                          {new Date(gate.satisfied_at).toLocaleDateString()}
+                        </span>
+                      )}
+                      {gate.status === 'pending' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          className="text-[10px] px-2 py-0.5"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (gate.type === 'document_required') {
+                              const input = prompt('Provide the required input:');
+                              if (input !== null) {
+                                await fetch(`/api/tasks/${task.id}/gates/${gate.id}/satisfy`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ response_data: input }),
+                                });
+                                window.location.reload();
+                              }
+                            } else {
+                              if (confirm(`Approve gate: ${gate.label}?`)) {
+                                await fetch(`/api/tasks/${task.id}/gates/${gate.id}/satisfy`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({}),
+                                });
+                                window.location.reload();
+                              }
+                            }
+                          }}
+                        >
+                          {gate.type === 'document_required' ? 'Provide Input' : 'Approve'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

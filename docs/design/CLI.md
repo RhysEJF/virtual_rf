@@ -65,6 +65,7 @@ cli/
 │       ├── sync.ts        # flow sync
 │       ├── retro.ts       # flow retro (trigger, status, history, show, create)
 │       ├── converse.ts    # flow converse/talk (markdown rendering)
+│       ├── gate.ts        # flow gate (list/add/satisfy)
 │       └── server.ts      # flow server (start dev server)
 │   └── types/
 │       └── marked-terminal.d.ts  # Type declarations for marked-terminal

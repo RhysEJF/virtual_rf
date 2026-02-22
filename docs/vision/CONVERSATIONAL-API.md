@@ -283,6 +283,7 @@ Instead of intent classification, the agent now uses Claude to select from 20+ t
 | **Tasks** | `getTask`, `addTask`, `updateTask`, `findTask` | "Add context to task", "Optimize task" |
 | **HOMR** | `getHomrStatus`, `getHomrDashboard`, `runAutoResolve` | "HOMR status" |
 | **Capabilities** | `detectCapabilities`, `listCapabilities`, `createCapability` | "We need a skill for X" |
+| **Gates** | `addGate`, `satisfyGate`, `listGates` | "Add a gate for human approval" |
 
 Claude decides which tool(s) to call based on the user's natural language query.
 

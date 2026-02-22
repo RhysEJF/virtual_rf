@@ -764,7 +764,21 @@ ${task.prd_context ? `### PRD Context\n${task.prd_context}\n` : ''}
 ${task.design_context ? `### Design Context\n${task.design_context}\n` : ''}
 ${task.task_intent ? `### Task Intent\n${task.task_intent}\n` : ''}
 ${task.task_approach ? `### Task Approach\n${task.task_approach}\n` : ''}
-
+${(() => {
+  // Inject satisfied gate response data as human input
+  try {
+    const gates = task.gates ? JSON.parse(task.gates) : [];
+    const satisfiedWithData = gates.filter((g: { status: string; response_data: string | null }) => g.status === 'satisfied' && g.response_data);
+    if (satisfiedWithData.length > 0) {
+      let section = '### Human Input\nThe following human input was provided for this task:\n\n';
+      for (const gate of satisfiedWithData) {
+        section += `#### ${gate.label}\n${gate.response_data}\n\n`;
+      }
+      return section;
+    }
+  } catch { /* ignore parse errors */ }
+  return '';
+})()}
 ---
 ${combinedSkillContext ? `\n${combinedSkillContext}\n---\n` : ''}
 ## Instructions
@@ -1127,8 +1141,18 @@ export async function startRalphWorker(
         const claimResult = claimNextTask(outcomeId, workerId);
 
         if (!claimResult.success || !claimResult.task) {
-          // No more tasks available
-          appendLog(`No more pending tasks. Work complete.`);
+          // Check for gated tasks to provide diagnostic message
+          const { getTasksWithPendingGates } = require('../db/tasks');
+          const gatedTasks = getTasksWithPendingGates(outcomeId);
+          if (gatedTasks.length > 0) {
+            appendLog(`No claimable tasks. ${gatedTasks.length} task(s) are gated on human input.`);
+            for (const { task: gt, pendingGates } of gatedTasks) {
+              const gateLabels = pendingGates.map((g: { label: string }) => g.label).join(', ');
+              appendLog(`  - "${gt.title}" (${gateLabels})`);
+            }
+          } else {
+            appendLog(`No more pending tasks. Work complete.`);
+          }
           break;
         }
 

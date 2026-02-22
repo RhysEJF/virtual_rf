@@ -404,6 +404,12 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
   - Hybrid search (BM25 + vector) surfaces relevant cross-outcome learnings
   - Workers on Outcome B receive discoveries from Outcome A
 
+### Phase 4.8: Task Gates Integration - COMPLETE
+- [x] Gate escalation trigger types (`gate:document_required`, `gate:human_approval`)
+- [x] Gate satisfaction on escalation resolution (`lib/homr/escalator.ts`)
+- [x] Gate escalations blocked from auto-resolve (classified as 'security' in auto-resolver)
+- [x] Dismissing a gate escalation does NOT satisfy the gate (gate stays pending)
+
 ### Phase 5: Intelligence - FUTURE
 - [ ] Proactive suggestions
 - [ ] Autonomous steering refinement

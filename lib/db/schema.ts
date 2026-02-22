@@ -70,6 +70,22 @@ export type SyncStatus = 'synced' | 'failed' | 'stale';
 // Isolation mode for workspace boundaries
 export type IsolationMode = 'workspace' | 'codebase';
 
+// Task gate types for human-in-the-loop checkpoints
+export type GateType = 'document_required' | 'human_approval';
+export type GateStatus = 'pending' | 'satisfied';
+
+export interface TaskGate {
+  id: string;                    // e.g., 'gate_abc123'
+  type: GateType;
+  label: string;                 // "Interview answers from user"
+  description: string;           // Detailed explanation shown in UI/escalation
+  status: GateStatus;
+  escalation_id: string | null;  // Linked auto-created escalation
+  satisfied_at: number | null;
+  satisfied_by: string | null;   // 'human' | 'escalation:{id}'
+  response_data: string | null;  // The human's answer/content
+}
+
 // ============================================================================
 // Core Entities
 // ============================================================================
@@ -183,6 +199,8 @@ export interface Task {
   // Decomposition tracking (for preventing race conditions and idempotency)
   decomposition_status: DecompositionStatus | null;  // null = not decomposed, 'in_progress' | 'completed' | 'failed'
   decomposed_from_task_id: string | null;            // FK to parent task if this is a subtask
+  // Human-in-the-loop gates
+  gates: string | null;                              // JSON array of TaskGate objects
 }
 
 export interface Worker {
@@ -919,6 +937,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- Decomposition tracking (for preventing race conditions and idempotency)
   decomposition_status TEXT,         -- null | 'in_progress' | 'completed' | 'failed'
   decomposed_from_task_id TEXT,      -- FK to tasks.id (parent task if this is a subtask)
+  -- Human-in-the-loop gates
+  gates TEXT DEFAULT '[]',           -- JSON array of TaskGate objects
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id) ON DELETE CASCADE,
   FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL,
   FOREIGN KEY (decomposed_from_task_id) REFERENCES tasks(id) ON DELETE SET NULL

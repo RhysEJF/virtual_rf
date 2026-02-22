@@ -10,7 +10,9 @@ import {
   createTask as dbCreateTask,
   getTaskStats,
   updateTask as dbUpdateTask,
+  createEscalationsForPendingGates,
 } from '../../db/tasks';
+import type { GateType } from '../../db/schema';
 import { getOutcomeById, getAllOutcomes } from '../../db/outcomes';
 
 export interface TaskResult {
@@ -95,7 +97,8 @@ export function addTask(
   outcomeId: string,
   title: string,
   description?: string,
-  priority?: number
+  priority?: number,
+  gates?: Array<{ type: GateType; label: string; description?: string }>
 ): AddTaskResult {
   const outcome = getOutcomeById(outcomeId);
   if (!outcome) {
@@ -108,7 +111,13 @@ export function addTask(
       title,
       description: description,
       priority: priority ?? 100,
+      gates,
     });
+
+    // Auto-create escalations for any gates
+    if (gates && gates.length > 0) {
+      createEscalationsForPendingGates(task.id, outcomeId);
+    }
 
     const stats = getTaskStats(outcomeId);
 

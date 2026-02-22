@@ -11,6 +11,7 @@ import {
   getTaskById,
   updateTask,
   deleteTask,
+  parseGates,
 } from '@/lib/db/tasks';
 import {
   validateDependenciesForTask,
@@ -34,14 +35,19 @@ export async function GET(
       );
     }
 
-    // Enrich task with blocked_by information
+    // Enrich task with blocked_by and gate information
     const dependencyIds = parseDependsOn(task.depends_on);
     const blockedBy = getBlockingTasks(id);
+    const parsedGates = parseGates(task.gates);
+    const pendingGates = parsedGates.filter(g => g.status === 'pending');
     const enrichedTask = {
       ...task,
       dependency_ids: dependencyIds,
       blocked_by: blockedBy.map(bt => bt.id),
       is_blocked: blockedBy.length > 0,
+      parsed_gates: parsedGates,
+      has_pending_gates: pendingGates.length > 0,
+      pending_gate_count: pendingGates.length,
     };
 
     return NextResponse.json({ task: enrichedTask });
@@ -107,6 +113,7 @@ export async function PATCH(
       task_intent: body.task_intent,
       task_approach: body.task_approach,
       depends_on: body.depends_on,
+      gates: body.gates,
     });
 
     if (!task) {
@@ -116,14 +123,19 @@ export async function PATCH(
       );
     }
 
-    // Return enriched task with blocked_by
+    // Return enriched task with blocked_by and gates
     const dependencyIds = parseDependsOn(task.depends_on);
     const blockedBy = getBlockingTasks(id);
+    const parsedGates = parseGates(task.gates);
+    const pendingGates = parsedGates.filter(g => g.status === 'pending');
     const enrichedTask = {
       ...task,
       dependency_ids: dependencyIds,
       blocked_by: blockedBy.map(bt => bt.id),
       is_blocked: blockedBy.length > 0,
+      parsed_gates: parsedGates,
+      has_pending_gates: pendingGates.length > 0,
+      pending_gate_count: pendingGates.length,
     };
 
     return NextResponse.json({ task: enrichedTask });

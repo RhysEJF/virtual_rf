@@ -167,6 +167,33 @@ Answer a pending escalation by selecting an option.
 - **Returns**: `{ selectedOption, resumedTasks }`
 - **Use when**: User provides an answer to a question
 
+### Gate Tools (Human-in-the-Loop)
+
+#### addGate
+Add a gate (checkpoint requiring human input) to a task.
+- **Parameters**:
+  - `task_id` (required) - Task ID to add the gate to
+  - `type` (required) - "document_required" or "human_approval"
+  - `label` (required) - Short label (e.g., "Interview answers from user")
+  - `description` (optional) - Detailed description
+- **Returns**: `{ id, type, label, status }`
+- **Use when**: "add a gate", "require human input for task", "gate this task"
+
+#### satisfyGate
+Satisfy a gate (mark as complete with optional response data).
+- **Parameters**:
+  - `task_id` (required) - Task ID the gate belongs to
+  - `gate_id` (required) - Gate ID to satisfy
+  - `response_data` (optional) - Human input/response data
+- **Returns**: `{ id, status, satisfiedAt }`
+- **Use when**: "satisfy gate", "provide input for gate", "approve gate"
+
+#### listGates
+List gates on a task or across an outcome.
+- **Parameters**: `task_id` (optional), `outcome_id` (optional)
+- **Returns**: `{ count, gates[] }`
+- **Use when**: "show gates", "what gates are pending", "list gates"
+
 ### Task Tools
 
 #### getTask

@@ -86,6 +86,7 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Markdown rendering in REPL | Complete |
 | Workspace isolation (`--isolated`, `--allow-codebase`, `config isolation-mode`) | Complete |
 | Workspace app serving (`flow serve`) | Complete |
+| Task gates (`flow gate list/add/satisfy`) | Complete |
 | Interactive chat mode | **Not started** |
 
 **Current:** 37 commands implemented (full coverage)

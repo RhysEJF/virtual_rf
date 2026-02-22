@@ -30,6 +30,7 @@ All state in Digital Twin is persisted to SQLite. The database:
 | Dependency validation and cycle detection | Complete |
 | Workspace isolation mode (isolation_mode) | Complete |
 | System configuration (system_config) | Complete |
+| Task gates (human-in-the-loop) | Complete |
 
 **Overall:** Complete and production-ready (20+ tables)
 
@@ -101,6 +102,20 @@ The system prevents:
 - Invalid task references
 
 Workers automatically skip blocked tasks when claiming work.
+
+### Task Gates (Human-in-the-Loop)
+
+Tasks can have gates — declarative checkpoints that block claiming until a human satisfies them:
+
+| Concept | Description |
+|---------|-------------|
+| **gates** | JSON array of `TaskGate` objects stored on the task |
+| **gate types** | `document_required` (needs human input) or `human_approval` (needs explicit approval) |
+| **gate status** | `pending` or `satisfied` |
+| **auto-escalation** | Each pending gate auto-creates a HOMЯ escalation for visibility |
+| **response_data** | Human's answer/content, injected into worker CLAUDE.md |
+
+Gates are checked in `claimNextTask()` after dependency checks and before skill checks. Both dependencies AND gates must be satisfied before a task can be claimed.
 
 ---
 

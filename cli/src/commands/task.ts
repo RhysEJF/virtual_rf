@@ -133,6 +133,22 @@ showSubcommand.action(async (taskId: string, options: OutputOptions) => {
       }
     }
 
+    // Display gates
+    if (task.parsed_gates && task.parsed_gates.length > 0) {
+      console.log();
+      console.log(chalk.bold.cyan('Gates:'));
+      for (const gate of task.parsed_gates) {
+        const icon = gate.status === 'satisfied' ? chalk.green('✓') : chalk.yellow('⏳');
+        console.log(`  ${icon} [${gate.type}] ${gate.label}`);
+        if (gate.escalation_id) {
+          console.log(`      Escalation: ${chalk.gray(gate.escalation_id)}`);
+        }
+        if (gate.status === 'satisfied' && gate.satisfied_at) {
+          console.log(`      Satisfied ${formatRelativeTime(gate.satisfied_at)}`);
+        }
+      }
+    }
+
     if (task.description) {
       console.log();
       console.log(chalk.bold.cyan('Description:'));
@@ -167,6 +183,7 @@ interface AddOptions extends OutputOptions {
   description?: string;
   priority?: string;
   dependsOn?: string;
+  gate?: string[];
 }
 
 const addSubcommand = new Command('add')
@@ -175,14 +192,19 @@ const addSubcommand = new Command('add')
   .argument('<title>', 'Task title')
   .option('--description <text>', 'Task description')
   .option('--priority <n>', 'Priority (1-100, lower runs first)')
-  .option('--depends-on <task-ids>', 'Comma-separated task IDs this task depends on');
+  .option('--depends-on <task-ids>', 'Comma-separated task IDs this task depends on')
+  .option('--gate <type:label>', 'Add a gate (repeatable, format: document_required:Label or human_approval:Label)', (val: string, prev: string[]) => {
+    prev = prev || [];
+    prev.push(val);
+    return prev;
+  }, [] as string[]);
 
 addOutputFlags(addSubcommand);
 
 addSubcommand.action(async (outcomeId: string, title: string, options: AddOptions) => {
   try {
     // Prepare task data
-    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[] } = {
+    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }> } = {
       title,
     };
 
@@ -206,6 +228,25 @@ addSubcommand.action(async (outcomeId: string, title: string, options: AddOption
       }
     }
 
+    if (options.gate && options.gate.length > 0) {
+      const gates: Array<{ type: string; label: string }> = [];
+      for (const g of options.gate) {
+        const colonIdx = g.indexOf(':');
+        if (colonIdx === -1) {
+          console.error(chalk.red('Error:'), `Invalid gate format "${g}". Use type:label (e.g., document_required:Interview answers)`);
+          process.exit(1);
+        }
+        const type = g.substring(0, colonIdx);
+        const label = g.substring(colonIdx + 1);
+        if (!['document_required', 'human_approval'].includes(type)) {
+          console.error(chalk.red('Error:'), `Invalid gate type "${type}". Must be document_required or human_approval`);
+          process.exit(1);
+        }
+        gates.push({ type, label });
+      }
+      taskData.gates = gates;
+    }
+
     // Create the task
     const response = await api.post<{ task: Task }>(`/outcomes/${outcomeId}/tasks`, taskData);
     const { task } = response;
@@ -226,6 +267,9 @@ addSubcommand.action(async (outcomeId: string, title: string, options: AddOption
     }
     if (taskData.depends_on && taskData.depends_on.length > 0) {
       console.log(`  Depends on: ${chalk.yellow(taskData.depends_on.join(', '))}`);
+    }
+    if (taskData.gates && taskData.gates.length > 0) {
+      console.log(`  Gates: ${chalk.yellow(taskData.gates.map(g => `${g.type}:${g.label}`).join(', '))}`);
     }
 
   } catch (error) {

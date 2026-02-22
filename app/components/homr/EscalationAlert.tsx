@@ -120,16 +120,18 @@ export function EscalationAlert({ escalation, onAnswer, onDismiss, onConfirm, on
       || escalation.proposedResolution.selectedOption
     : null;
 
+  const isGateEscalation = escalation.trigger.type.startsWith('gate:');
+
   return (
     <Card className={isPendingConfirmation ? 'border-accent-primary' : 'border-status-warning'}>
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
           <span className={isPendingConfirmation ? 'text-accent-primary text-lg' : 'text-status-warning text-lg'}>
-            {isPendingConfirmation ? '?' : '!'}
+            {isPendingConfirmation ? '?' : isGateEscalation ? '🔒' : '!'}
           </span>
           <h3 className="font-semibold text-text-primary">
-            {isPendingConfirmation ? 'HOMЯ Proposed Resolution' : 'HOMЯ Needs Input'}
+            {isPendingConfirmation ? 'HOMЯ Proposed Resolution' : isGateEscalation ? 'Human Input Required' : 'HOMЯ Needs Input'}
           </h3>
         </div>
         <div className="flex items-center gap-2">

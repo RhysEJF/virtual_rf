@@ -35,6 +35,7 @@ Think of skills as "employee training manuals" that workers read before starting
 | - API endpoints (/api/capabilities/*) | Complete |
 | - CLI commands (flow capability, skill new, tool new) | Complete |
 | - Conversational API tools | Complete |
+| Lightweight catalog presentation | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -99,6 +100,17 @@ Skills are discovered through two mechanisms:
 
 2. **Trigger matching** — Skills with explicit `triggers` in their frontmatter are matched when any trigger keyword appears in the task query.
 
+### Lightweight Catalog Presentation
+
+Global skills are now presented to workers as a lightweight markdown table rather than full content injection:
+
+1. **Catalog Table** — Skills appear as rows with name, category, and description columns
+2. **On-Demand Loading** — Workers read the full skill file only when relevant to their current task
+3. **Context Efficiency** — Dramatically reduces initial context overhead for outcomes with many global skills
+4. **Usage Tracking** — Skill usage is still tracked when skills appear in the catalog
+
+This applies to both the `buildSkillCatalog()` (outcome skills) and `buildSkillContext()` (global skill auto-discovery) paths.
+
 ### Skill Scanner
 
 The scanner (`scanSkillsDirectory()`) finds skills in three patterns:
@@ -139,7 +151,8 @@ Skills can declare what API keys they need via the `requires` field. The UI show
 
 2. **Skill effectiveness** - How do we know if a skill actually helps? Could track success rates of tasks that use each skill.
 
-3. **Context bloat** - Loading multiple skills can blow up context. Need smarter selection or skill summarization.
+3. ~~**Context bloat** - Loading multiple skills can blow up context. Need smarter selection or skill summarization.~~
+   **Resolved:** Skills are now presented as lightweight catalog tables instead of full content injection. Workers load full content on-demand only when relevant to their task.
 
 4. **Skill dependencies** - Skills can reference tools. Should skills also be able to reference other skills?
 

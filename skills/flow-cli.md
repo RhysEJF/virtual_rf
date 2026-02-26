@@ -160,6 +160,10 @@ flow chat out_abc123 "Add dark mode support" --start
 |---------|-------------|
 | `flow skills` | List available skills |
 | `flow tools --outcome <id>` | List outcome tools |
+| `flow docs <outcome-id>` | List documents for an outcome |
+| `flow docs add <outcome-id> <path>` | Upload a local file as a document |
+| `flow docs paste <outcome-id> --name <n>` | Create document from stdin |
+| `flow docs rm <outcome-id> <filename>` | Delete a document |
 | `flow outputs <outcome-id>` | List deliverables/files |
 | `flow files <outcome-id>` | List all workspace files |
 

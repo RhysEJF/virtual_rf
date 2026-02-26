@@ -88,9 +88,10 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Workspace isolation (`--isolated`, `--allow-codebase`, `config isolation-mode`) | Complete |
 | Workspace app serving (`flow serve`) | Complete |
 | Task gates (`flow gate list/add/satisfy`) | Complete |
+| Telegram bot management (`flow telegram start/stop/status`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 37 commands implemented (full coverage)
+**Current:** 38 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -307,6 +308,14 @@ flow serve <outcome-id>                    # List apps and servers for outcome
 flow serve list <outcome-id>               # Same as above
 flow serve start <outcome-id> [--app <id>] # Start dev server for an app
 flow serve stop <outcome-id> [--app <id>]  # Stop server (specific or all)
+```
+
+#### Telegram Bot
+```bash
+flow telegram                                    # Show bot status
+flow telegram start                              # Start bot in background
+flow telegram stop                               # Stop bot
+flow telegram status                             # Check if running
 ```
 
 #### System

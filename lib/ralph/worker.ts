@@ -12,7 +12,7 @@
  */
 
 import { spawn, ChildProcess, execSync, execFileSync } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'fs';
 import { join } from 'path';
 import {
   createWorker,
@@ -51,7 +51,8 @@ import {
   areSkillDependenciesMet,
   resolveSkillDependencies,
 } from '../agents/skill-dependency-resolver';
-import { loadOutcomeSkills, getSkillContent as getOutcomeSkillContent } from '../agents/skill-builder';
+import { loadOutcomeSkills } from '../agents/skill-builder';
+import { loadOutcomeTools } from '../agents/tool-builder';
 import * as homr from '../homr';
 import * as guard from '../guard';
 import { estimateTaskComplexity, assessTurnLimitRisk, ComplexityEstimate } from '../agents/task-complexity-estimator';
@@ -841,6 +842,209 @@ function parseTaskProgress(content: string): {
 }
 
 // ============================================================================
+// Skill & Tool Catalogs
+// ============================================================================
+
+/**
+ * Extract a description from a tool file by reading its first comment block.
+ * Reads at most 500 bytes and parses // or /** ... * / style comments.
+ */
+function extractToolDescription(filePath: string): string {
+  try {
+    const fd = openSync(filePath, 'r');
+    const buffer = Buffer.alloc(500);
+    const bytesRead = readSync(fd, buffer, 0, 500, 0);
+    closeSync(fd);
+    const head = buffer.toString('utf-8', 0, bytesRead);
+
+    // Try JSDoc: /** ... */
+    const jsdocMatch = head.match(/\/\*\*\s*\n?\s*\*?\s*(.+?)(?:\n|\*\/)/);
+    if (jsdocMatch) {
+      return jsdocMatch[1].trim();
+    }
+
+    // Try single-line comment on first non-empty line
+    const lines = head.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('//')) {
+        const comment = trimmed.replace(/^\/\/\s*/, '').trim();
+        if (comment.length > 5) return comment;
+      }
+      // Skip empty lines and shebang
+      if (trimmed && !trimmed.startsWith('#!')) break;
+    }
+  } catch {
+    // File read error
+  }
+  return 'See file for details';
+}
+
+/**
+ * Build a lightweight skill catalog table for worker CLAUDE.md.
+ * Lists skill names, triggers, and file paths — no full content.
+ */
+function buildSkillCatalog(
+  outcomeId: string,
+  appendLog: (msg: string) => void
+): string {
+  const outcomeSkills = loadOutcomeSkills(outcomeId);
+  if (outcomeSkills.length === 0) return '';
+
+  const lines = [
+    '## Available Skills',
+    '',
+    'Skills are available in `../skills/`. Read the full skill file when your task',
+    'matches the triggers listed below.',
+    '',
+    '| Skill | Triggers | Description |',
+    '|-------|----------|-------------|',
+  ];
+
+  for (const skill of outcomeSkills) {
+    const kebabName = skill.name.toLowerCase().replace(/\s+/g, '-');
+    const triggers = skill.triggers.length > 0 ? skill.triggers.join(', ') : 'N/A';
+    const desc = skill.description || 'See skill file';
+    lines.push(`| ${skill.name} | ${triggers} | ${desc} |`);
+    // Keep the file path reference visible
+    lines.push('');
+  }
+
+  lines.push('');
+  lines.push('To use a skill: Read `../skills/{skill-name}.md` for the full methodology.');
+
+  appendLog(`Built skill catalog with ${outcomeSkills.length} skills`);
+  return lines.join('\n');
+}
+
+/**
+ * Build a lightweight tool catalog table for worker CLAUDE.md.
+ * Lists tool names, types, and descriptions extracted from file headers.
+ */
+function buildToolCatalog(
+  outcomeId: string,
+  appendLog: (msg: string) => void
+): string {
+  const tools = loadOutcomeTools(outcomeId);
+  if (tools.length === 0) return '';
+
+  const lines = [
+    '## Available Tools',
+    '',
+    'Executable tools in `../tools/`. Import or call when needed for your task.',
+    '',
+    '| Tool | Type | Description |',
+    '|------|------|-------------|',
+  ];
+
+  for (const tool of tools) {
+    const desc = extractToolDescription(tool.path);
+    lines.push(`| ${tool.name} | ${tool.type} | ${desc} |`);
+  }
+
+  lines.push('');
+  lines.push('To use a tool: Read `../tools/{tool-name}.ts` to see its exports and usage.');
+
+  appendLog(`Built tool catalog with ${tools.length} tools`);
+  return lines.join('\n');
+}
+
+/**
+ * Build a lightweight document catalog table for worker CLAUDE.md.
+ * Lists documents uploaded to the outcome's docs/ directory.
+ */
+function buildDocumentCatalog(
+  outcomeId: string,
+  appendLog: (msg: string) => void
+): string {
+  const docsPath = join(paths.workspaces, outcomeId, 'docs');
+  if (!existsSync(docsPath)) return '';
+
+  let entries: string[];
+  try {
+    entries = readdirSync(docsPath).filter(f => !f.startsWith('.'));
+  } catch {
+    return '';
+  }
+  if (entries.length === 0) return '';
+
+  const extTypeMap: Record<string, string> = {
+    '.md': 'markdown', '.txt': 'text', '.pdf': 'pdf',
+    '.csv': 'csv', '.tsv': 'tsv', '.json': 'json',
+    '.xml': 'xml', '.html': 'html', '.htm': 'html',
+    '.doc': 'word', '.docx': 'word', '.xls': 'excel',
+    '.xlsx': 'excel', '.png': 'image', '.jpg': 'image',
+    '.jpeg': 'image', '.gif': 'image', '.svg': 'svg',
+  };
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  };
+
+  const extractDescription = (filePath: string): string => {
+    try {
+      const fd = openSync(filePath, 'r');
+      const buffer = Buffer.alloc(200);
+      const bytesRead = readSync(fd, buffer, 0, 200, 0);
+      closeSync(fd);
+      const head = buffer.toString('utf-8', 0, bytesRead);
+
+      // Try first markdown heading
+      const headingMatch = head.match(/^#+\s+(.+)/m);
+      if (headingMatch) return headingMatch[1].trim();
+
+      // Try first non-empty line
+      for (const line of head.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) {
+          return trimmed.length > 60 ? trimmed.slice(0, 57) + '...' : trimmed;
+        }
+      }
+    } catch {
+      // Binary file or read error
+    }
+    return 'Read file for details';
+  };
+
+  const lines = [
+    '## Available Documents',
+    '',
+    'Reference documents uploaded for this outcome are in `../docs/`.',
+    'Read any document relevant to your current task.',
+    '',
+    '| Document | Type | Size | Description |',
+    '|----------|------|------|-------------|',
+  ];
+
+  for (const entry of entries) {
+    const filePath = join(docsPath, entry);
+    let stat;
+    try {
+      stat = statSync(filePath);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile()) continue;
+
+    const ext = entry.includes('.') ? '.' + entry.split('.').pop()!.toLowerCase() : '';
+    const type = extTypeMap[ext] || ext.replace('.', '') || 'file';
+    const size = formatSize(stat.size);
+    const name = entry.replace(/\.[^.]+$/, '');
+    const desc = extractDescription(filePath);
+
+    lines.push(`| ${name} | ${type} | ${size} | ${desc} |`);
+  }
+
+  lines.push('');
+  lines.push('To use a document: Read `../docs/{filename}` for the full content.');
+
+  appendLog(`Built document catalog with ${entries.length} documents`);
+  return lines.join('\n');
+}
+
+// ============================================================================
 // Main Worker Loop
 // ============================================================================
 
@@ -1026,31 +1230,10 @@ export async function startRalphWorker(
     // This allows capability tasks to be processed first
   }
 
-  // Load outcome-specific skills for context injection
-  const outcomeSkills = loadOutcomeSkills(outcomeId);
-  let outcomeSkillContext = '';
-  if (outcomeSkills.length > 0) {
-    const lines = ['## Available Skills\n'];
-    lines.push('The following skills have been built for this outcome:\n');
-    for (const skill of outcomeSkills) {
-      const content = getOutcomeSkillContent(outcomeId, skill.name);
-      if (content) {
-        const kebabName = skill.name.toLowerCase().replace(/\s+/g, '-');
-        lines.push(`### ${skill.name}`);
-        lines.push(`**Triggers:** ${skill.triggers.join(', ') || 'N/A'}`);
-        lines.push(`**Read full skill:** \`../skills/${kebabName}.md\`\n`);
-        // Include full content so the worker has it without reading the file
-        lines.push(content);
-        lines.push('');
-      }
-    }
-    lines.push(`\n**How to use skills:**`);
-    lines.push(`1. Check if your current task matches any skill triggers above`);
-    lines.push(`2. Follow the skill's methodology step-by-step`);
-    lines.push(`3. Use the skill's output template for deliverables\n`);
-    outcomeSkillContext = lines.join('\n');
-    appendLog(`Loaded ${outcomeSkills.length} outcome skills for context injection`);
-  }
+  // Build lightweight skill, tool, and document catalogs (summaries, not full content)
+  const outcomeSkillContext = buildSkillCatalog(outcomeId, appendLog)
+    + '\n\n' + buildToolCatalog(outcomeId, appendLog)
+    + '\n\n' + buildDocumentCatalog(outcomeId, appendLog);
 
   // Start the work loop
   (async () => {

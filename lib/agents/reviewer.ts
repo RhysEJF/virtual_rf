@@ -5,6 +5,9 @@
  * Creates new tasks for issues found and tracks convergence.
  */
 
+import { spawn } from 'child_process';
+import { existsSync, writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
 import { claudeComplete } from '../claude/client';
 import { getOutcomeById } from '../db/outcomes';
 import { getTasksByOutcome, createTask } from '../db/tasks';
@@ -12,11 +15,11 @@ import { getWorkersByOutcome } from '../db/workers';
 import {
   createReviewCycle,
   getConvergenceStatus,
-  hasConverged,
   type ConvergenceStatus,
 } from '../db/review-cycles';
 import { logReviewCompleted } from '../db/activity';
-import type { Task, Intent, VerificationResult } from '../db/schema';
+import { paths } from '../config/paths';
+import type { Task, Intent } from '../db/schema';
 
 // ============================================================================
 // Types
@@ -67,7 +70,6 @@ export interface ReviewResult {
   tasksCreated: number;
   issues: ReviewIssue[];
   convergence: ConvergenceStatus;
-  verification?: VerificationResult;
   criteriaEvaluation?: CriteriaEvaluationResult;
   rawResponse?: string;  // Claude's full reasoning/analysis
   error?: string;
@@ -121,15 +123,12 @@ export async function reviewOutcome(
     // Build context for review
     const reviewContext = buildReviewContext(outcome.name, intent, completedTasks, failedTasks);
 
-    // Run Claude review
+    // Build review prompt
     const reviewPrompt = buildReviewPrompt(reviewContext);
-    console.log('[Reviewer] Starting Claude review for outcome:', outcomeId);
+    console.log('[Reviewer] Starting workspace-aware review for outcome:', outcomeId);
 
-    const result = await claudeComplete({
-      prompt: reviewPrompt,
-      timeout: 120000, // 2 minutes for review
-      maxTurns: 5, // Allow multiple turns for thorough review
-    });
+    // Use workspace-aware review (spawns Claude with file access)
+    const result = await reviewWithFileAccess(outcomeId, reviewPrompt);
 
     console.log('[Reviewer] Claude result:', { success: result.success, error: result.error, textLength: result.text?.length });
 
@@ -148,24 +147,37 @@ export async function reviewOutcome(
     // Parse issues from Claude's response
     const issues = parseReviewResponse(result.text);
 
-    // Create tasks for each issue
-    const createdTasks: Task[] = [];
-    for (const issue of issues) {
-      const task = createTask({
+    // Create a SINGLE investigation task instead of per-issue fix tasks.
+    // This task instructs a worker to investigate each issue and create well-specified subtasks.
+    let tasksCreated = 0;
+    if (issues.length > 0) {
+      const issueList = issues.map((issue, i) =>
+        `${i + 1}. **${issue.title}** [${issue.severity}]\n   ${issue.description}${issue.prdContext ? `\n   PRD: ${issue.prdContext}` : ''}`
+      ).join('\n\n');
+
+      createTask({
         outcome_id: outcomeId,
-        title: `Fix: ${issue.title}`,
-        description: issue.description,
-        prd_context: issue.prdContext,
-        priority: issue.severity === 'critical' ? 10 :
-                  issue.severity === 'high' ? 30 :
-                  issue.severity === 'medium' ? 60 : 90,
+        title: `Review: Investigate and fix ${issues.length} issue(s) from review cycle`,
+        description: `The following issues were found during review:\n\n${issueList}`,
+        task_intent: `Investigate each issue, determine root cause, design targeted fixes, and create well-specified fix tasks.`,
+        task_approach: [
+          'For each issue:',
+          '1. Investigate the root cause and all affected files',
+          '2. Design a pass/fail acceptance criterion',
+          '3. Design a targeted fix',
+          '4. Create a new task with full context (title, description, task_intent, task_approach)',
+          '',
+          'After creating all tasks:',
+          '- Review for duplicates and overlap',
+          '- Remove tasks made redundant by others',
+          '- Ensure no circular dependencies',
+          '- Verify only the needed tasks remain',
+        ].join('\n'),
+        priority: 10,
         from_review: true,
       });
-      createdTasks.push(task);
+      tasksCreated = 1;
     }
-
-    // Run verification checks
-    const verification = await runVerification(outcomeId, tasks);
 
     // Get current worker iteration
     const workers = getWorkersByOutcome(outcomeId);
@@ -178,13 +190,12 @@ export async function reviewOutcome(
       worker_id: options?.workerId || activeWorker?.id,
       iteration_at: iterationAt,
       issues_found: issues.length,
-      tasks_added: createdTasks.length,
-      verification,
+      tasks_added: tasksCreated,
       raw_response: result.text,
     });
 
     // Log activity
-    logReviewCompleted(outcomeId, outcome.name, issues.length, createdTasks.length);
+    logReviewCompleted(outcomeId, outcome.name, issues.length, tasksCreated);
 
     // Get updated convergence status
     const convergence = getConvergenceStatus(outcomeId);
@@ -194,10 +205,9 @@ export async function reviewOutcome(
       outcomeId,
       reviewCycleId: reviewCycle.id,
       issuesFound: issues.length,
-      tasksCreated: createdTasks.length,
+      tasksCreated,
       issues,
       convergence,
-      verification,
       rawResponse: result.text,
     };
   } catch (error) {
@@ -269,7 +279,7 @@ function buildReviewPrompt(context: ReviewContext): string {
       ).join('\n')
     : 'No failed tasks.';
 
-  return `You are reviewing work for: ${context.outcomeName}
+  return `You are reviewing completed work for: ${context.outcomeName}
 
 ## PRD Requirements
 ${prdSection}
@@ -280,15 +290,26 @@ ${completedSection}
 ## Failed Tasks
 ${failedSection}
 
----
+## Workspace
+You have access to the workspace filesystem. Use it to:
+1. List files created/modified by workers (ls, find)
+2. Read key source files to verify implementation quality
+3. Check for obvious issues (syntax errors, missing exports, broken imports)
+4. Verify outputs exist where expected
+5. Run build/lint/test commands if package.json exists
 
-Review the completed work against the PRD requirements and acceptance criteria.
-Identify any issues that need to be fixed.
+## Instructions
+Review the actual work product — not just task descriptions.
+For each issue, include:
+- What file(s) are affected
+- What specifically is wrong (quote code if relevant)
+- Which PRD criterion this violates
+- Severity: critical | high | medium | low
 
 For each issue found, respond in this format:
 ISSUE: [severity: critical|high|medium|low]
 TITLE: Brief title of the issue
-DESCRIPTION: Detailed description of what needs to be fixed
+DESCRIPTION: Detailed description of what needs to be fixed, referencing specific files
 PRD_CONTEXT: Which PRD item this relates to (if applicable)
 ---
 
@@ -347,26 +368,142 @@ function parseReviewResponse(response: string): ReviewIssue[] {
 }
 
 // ============================================================================
-// Verification
+// Workspace-Aware Review
 // ============================================================================
 
-async function runVerification(outcomeId: string, tasks: Task[]): Promise<VerificationResult> {
-  const completedCount = tasks.filter(t => t.status === 'completed').length;
-  const totalCount = tasks.length;
+/**
+ * Spawn a Claude Code session with cwd set to the outcome workspace,
+ * giving the reviewer actual file access to inspect work products.
+ */
+async function reviewWithFileAccess(
+  outcomeId: string,
+  reviewPrompt: string,
+): Promise<{ text: string; success: boolean; error?: string; cost?: number }> {
+  const workspacePath = join(paths.workspaces, outcomeId);
 
-  // Basic verification - more sophisticated checks could be added
-  // e.g., running actual build/test commands
-  return {
-    build: true, // Would run actual build check
-    test: true,  // Would run actual test check
-    lint: true,  // Would run actual lint check
-    functionality: true, // Would test functionality
-    prd_complete: completedCount === totalCount && totalCount > 0,
-    tasks_complete: completedCount === totalCount,
-    review_clean: false, // Will be updated based on review results
-    converged: hasConverged(outcomeId),
-    checked_at: Date.now(),
-  };
+  // If workspace doesn't exist, fall back to regular claudeComplete
+  if (!existsSync(workspacePath)) {
+    console.log('[Reviewer] Workspace not found, falling back to non-file review');
+    return claudeComplete({
+      prompt: reviewPrompt,
+      timeout: 180000,
+      maxTurns: 5,
+    });
+  }
+
+  // Write a temporary review instructions file
+  const reviewFilePath = join(workspacePath, 'REVIEW_INSTRUCTIONS.md');
+  writeFileSync(reviewFilePath, reviewPrompt, 'utf-8');
+
+  return new Promise((resolve) => {
+    const args = [
+      '-p', `Read REVIEW_INSTRUCTIONS.md for your review instructions. Inspect the workspace files to verify the actual work product.`,
+      '--dangerously-skip-permissions',
+      '--output-format', 'json',
+      '--max-turns', '15',
+    ];
+
+    // Strip CLAUDECODE env var to prevent nested session detection
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+
+    const claude = spawn('claude', args, {
+      cwd: workspacePath,
+      env: cleanEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    claude.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    claude.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    const timeoutId = setTimeout(() => {
+      claude.kill('SIGTERM');
+      cleanupReviewFile(reviewFilePath);
+      resolve({
+        text: '',
+        success: false,
+        error: 'Review timed out after 3 minutes',
+      });
+    }, 180000);
+
+    claude.on('close', (code) => {
+      clearTimeout(timeoutId);
+      cleanupReviewFile(reviewFilePath);
+
+      if (code === 0) {
+        try {
+          // Parse JSON result (same approach as claudeComplete)
+          const lines = stdout.trim().split('\n').filter(l => l.trim());
+          let text = '';
+          let cost = 0;
+
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const parsed = JSON.parse(lines[i]);
+              if (parsed.type === 'result') {
+                text = parsed.result || '';
+                cost = parsed.total_cost_usd || 0;
+                break;
+              }
+            } catch {
+              // Skip non-JSON lines
+            }
+          }
+
+          if (!text && lines.length > 0) {
+            try {
+              const parsed = JSON.parse(stdout);
+              text = parsed.result || parsed.text || '';
+              cost = parsed.total_cost_usd || 0;
+            } catch {
+              text = stdout.trim();
+            }
+          }
+
+          resolve({ text, success: true, cost });
+        } catch {
+          resolve({ text: stdout.trim(), success: true });
+        }
+      } else {
+        resolve({
+          text: stdout.trim(),
+          success: false,
+          error: stderr.trim() || `Claude CLI exited with code ${code}`,
+        });
+      }
+    });
+
+    claude.on('error', (err) => {
+      clearTimeout(timeoutId);
+      cleanupReviewFile(reviewFilePath);
+      resolve({
+        text: '',
+        success: false,
+        error: `Failed to spawn Claude CLI: ${err.message}`,
+      });
+    });
+  });
+}
+
+/**
+ * Clean up the temporary review instructions file (best effort).
+ */
+function cleanupReviewFile(filePath: string): void {
+  try {
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+  } catch {
+    // Non-critical cleanup failure
+  }
 }
 
 // ============================================================================

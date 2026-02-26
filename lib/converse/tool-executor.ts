@@ -14,6 +14,7 @@ import * as homrTools from './tools/homr';
 import * as capabilityTools from './tools/capabilities';
 import * as retroTools from './tools/retro';
 import * as gateTools from './tools/gates';
+import * as documentTools from './tools/documents';
 import type { OutcomeStatus, IsolationMode } from '../db/schema';
 
 export interface ToolCall {
@@ -480,6 +481,37 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
             filePath: result.filePath,
             message: result.message,
           },
+          error: result.error,
+        };
+      }
+
+      // =====================================================================
+      // Document Tools
+      // =====================================================================
+      case 'listDocuments': {
+        const outcomeId = args.outcome_id as string;
+        if (!outcomeId) {
+          return { success: false, error: 'outcome_id is required' };
+        }
+        const result = documentTools.listDocuments(outcomeId);
+        return {
+          success: result.success,
+          data: { documents: result.documents, count: result.count },
+          error: result.error,
+        };
+      }
+
+      case 'saveDocument': {
+        const outcomeId = args.outcome_id as string;
+        const name = args.name as string;
+        const content = args.content as string;
+        if (!outcomeId) return { success: false, error: 'outcome_id is required' };
+        if (!name) return { success: false, error: 'name is required' };
+        if (!content) return { success: false, error: 'content is required' };
+        const result = documentTools.saveDocument(outcomeId, name, content);
+        return {
+          success: result.success,
+          data: result.document,
           error: result.error,
         };
       }

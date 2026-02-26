@@ -195,6 +195,36 @@ function searchSkills(query: string): Skill[] {
 }
 ```
 
+## Lightweight Catalog Presentation
+
+`buildSkillContext()` in `lib/agents/skill-manager.ts` now builds a lightweight catalog table instead of injecting full skill content:
+
+```typescript
+function buildSkillContext(query: string, maxSkills: number = 3): string {
+  const skills = searchSkills(query).slice(0, maxSkills);
+  if (skills.length === 0) return '';
+
+  const parts: string[] = [
+    '## Relevant Global Skills',
+    '',
+    'These skills from your global library match this task. Read the full file if needed.',
+    '',
+    '| Skill | Category | Description |',
+    '|-------|----------|-------------|',
+  ];
+
+  for (const skill of skills) {
+    const desc = skill.description || 'See skill file';
+    parts.push(`| ${skill.name} | ${skill.category} | ${desc} |`);
+    incrementSkillUsage(skill.id);  // Track usage
+  }
+
+  parts.push('');
+  parts.push('Global skills are in the skill library. Use `flow skill show {name}` or read the file directly.');
+  return parts.join('\n');
+}
+```
+
 ## Trigger Matching
 
 `findRelevantSkills()` in `lib/agents/skill-manager.ts` combines DB search with trigger keyword matching:

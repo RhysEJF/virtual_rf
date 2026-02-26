@@ -11,7 +11,7 @@ description: "Implementation details for autonomous task execution."
 
 | File | Purpose | Size |
 |------|---------|------|
-| `lib/ralph/worker.ts` | Main worker logic | ~29KB |
+| `lib/ralph/worker.ts` | Main worker logic | ~50KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
 | `lib/db/tasks.ts` | Task claiming and status | ~6KB |
 | `lib/db/progress.ts` | Progress entry recording | ~3KB |
@@ -211,20 +211,23 @@ setTimeout(() => process.kill(pid, 'SIGKILL'), 5000);
 `startRalphWorker` loads outcome skills before the work loop and passes them to every task's CLAUDE.md:
 
 ```typescript
-// Before work loop
-const outcomeSkills = loadOutcomeSkills(outcomeId);
-// Builds "## Available Skills" section with full content
+// Before work loop — build lightweight catalogs
+const outcomeSkillContext = buildSkillCatalog(outcomeId, appendLog)
+  + '\n\n' + buildToolCatalog(outcomeId, appendLog)
+  + '\n\n' + buildDocumentCatalog(outcomeId, appendLog);
 
-// Inside generateTaskInstructions(), two sources combine:
+// Inside generateTaskInstructions(), global skills also combine:
 const combinedSkillContext = [
-  skillContext,              // Auto-discovered global skills (searchSkills)
-  additionalSkillContext     // Outcome skills (loadOutcomeSkills)
+  skillContext,              // Auto-discovered global skills (lightweight table)
+  additionalSkillContext     // Outcome catalogs (skills + tools + documents)
 ].filter(Boolean).join('\n\n');
 ```
 
 **Generated CLAUDE.md sections:**
-- `## Available Skills` — Outcome-specific skills (full content, always present if skills exist)
-- `## Relevant Skills` — Auto-discovered global skills (matched by name/keywords, max 2)
+- `## Available Skills` — Outcome skills catalog table (name, triggers, description)
+- `## Available Tools` — Outcome tools catalog table (name, type, description)
+- `## Available Documents` — Document catalog table (name, type, size, description)
+- `## Relevant Global Skills` — Auto-discovered global skills (name, category, description)
 
 ---
 
@@ -241,6 +244,38 @@ The following human input was provided for this task:
 ```
 
 This ensures workers have access to human-provided answers, documents, or approvals when executing gated tasks.
+
+---
+
+## Document Catalog Injection
+
+`buildDocumentCatalog()` scans the outcome's `docs/` directory and generates a markdown table:
+
+```typescript
+function buildDocumentCatalog(outcomeId: string, appendLog: (msg: string) => void): string \{
+  // 1. Scan \{workspacePath\}/docs/ for files
+  // 2. For each file: extract type, size, and first heading/line as description
+  // 3. Generate markdown table
+  // Returns empty string if no docs/ directory or no files
+\}
+```
+
+**Generated output:**
+```markdown
+## Available Documents
+
+Reference documents uploaded for this outcome are in `../docs/`.
+Read any document relevant to your current task.
+
+| Document | Type | Size | Description |
+|----------|------|------|-------------|
+| interview-transcript | markdown | 12KB | Customer Interview Notes |
+| competitor-analysis | pdf | 45KB | Read file for details |
+
+To use a document: Read `../docs/\{filename\}` for the full content.
+```
+
+Documents are uploaded via the web UI (`DocumentsSection.tsx`), CLI (`flow docs add`), or converse tools (`saveDocument`).
 
 ---
 

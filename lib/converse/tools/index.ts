@@ -571,6 +571,44 @@ export const converseTools: ToolDefinition[] = [
   },
 
   // =========================================================================
+  // Document Tools
+  // =========================================================================
+  {
+    name: 'listDocuments',
+    description:
+      'List documents attached to an outcome. Documents are reference materials (PDFs, transcripts, datasets, etc.) that workers can access. Use for "show documents", "what docs are uploaded", "list documents for outcome".',
+    parameters: {
+      outcome_id: {
+        type: 'string',
+        description: 'Outcome ID',
+        required: true,
+      },
+    },
+  },
+  {
+    name: 'saveDocument',
+    description:
+      'Save text content as a document for an outcome. Creates a markdown file in the outcome\'s docs/ directory that workers can access. Use for "save this as a document", "upload this content", "add a document to outcome".',
+    parameters: {
+      outcome_id: {
+        type: 'string',
+        description: 'Outcome ID to save the document to',
+        required: true,
+      },
+      name: {
+        type: 'string',
+        description: 'Document name (will be sanitized to filename)',
+        required: true,
+      },
+      content: {
+        type: 'string',
+        description: 'Document content (text/markdown)',
+        required: true,
+      },
+    },
+  },
+
+  // =========================================================================
   // Retrospective Analysis Tools (Self-Improvement)
   // =========================================================================
   {

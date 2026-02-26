@@ -40,3 +40,4 @@ export { serverCommand } from './server.js';
 export { serveCommand } from './serve.js';
 export { gateCommand } from './gate.js';
 export { telegramCommand } from './telegram.js';
+export { docsCommand } from './docs.js';

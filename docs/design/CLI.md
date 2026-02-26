@@ -25,7 +25,7 @@ cli/
 ├── tsconfig.json          # TypeScript strict ES2022
 ├── README.md              # User documentation
 ├── src/
-│   ├── index.ts           # Entry point, Commander setup (37 commands)
+│   ├── index.ts           # Entry point, Commander setup (39 commands)
 │   ├── api.ts             # Typed API client (~800 lines)
 │   ├── utils/
 │   │   ├── index.ts       # Re-exports
@@ -66,6 +66,7 @@ cli/
 │       ├── retro.ts       # flow retro (trigger, status, history, show, create)
 │       ├── converse.ts    # flow converse/talk (markdown rendering)
 │       ├── gate.ts        # flow gate (list/add/satisfy)
+│       ├── docs.ts        # flow docs (list/add/paste/rm)
 │       ├── server.ts      # flow server (start dev server)
 │       └── telegram.ts    # flow telegram (start/stop/status)
 │   └── types/
@@ -367,6 +368,20 @@ flow telegram status    # Check if running (finds Python -m src.main process)
 ```
 
 The start command automatically unsets `CLAUDECODE` env var (required for Claude CLI to spawn inside bot sessions). Bot directory: `~/claude-code-telegram/`.
+
+### Flow Docs
+
+Manage documents attached to outcomes:
+
+```bash
+flow docs <outcome-id>                         # List documents
+flow docs list <outcome-id>                    # List documents (explicit)
+flow docs add <outcome-id> <file-path>         # Upload local file
+flow docs paste <outcome-id> --name <name>     # Create from stdin
+flow docs rm <outcome-id> <filename>           # Delete document
+```
+
+Documents are stored in `~/flow-data/workspaces/{outcomeId}/docs/` and automatically surfaced to workers via the document catalog in CLAUDE.md.
 
 ### Flow Server
 

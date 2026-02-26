@@ -293,22 +293,27 @@ export function buildSkillContext(query: string, maxSkills: number = 3): string 
     return '';
   }
 
-  const parts: string[] = ['## Relevant Skills\n'];
+  // Build a lightweight catalog table instead of injecting full content.
+  // Workers can use `flow skill show {name}` or read the file if they need full content.
+  const parts: string[] = [
+    '## Relevant Global Skills',
+    '',
+    'These skills from your global library match this task. Read the full file if needed.',
+    '',
+    '| Skill | Category | Description |',
+    '|-------|----------|-------------|',
+  ];
 
   for (const skill of skills) {
-    const content = getSkillContent(skill.id);
-    if (content) {
-      parts.push(`### ${skill.name}`);
-      parts.push(`Category: ${skill.category}`);
-      if (skill.description) parts.push(`Description: ${skill.description}`);
-      parts.push('');
-      parts.push(content);
-      parts.push('');
+    const desc = skill.description || 'See skill file';
+    parts.push(`| ${skill.name} | ${skill.category} | ${desc} |`);
 
-      // Track usage
-      incrementSkillUsage(skill.id);
-    }
+    // Track usage
+    incrementSkillUsage(skill.id);
   }
+
+  parts.push('');
+  parts.push('Global skills are in the skill library. Use `flow skill show {name}` or read the file directly.');
 
   return parts.join('\n');
 }

@@ -24,6 +24,8 @@ The goal is autonomous quality assurance with human-level thoroughness.
 | PRD-based success criteria checking | Complete |
 | Issue detection with severity levels | Complete |
 | Automatic fix task generation | Complete |
+| Investigation task strategy | Complete |
+| Workspace-aware review (file access) | Complete |
 | Convergence tracking | Complete |
 | Verification checklist validation | Complete |
 | Iterate feedback system | Complete |
@@ -45,6 +47,26 @@ Cycle 3: 3 issues found  → 3 fix tasks (improving)
 Cycle 4: 0 issues found  → converging
 Cycle 5: 0 issues found  → DONE (2 consecutive zeros)
 ```
+
+### Investigation Task Strategy
+
+Instead of creating individual fix tasks per issue, the reviewer now creates a **single investigation task**:
+
+1. **One task for all issues** — Lists every issue found with severity and context
+2. **Root cause analysis** — Worker investigates each issue's root cause before fixing
+3. **Targeted fix design** — Worker designs focused fixes with acceptance criteria
+4. **Subtask creation** — Worker creates well-specified subtasks for each fix
+5. **Deduplication** — Worker reviews all subtasks for overlap and removes redundancy
+
+This ensures thorough investigation before fix work begins and produces better-specified subtasks than the reviewer can generate from static analysis alone.
+
+### Workspace-Aware Review
+
+Reviews now spawn a Claude CLI process with direct access to the outcome's workspace:
+
+1. **File System Access** — Reviewer can read actual files, not just task output summaries
+2. **CLAUDE.md Context** — Review instructions are written to a temporary CLAUDE.md in the workspace
+3. **Accurate Assessment** — The reviewer sees the real state of the codebase, reducing false positives
 
 ### Convergence
 

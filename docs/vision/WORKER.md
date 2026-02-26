@@ -39,6 +39,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Dynamic capability task creation | Complete |
 | Workspace isolation enforcement | Complete |
 | Task gate enforcement (human-in-the-loop) | Complete |
+| Document catalog context injection | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -61,11 +62,11 @@ Workers send heartbeats every 30 seconds:
 
 Skills reach workers through two complementary paths:
 
-1. **Outcome skills** (primary) — On worker start, `loadOutcomeSkills()` reads all `.md` files from the outcome's `skills/` directory. These are injected as an `## Available Skills` section in every task's CLAUDE.md, with full skill content included.
+1. **Outcome skills** (primary) — On worker start, `buildSkillCatalog()` reads all `.md` files from the outcome's `skills/` directory. These are presented as an `## Available Skills` table in the worker's CLAUDE.md with name, triggers, and description. Workers read the full skill file on demand via `../skills/{skill-name}.md`.
 
-2. **Auto-discovery** (secondary) — `searchSkills()` matches the task title + description against global skills in the database. Skills whose name or description keywords appear in the query are injected as a `## Relevant Skills` section.
+2. **Auto-discovery** (secondary) — `searchSkills()` matches the task title + description against global skills in the database. Matching skills are presented as a `## Relevant Global Skills` table with name, category, and description. Workers access full content via `flow skill show {name}` or by reading the file directly.
 
-Both paths combine — outcome skills provide outcome-specific methodology, while auto-discovery surfaces relevant global skills the worker might not know about.
+Both paths use lightweight catalog tables rather than full content injection, reducing context overhead while maintaining discoverability. Outcome skills provide outcome-specific methodology, while auto-discovery surfaces relevant global skills.
 
 ### Progress Tracking
 
@@ -177,6 +178,18 @@ Workers check for human-in-the-loop gates before claiming tasks:
 
 Gates integrate with HOMЯ escalations — each pending gate auto-creates an escalation, and answering the escalation satisfies the gate.
 
+### Document Catalog Context
+
+Workers have access to outcome documents uploaded via the UI, CLI, or converse tools:
+
+1. **Document Discovery** — `buildDocumentCatalog()` scans `{workspace}/docs/` directory at worker startup
+2. **Metadata Extraction** — Extracts file type, size, and first-line description for each document
+3. **Markdown Table** — Generates an `## Available Documents` section with type, size, and description
+4. **Worker Access** — Workers read documents via `../docs/{filename}` from their task workspace
+5. **Type Support** — Recognizes markdown, text, PDF, CSV, JSON, XML, HTML, Word, Excel, images, and SVG
+
+The catalog is built alongside skill and tool catalogs in `startRalphWorker()` and injected into the worker's CLAUDE.md. If no documents exist, nothing is injected (no noise).
+
 ### Workspace Isolation Enforcement
 
 Outcomes can run in two isolation modes:
@@ -210,6 +223,7 @@ Each worker receives a **generated per-task CLAUDE.md** written to its task work
    - Full design document (no truncation — workers get the complete design doc)
    - Isolation/git/HOMR context
    - Task description, PRD context, design context, intent, and approach
+   - Skill catalog, tool catalog, and document catalog
    - Matched skill content
    - Progress format and behavioral rules
 
@@ -257,7 +271,7 @@ Each worker receives a **generated per-task CLAUDE.md** written to its task work
    **Resolved:** HOMЯ now detects failure patterns. After 3 consecutive failures, it escalates to human and pauses workers. Task-level retry uses `max_attempts` (default 3). Circuit breaker pattern provides additional protection.
 
 4. ~~**Context size** - Full skill injection can blow up context. Need smarter skill selection or summarization.~~
-   **Partially resolved:** Outcome skills are loaded in full (they're purpose-built and relevant). Auto-discovery limits to 2 global skills per task. Design doc is now included in full (no truncation). Remaining concern is outcomes with many skills — see [harness engineering research](../research/harness-engineering.md#5-agentsmd-as-table-of-contents-not-encyclopedia) for the "table of contents" approach as a future improvement.
+   **Resolved:** Skills, tools, and documents are now presented as lightweight catalog tables (name, type, description). Workers load full content on-demand. This implements the "table of contents" approach from [harness engineering research](../research/harness-engineering.md#5-agentsmd-as-table-of-contents-not-encyclopedia).
 
 ---
 

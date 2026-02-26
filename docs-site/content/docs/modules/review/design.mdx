@@ -11,7 +11,7 @@ description: "Implementation details for quality assurance and convergence track
 
 | File | Purpose | Size |
 |------|---------|------|
-| `lib/agents/reviewer.ts` | Main review logic | ~12.5KB |
+| `lib/agents/reviewer.ts` | Main review logic | ~15KB |
 | `lib/db/review-cycles.ts` | Review cycle persistence | ~3KB |
 | `lib/db/tasks.ts` | Fix task creation | ~6KB |
 | `app/api/outcomes/[id]/review/route.ts` | Review API endpoint | ~2KB |
@@ -37,17 +37,20 @@ POST /api/outcomes/\{id\}/review
               │
               ▼
 ┌─────────────────────────────────┐
-│     Analyze via Claude          │
+│     Workspace-aware review      │
+│     (spawns Claude CLI with     │
+│      file access to workspace)  │
 │     - Check success criteria    │
 │     - Identify issues           │
 │     - Assign severity           │
-│     - Suggest fixes             │
 └─────────────┬───────────────────┘
               │
               ▼
 ┌─────────────────────────────────┐
-│     Create fix tasks            │
-│     (priority based on severity)│
+│     Create investigation task   │
+│     (single task listing all    │
+│      issues for root cause      │
+│      analysis + subtask gen)    │
 └─────────────┬───────────────────┘
               │
               ▼
@@ -70,8 +73,8 @@ POST /api/outcomes/\{id\}/review
 ## Dependencies
 
 **Uses:**
-- `lib/claude/client.ts` - For AI-powered review
-- `lib/db/tasks.ts` - Create fix tasks
+- `child_process.spawn` - Spawns Claude CLI with workspace file access
+- `lib/db/tasks.ts` - Create investigation tasks
 - `lib/db/review-cycles.ts` - Record reviews
 - `lib/db/outcomes.ts` - Get outcome context
 
@@ -180,6 +183,24 @@ CREATE TABLE review_cycles (
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
 );
 ```
+
+---
+
+## Task Creation Strategy
+
+Instead of creating individual fix tasks per issue, the reviewer creates a **single investigation task** that:
+
+1. Lists all issues with severity and context
+2. Instructs the worker to investigate root causes
+3. Instructs the worker to design targeted fixes with acceptance criteria
+4. Instructs the worker to create well-specified subtasks
+5. Instructs the worker to review for duplication and dependencies
+
+**Benefits:**
+- Thorough analysis before fix work
+- Well-specified subtasks instead of guessed fixes
+- Worker can evaluate issue relationships and dependencies
+- Prevents premature task creation with incomplete specifications
 
 ---
 

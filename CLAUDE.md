@@ -452,12 +452,12 @@ kill -9 <PID>
 
 ### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] 38 commands implemented (full API coverage)
+- [x] 39 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
 - [x] Task management: tasks, task (add/update)
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
 - [x] HOMЯ integration: homr (--supervise, --yolo), escalations, answer, dismiss
-- [x] Resources: skills, skill, tools, tool, outputs, files
+- [x] Resources: skills, skill, tools, tool, outputs, files, docs (list/add/paste/rm)
 - [x] Settings: config, sync, retro
 - [x] Retro subcommands: `retro show`, `retro history`, `retro create` (with --consolidated, --start, --open)
 - [x] Chat/iterate: chat
@@ -473,6 +473,7 @@ kill -9 <PID>
 - [x] Session context tracking
 - [x] 30+ tools for system interaction
 - [x] Retro tools: triggerRetroAnalysis, getRetroJobStatus, getRetroJobDetails, listRecentRetroJobs, createFromRetroProposal
+- [x] Document tools: listDocuments, saveDocument
 
 ### Working Flow
 1. User submits request via CommandBar

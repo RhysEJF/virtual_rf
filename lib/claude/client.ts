@@ -89,8 +89,12 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
       args.push('--allowedTools', allowedTools.join(' '));
     }
 
+    // Strip CLAUDECODE env var to prevent nested session detection blocking the CLI
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+
     const claude = spawn('claude', args, {
-      env: { ...process.env },
+      env: cleanEnv,
       stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, pipe stdout/stderr
     });
 
@@ -243,7 +247,12 @@ export async function complete(options: {
  */
 export async function isClaudeAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
+    // Strip CLAUDECODE env var to prevent nested session detection blocking the CLI
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+
     const claude = spawn('claude', ['--version'], {
+      env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

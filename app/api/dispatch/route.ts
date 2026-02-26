@@ -178,6 +178,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
     // Determine request type based on mode hint or AI classification
     let requestType: 'quick' | 'research' | 'deep' | 'clarification';
     let clarifyingQuestions: string[] | undefined;
+    let classificationConfidence: number | undefined;
 
     if (modeHint === 'quick') {
       // User explicitly wants a quick response
@@ -190,6 +191,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       const classification = await dispatch(input);
       requestType = classification.type;
       clarifyingQuestions = classification.clarifyingQuestions;
+      classificationConfidence = classification.confidence;
     }
 
     // Handle based on type
@@ -295,6 +297,17 @@ Review the outcome and start a worker when ready.`,
         const questions = clarifyingQuestions || [
           'Could you please provide more details about what you need?',
         ];
+
+        // Low confidence clarification likely means a system error (CLI failure, parse error),
+        // not a genuinely vague user request
+        if (classificationConfidence !== undefined && classificationConfidence <= 0.3) {
+          return NextResponse.json({
+            type: 'clarification',
+            response: `Classification could not be completed reliably. You can try again, or use a mode hint (quick/long) to bypass classification.\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
+            questions,
+            error: 'Classification system encountered an issue. The request may be valid but could not be processed.',
+          });
+        }
 
         return NextResponse.json({
           type: 'clarification',

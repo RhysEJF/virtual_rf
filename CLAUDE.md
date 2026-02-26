@@ -452,7 +452,7 @@ kill -9 <PID>
 
 ### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] 36 commands implemented (full API coverage)
+- [x] 38 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
 - [x] Task management: tasks, task (add/update)
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
@@ -464,6 +464,7 @@ kill -9 <PID>
 - [x] Workspace isolation: `new --isolated/--allow-codebase`, `config isolation-mode`
 - [x] Workspace servers: `serve`, `serve start`, `serve stop`, `serve list`
 - [x] Output flags: --json, --quiet on all commands
+- [x] Telegram bot management: `flow telegram start/stop/status`
 - [ ] Interactive mode (REPL)
 
 ### Converse Mode (Complete)
@@ -498,11 +499,13 @@ kill -9 <PID>
 - [x] Gate satisfaction on escalation resolution (`lib/homr/escalator.ts`)
 - [x] Gate escalations blocked from auto-resolve (`lib/homr/auto-resolver.ts`)
 - [x] API endpoints: `/api/tasks/[id]/gates`, `/api/tasks/[id]/gates/[gateId]/satisfy`
-- [x] UI: gated badge, gate section in ExpandableTaskCard, gate-specific EscalationAlert styling
+- [x] UI: gated badge, gate section in ExpandableTaskCard, gate creation form, gate-specific EscalationAlert styling
 - [x] CLI: `flow gate list/add/satisfy`, `flow task add --gate`
 - [x] Converse tools: `addGate`, `satisfyGate`, `listGates`
 - [x] Worker diagnostic logging for gated tasks
 - [x] Gate response data injection into worker CLAUDE.md
+- [x] AI-assisted gate suggestions in iterate, interpret, and execute-plan workflows
+- [x] HOMR steerer `add_gate` action for autonomous gate creation
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

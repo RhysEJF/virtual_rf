@@ -39,3 +39,4 @@ export { capabilityCommand } from './capability.js';
 export { serverCommand } from './server.js';
 export { serveCommand } from './serve.js';
 export { gateCommand } from './gate.js';
+export { telegramCommand } from './telegram.js';

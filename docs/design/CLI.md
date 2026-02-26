@@ -66,7 +66,8 @@ cli/
 │       ├── retro.ts       # flow retro (trigger, status, history, show, create)
 │       ├── converse.ts    # flow converse/talk (markdown rendering)
 │       ├── gate.ts        # flow gate (list/add/satisfy)
-│       └── server.ts      # flow server (start dev server)
+│       ├── server.ts      # flow server (start dev server)
+│       └── telegram.ts    # flow telegram (start/stop/status)
 │   └── types/
 │       └── marked-terminal.d.ts  # Type declarations for marked-terminal
 └── dist/                  # Compiled JavaScript
@@ -353,6 +354,19 @@ When `flow new` finds matching outcomes, it offers choices:
 - Add to existing outcome → calls iterate API to create tasks
 - Create new outcome instead
 - Cancel
+
+### Flow Telegram
+
+Manage the Telegram bot process:
+
+```bash
+flow telegram           # Show bot status
+flow telegram start     # Start bot in background (detached, logs to /tmp/telegram-bot.log)
+flow telegram stop      # Kill bot process
+flow telegram status    # Check if running (finds Python -m src.main process)
+```
+
+The start command automatically unsets `CLAUDECODE` env var (required for Claude CLI to spawn inside bot sessions). Bot directory: `~/claude-code-telegram/`.
 
 ### Flow Server
 

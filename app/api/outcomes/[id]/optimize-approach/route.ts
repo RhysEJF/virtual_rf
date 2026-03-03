@@ -86,7 +86,7 @@ Rules:
     // Call Claude
     const result = await claudeComplete({
       prompt,
-      timeout: 60000,
+      timeout: 120000,
       maxTurns: 1,
     });
 

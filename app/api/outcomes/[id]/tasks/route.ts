@@ -130,6 +130,8 @@ export async function POST(
         task_intent: task.task_intent,
         task_approach: task.task_approach,
         depends_on: task.depends_on,
+        phase: task.phase,
+        capability_type: task.capability_type,
       }));
 
       const tasks = createTasksBatch(inputs);
@@ -169,6 +171,8 @@ export async function POST(
       task_approach: body.task_approach,
       depends_on: dependsOn,
       gates: body.gates,
+      phase: body.phase,
+      capability_type: body.capability_type,
     });
 
     // Auto-create escalations for any gates

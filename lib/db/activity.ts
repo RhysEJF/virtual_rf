@@ -184,6 +184,22 @@ export function logWorkerFailed(
   });
 }
 
+export function logWorkerRestarted(
+  outcomeId: string,
+  outcomeName: string,
+  workerName: string,
+  attemptNumber: number,
+  exitReason: string
+): Activity {
+  return createActivity({
+    outcome_id: outcomeId,
+    outcome_name: outcomeName,
+    type: 'worker_restarted',
+    title: `${workerName} auto-restarted (attempt ${attemptNumber})`,
+    description: `Exit reason: ${exitReason}`,
+  });
+}
+
 export function logReviewCompleted(
   outcomeId: string,
   outcomeName: string,

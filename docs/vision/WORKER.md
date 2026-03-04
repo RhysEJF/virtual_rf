@@ -39,6 +39,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Dynamic capability task creation | Complete |
 | Workspace isolation enforcement | Complete |
 | Task gate enforcement (human-in-the-loop) | Complete |
+| Turn exhaustion detection (graceful --max-turns handling) | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -114,6 +115,18 @@ Workers now implement a circuit breaker to prevent cascading failures:
 4. **Pattern Analysis** - Categorizes errors (timeout, permission, syntax, runtime) to identify systemic issues
 
 When the circuit breaker trips, all active workers on the outcome pause, preventing wasted resources on a broken outcome.
+
+### Turn Exhaustion Detection
+
+When Claude CLI hits `--max-turns`, the worker detects this gracefully and avoids wasting attempts:
+
+1. **Detection** — `detectTurnExhaustion()` checks the CLI output for a JSON result with `subtype: 'error_max_turns'` (primary). Falls back to keyword matching (`max turns`, `max_turns`, `turn limit`) when exit code is `null` (signal kill).
+2. **Task Release** — The task is released back to `pending` via `releaseTask()` — no attempt is burned. This differs from a normal failure, which increments the attempt counter.
+3. **Progress.txt Override** — If `progress.txt` contains `DONE` despite turn exhaustion, the task is treated as a success. The worker may have finished the actual work but ran out of turns during cleanup.
+4. **Worker Continues** — Unlike rate-limit detection (which pauses the worker), turn exhaustion simply moves on to the next task. The exhausted task can be picked up again by any worker.
+5. **Error Categorization** — `categorizeError()` classifies `turn`, `iteration`, `max_turns`, and `code null` errors as `turn_limit_exhausted` for circuit breaker tracking.
+
+This follows the same release-not-fail pattern as rate limiting, ensuring transient CLI limits don't permanently fail tasks that could succeed on retry.
 
 ### Task Complexity Estimation
 

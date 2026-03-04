@@ -425,6 +425,7 @@ kill -9 <PID>
 - [x] Auto-decomposition for high-complexity tasks (`lib/agents/task-decomposer.ts`)
 - [x] Failure pattern categorization (timeout, permission, syntax, runtime)
 - [x] Turn limit risk assessment to prevent mid-task failures
+- [x] Turn exhaustion detection — release tasks to pending instead of failing (`detectTurnExhaustion`)
 
 ### Destructive Command Guard (Complete)
 - [x] Command validation before execution (`lib/guard/index.ts`)

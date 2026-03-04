@@ -11,6 +11,7 @@
 | File | Purpose | Size |
 |------|---------|------|
 | `lib/ralph/worker.ts` | Main worker logic | ~50KB |
+| `lib/ralph/worker.ts` | Main worker logic | ~35KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
 | `lib/db/tasks.ts` | Task claiming and status | ~6KB |
 | `lib/db/progress.ts` | Progress entry recording | ~3KB |
@@ -58,19 +59,22 @@ startRalphWorker(config)
               │ Send heartbeats │         │
               └────────┬────────┘         │
                        │                  │
-              ┌────────┴────────┐         │
-              ▼                 ▼         │
-           DONE              ERROR        │
-              │                 │         │
-              ▼                 ▼         │
-         Complete task    Fail task       │
-              │                 │         │
-              └────────┬────────┘         │
-                       │                  │
-                       ▼                  │
-              Record full output          │
-                       │                  │
-                       └──────────────────┘
+              ┌────────┴──────────────────┐         │
+              ▼             ▼            ▼         │
+           DONE        TURN EXHAUSTED  ERROR       │
+              │             │            │         │
+              ▼             ▼            ▼         │
+         Complete      Release task   Fail task    │
+           task        back to        (burn        │
+              │        pending         attempt)    │
+              │        (no attempt     │           │
+              │         burned)        │           │
+              └──────┬──┴──────────────┘           │
+                     │                             │
+                     ▼                             │
+            Record full output                     │
+                     │                             │
+                     └─────────────────────────────┘
 ```
 
 ---
@@ -187,6 +191,69 @@ Detection logic:
 - `STATUS:` lines → Update progress summary
 - `DONE` → Complete task successfully
 - `ERROR` → Fail task with error
+- Turn exhaustion with `DONE` in progress.txt → Treat as success (work finished despite hitting turn limit)
+
+---
+
+## Turn Exhaustion Detection
+
+When Claude CLI hits its max turns limit, the task is **not failed**. Instead it is released back to pending so another worker (or the same worker on the next iteration) can pick it up without burning a failure attempt.
+
+### Detection — `detectTurnExhaustion(fullOutput, exitCode)`
+
+Two-tier detection strategy:
+
+1. **Primary (JSON):** Scan CLI output lines (last-to-first) for a JSON result with `subtype: 'error_max_turns'`. This is emitted when using `--output-format json`.
+2. **Fallback (keyword + exit code):** When `exitCode === null` (process killed by signal), check for turn-related keywords (`max turns`, `max_turns`, `turn limit`) in the output.
+
+```typescript
+function detectTurnExhaustion(fullOutput: string, exitCode: number | null): boolean
+```
+
+### `executeTask` Return Type
+
+```typescript
+Promise<{
+  success: boolean;
+  error?: string;
+  fullOutput?: string;
+  guardBlocks?: number;
+  rateLimited?: boolean;
+  turnExhausted?: boolean;   // Set when max turns reached
+}>
+```
+
+### Close Handler Resolution Order
+
+Inside the `claudeProcess.on('close')` handler, checks run in this order:
+
+1. **Rate limit** → resolve `rateLimited: true`, break loop
+2. **Turn exhaustion** → check progress.txt:
+   - If `DONE` found → resolve as `success: true` (work completed despite exhaustion)
+   - Otherwise → resolve `turnExhausted: true`
+3. **Progress file** → normal `DONE` / `ERROR` / exit-code logic
+
+### Worker Loop Handling
+
+Both `startRalphWorker` (main loop) and `runWorkerLoop` (self-healing loop) handle `turnExhausted` identically:
+
+```typescript
+if (taskResult.turnExhausted) {
+  appendLog(`[Turn Exhaustion] Max turns reached on "${task.title}". Releasing back to pending (no attempt burned).`);
+  releaseTask(task.id);
+  createProgressEntry({ ... });
+  continue;  // Next iteration — do NOT break the loop
+}
+```
+
+Key behavior:
+- `releaseTask()` sets the task back to `pending` (no failure recorded)
+- The worker **continues** to the next iteration (does not pause or stop)
+- No circuit-breaker attempt is consumed
+
+### Error Categorization
+
+`categorizeError` recognizes turn exhaustion via the pattern `'code null'` (the error string from a null exit code), categorizing it as `turn_limit_exhausted`. This feeds into the circuit breaker's failure pattern analysis.
 
 ---
 

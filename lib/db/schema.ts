@@ -369,7 +369,8 @@ export type ActivityType =
   | 'analysis_started'
   | 'analysis_completed'
   | 'analysis_failed'
-  | 'improvement_created';
+  | 'improvement_created'
+  | 'worker_restarted';
 
 export interface Activity {
   id: number;

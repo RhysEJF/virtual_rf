@@ -64,6 +64,7 @@ import {
   logWorkerStarted,
   logWorkerCompleted,
   logWorkerFailed,
+  logWorkerRestarted,
 } from '../db/activity';
 import { paths } from '../config/paths';
 
@@ -82,6 +83,48 @@ export interface RalphConfig {
   enableComplexityCheck?: boolean; // Default true - check task complexity before claiming
   autoDecompose?: boolean; // Default false - auto-decompose high-complexity tasks
   maxTurns?: number; // Default 40 - worker's max turns per task
+  selfHeal?: boolean; // Default true - auto-restart on infrastructure failures
+  selfHealConfig?: Partial<SelfHealConfig>;
+}
+
+// ============================================================================
+// Self-Healing Types
+// ============================================================================
+
+type WorkerExitReason =
+  | 'user_paused'           // Explicit pause via API or intervention
+  | 'all_tasks_complete'    // No more work
+  | 'gate_reached'          // Only gated tasks remain
+  | 'complexity_escalation' // Human decision needed
+  | 'circuit_breaker'       // Repeated failures, human review
+  | 'homr_paused'           // HOMR observer paused for review
+  | 'critical_error'        // Task reported critical/blocked error
+  | 'uncaught_exception'    // Unexpected throw — RESTARTABLE
+  | 'max_iterations'        // Hit iteration limit — RESTARTABLE
+  | 'unknown';              // Fallback — RESTARTABLE
+
+interface SelfHealConfig {
+  maxRestarts: number;          // Default 5
+  initialBackoffMs: number;     // Default 10_000 (10s)
+  maxBackoffMs: number;         // Default 120_000 (2 min)
+  backoffMultiplier: number;    // Default 2
+}
+
+const DEFAULT_SELF_HEAL: SelfHealConfig = {
+  maxRestarts: 5,
+  initialBackoffMs: 10_000,
+  maxBackoffMs: 120_000,
+  backoffMultiplier: 2,
+};
+
+const RESTARTABLE_EXITS = new Set<WorkerExitReason>([
+  'uncaught_exception',
+  'max_iterations',
+  'unknown',
+]);
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ============================================================================
@@ -1052,423 +1095,495 @@ export async function startRalphWorker(
     appendLog(`Loaded ${outcomeSkills.length} outcome skills for context injection`);
   }
 
-  // Start the work loop
+  // Start the work loop (with self-healing restart wrapper)
   (async () => {
-    let iteration = 0;
-    let hasError = false;
-    let errorMessage: string | undefined;
+    const selfHeal = config.selfHeal !== false; // Default true
+    const healCfg: SelfHealConfig = { ...DEFAULT_SELF_HEAL, ...config.selfHealConfig };
+    let restartCount = 0;
+    let backoffMs = healCfg.initialBackoffMs;
 
-    try {
-      while (workerState.running && iteration < maxIterations) {
-        iteration++;
-        incrementIteration(workerId);
+    // eslint-disable-next-line no-restricted-syntax
+    restart: while (true) {
+      let iteration = 0;
+      let exitReason: WorkerExitReason = 'unknown';
+      let hasError = false;
+      let errorMessage: string | undefined;
 
-        // Check if worker has been paused via API
-        if (isWorkerPaused(workerId)) {
-          appendLog(`Worker paused via API - stopping loop`);
-          workerState.running = false;
-          break;
-        }
+      try {
+        while (workerState.running && iteration < maxIterations) {
+          iteration++;
+          incrementIteration(workerId);
 
-        // Check for pending interventions before claiming next task
-        const interventions = getPendingInterventionsForWorker(workerId, outcomeId);
-        for (const intervention of interventions) {
-          appendLog(`Processing intervention: ${intervention.type} - ${intervention.message}`);
-          acknowledgeIntervention(intervention.id);
-
-          switch (intervention.type) {
-            case 'add_task':
-              // Task was already created by the API, just log it
-              createProgressEntry({
-                outcome_id: outcomeId,
-                worker_id: workerId,
-                iteration,
-                content: `Intervention: Added task - ${intervention.message}`,
-              });
-              completeIntervention(intervention.id);
-              break;
-
-            case 'redirect':
-              // Store redirect message to inject into next task context
-              createProgressEntry({
-                outcome_id: outcomeId,
-                worker_id: workerId,
-                iteration,
-                content: `Intervention: Redirect instruction - ${intervention.message}`,
-              });
-              // The redirect message will be visible in progress, worker sees it
-              appendLog(`Redirect instruction received: ${intervention.message}`);
-              completeIntervention(intervention.id);
-              break;
-
-            case 'pause':
-              createProgressEntry({
-                outcome_id: outcomeId,
-                worker_id: workerId,
-                iteration,
-                content: `Intervention: Paused - ${intervention.message || 'User requested pause'}`,
-              });
-              appendLog(`Pause intervention received, stopping worker`);
-              completeIntervention(intervention.id);
-              workerState.running = false;
-              break;
-
-            case 'priority_change':
-              // Priority changes are handled at the task level, just acknowledge
-              completeIntervention(intervention.id);
-              break;
+          // Check if worker has been paused via API
+          if (isWorkerPaused(workerId)) {
+            appendLog(`Worker paused via API - stopping loop`);
+            workerState.running = false;
+            exitReason = 'user_paused';
+            break;
           }
 
-          // If paused, break out of intervention loop
-          if (!workerState.running) break;
-        }
+          // Check for pending interventions before claiming next task
+          const interventions = getPendingInterventionsForWorker(workerId, outcomeId);
+          for (const intervention of interventions) {
+            appendLog(`Processing intervention: ${intervention.type} - ${intervention.message}`);
+            acknowledgeIntervention(intervention.id);
 
-        // Check if we were paused by an intervention
-        if (!workerState.running) {
-          appendLog(`Worker paused by intervention`);
-          break;
-        }
+            switch (intervention.type) {
+              case 'add_task':
+                // Task was already created by the API, just log it
+                createProgressEntry({
+                  outcome_id: outcomeId,
+                  worker_id: workerId,
+                  iteration,
+                  content: `Intervention: Added task - ${intervention.message}`,
+                });
+                completeIntervention(intervention.id);
+                break;
 
-        // Update progress
-        progress.status = 'claiming';
-        progress.iteration = iteration;
-        progress.lastUpdate = Date.now();
-        if (onProgress) onProgress({ ...progress });
+              case 'redirect':
+                // Store redirect message to inject into next task context
+                createProgressEntry({
+                  outcome_id: outcomeId,
+                  worker_id: workerId,
+                  iteration,
+                  content: `Intervention: Redirect instruction - ${intervention.message}`,
+                });
+                // The redirect message will be visible in progress, worker sees it
+                appendLog(`Redirect instruction received: ${intervention.message}`);
+                completeIntervention(intervention.id);
+                break;
 
-        appendLog(`Iteration ${iteration}: Claiming next task...`);
+              case 'pause':
+                createProgressEntry({
+                  outcome_id: outcomeId,
+                  worker_id: workerId,
+                  iteration,
+                  content: `Intervention: Paused - ${intervention.message || 'User requested pause'}`,
+                });
+                appendLog(`Pause intervention received, stopping worker`);
+                completeIntervention(intervention.id);
+                workerState.running = false;
+                break;
 
-        // Try to claim a task
-        const claimResult = claimNextTask(outcomeId, workerId);
-
-        if (!claimResult.success || !claimResult.task) {
-          // Check for gated tasks to provide diagnostic message
-          const { getTasksWithPendingGates } = require('../db/tasks');
-          const gatedTasks = getTasksWithPendingGates(outcomeId);
-          if (gatedTasks.length > 0) {
-            appendLog(`No claimable tasks. ${gatedTasks.length} task(s) are gated on human input.`);
-            for (const { task: gt, pendingGates } of gatedTasks) {
-              const gateLabels = pendingGates.map((g: { label: string }) => g.label).join(', ');
-              appendLog(`  - "${gt.title}" (${gateLabels})`);
+              case 'priority_change':
+                // Priority changes are handled at the task level, just acknowledge
+                completeIntervention(intervention.id);
+                break;
             }
-          } else {
-            appendLog(`No more pending tasks. Work complete.`);
+
+            // If paused, break out of intervention loop
+            if (!workerState.running) break;
           }
-          break;
-        }
 
-        const task = claimResult.task;
-        appendLog(`Claimed task: ${task.title} (${task.id})`);
-        logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
+          // Check if we were paused by an intervention
+          if (!workerState.running) {
+            appendLog(`Worker paused by intervention`);
+            exitReason = 'user_paused';
+            break;
+          }
 
-        // Pre-claim complexity check
-        if (enableComplexityCheck) {
-          const complexityResult = await runPreClaimComplexityCheck(
-            task,
-            outcomeId,
+          // Update progress
+          progress.status = 'claiming';
+          progress.iteration = iteration;
+          progress.lastUpdate = Date.now();
+          if (onProgress) onProgress({ ...progress });
+
+          appendLog(`Iteration ${iteration}: Claiming next task...`);
+
+          // Try to claim a task
+          const claimResult = claimNextTask(outcomeId, workerId);
+
+          if (!claimResult.success || !claimResult.task) {
+            // Check for gated tasks to provide diagnostic message
+            const { getTasksWithPendingGates } = require('../db/tasks');
+            const gatedTasks = getTasksWithPendingGates(outcomeId);
+            if (gatedTasks.length > 0) {
+              appendLog(`No claimable tasks. ${gatedTasks.length} task(s) are gated on human input.`);
+              for (const { task: gt, pendingGates } of gatedTasks) {
+                const gateLabels = pendingGates.map((g: { label: string }) => g.label).join(', ');
+                appendLog(`  - "${gt.title}" (${gateLabels})`);
+              }
+              exitReason = 'gate_reached';
+            } else {
+              appendLog(`No more pending tasks. Work complete.`);
+              exitReason = 'all_tasks_complete';
+            }
+            break;
+          }
+
+          const task = claimResult.task;
+          appendLog(`Claimed task: ${task.title} (${task.id})`);
+          logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
+
+          // Pre-claim complexity check
+          if (enableComplexityCheck) {
+            const complexityResult = await runPreClaimComplexityCheck(
+              task,
+              outcomeId,
+              intent,
+              complexityCheckConfig,
+              appendLog
+            );
+
+            if (!complexityResult.shouldProceed) {
+              appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
+
+              // Release the task since we won't run it
+              releaseTask(task.id);
+
+              // Record progress entry
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Complexity check: ${complexityResult.action} - ${task.title}`,
+              });
+
+              // If decomposed, the new subtasks will be picked up in the next iteration
+              if (complexityResult.action === 'decomposed') {
+                appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
+                continue; // Move to next iteration to pick up subtasks
+              }
+
+              // If escalated, worker should pause and wait for human decision
+              if (complexityResult.action === 'escalated') {
+                appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
+                workerState.running = false;
+                exitReason = 'complexity_escalation';
+                break;
+              }
+
+              // If skipped for other reasons, continue to next task
+              continue;
+            }
+
+            // Store estimate on task for future reference
+            if (complexityResult.estimate) {
+              updateTaskDb(task.id, {
+                complexity_score: complexityResult.estimate.complexity_score,
+                estimated_turns: complexityResult.estimate.estimated_turns,
+              });
+            }
+          }
+
+          // Update progress
+          progress.status = 'running';
+          progress.currentTaskId = task.id;
+          progress.currentTaskTitle = task.title;
+          progress.lastUpdate = Date.now();
+          if (onProgress) onProgress({ ...progress });
+
+          // Mark task as running
+          startTask(task.id);
+
+          // Create task workspace
+          const taskWorkspace = join(outcomeWorkspace, task.id);
+          if (!existsSync(taskWorkspace)) {
+            mkdirSync(taskWorkspace, { recursive: true });
+          }
+
+          // Write CLAUDE.md and progress.txt
+          const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
+          writeFileSync(claudeMdPath, generateTaskInstructions(
+            outcome.name,
             intent,
-            complexityCheckConfig,
-            appendLog
+            task,
+            outcomeSkillContext || undefined,
+            outcomeId,
+            gitConfig,
+            outcome.isolation_mode || 'workspace',
+            outcomeWorkspace
+          ));
+
+          const progressPath = join(taskWorkspace, 'progress.txt');
+          writeFileSync(progressPath, generateInitialProgress(task));
+
+          // Spawn Claude for this task
+          const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
+Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
+
+          // Use task's max_attempts if it's been increased (e.g., via HOMЯ escalation), otherwise use config default
+          const taskMaxTurns = Math.max(task.max_attempts || maxTurns, maxTurns);
+
+          const args = [
+            '-p', ralphPrompt,
+            '--dangerously-skip-permissions',
+            '--output-format', 'json',
+            '--max-turns', String(taskMaxTurns),
+          ];
+
+          appendLog(`Spawning Claude for task (max turns: ${taskMaxTurns})`);
+
+          // Build guard context for command validation
+          const taskGuardContext: TaskGuardContext = {
+            workerId,
+            outcomeId,
+            taskId: task.id,
+            workspacePath: outcomeWorkspace,
+          };
+
+          const taskResult = await executeTask(
+            taskWorkspace,
+            args,
+            progressPath,
+            workerId,
+            task,
+            appendLog,
+            taskGuardContext
           );
 
-          if (!complexityResult.shouldProceed) {
-            appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
+          // Log guard activity if any commands were blocked
+          if (taskResult.guardBlocks && taskResult.guardBlocks > 0) {
+            appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
+          }
 
-            // Release the task since we won't run it
-            releaseTask(task.id);
+          if (taskResult.success) {
+            completeTask(task.id);
+            progress.completedTasks++;
+            appendLog(`Task completed: ${task.title}`);
+            logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
 
-            // Record progress entry
+            // Circuit breaker: Record success (resets consecutive failures)
+            recordSuccess(outcomeId);
+
+            // Record progress entry with full output for auditing
             createProgressEntry({
               outcome_id: outcomeId,
               worker_id: workerId,
               iteration,
-              content: `Complexity check: ${complexityResult.action} - ${task.title}`,
+              content: `Completed: ${task.title}`,
+              full_output: taskResult.fullOutput,
+              task_id: task.id,
             });
 
-            // If decomposed, the new subtasks will be picked up in the next iteration
-            if (complexityResult.action === 'decomposed') {
-              appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
-              continue; // Move to next iteration to pick up subtasks
+            // HOMЯ observation - analyze the completed task
+            if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
+              try {
+                appendLog(`Running HOMЯ observation...`);
+                const observationResult = await homr.observeAndProcess({
+                  task,
+                  fullOutput: taskResult.fullOutput,
+                  intent,
+                  outcomeId,
+                  workerId,
+                });
+
+                if (observationResult.observation) {
+                  appendLog(`HOMЯ: ${observationResult.observation.summary}`);
+                  if (observationResult.failurePatternDetected) {
+                    appendLog(`HOMЯ: Failure pattern detected - consecutive failures`);
+                    if (observationResult.workerPaused) {
+                      appendLog(`HOMЯ: Worker paused for review - awaiting human input`);
+                      workerState.running = false; // Stop the worker loop
+                      exitReason = 'homr_paused';
+                    }
+                  }
+                  if (observationResult.escalated) {
+                    appendLog(`HOMЯ: Escalation created - human input needed`);
+                  }
+                  if (observationResult.steered) {
+                    appendLog(`HOMЯ: Steering actions executed`);
+                  }
+                }
+              } catch (homrError) {
+                appendLog(`HOMЯ observation failed: ${homrError instanceof Error ? homrError.message : 'Unknown error'}`);
+              }
             }
 
-            // If escalated, worker should pause and wait for human decision
-            if (complexityResult.action === 'escalated') {
-              appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
-              workerState.running = false;
+            // If HOMЯ paused us, break out
+            if (!workerState.running) break;
+          } else {
+            failTask(task.id);
+            appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
+            logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
+
+            // Circuit breaker: Record failure for pattern analysis
+            recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
+
+            // Record failure with full output for debugging
+            createProgressEntry({
+              outcome_id: outcomeId,
+              worker_id: workerId,
+              iteration,
+              content: `Failed: ${task.title} - ${taskResult.error}`,
+              full_output: taskResult.fullOutput,
+              task_id: task.id,
+            });
+
+            // Check if this is a critical error
+            if (taskResult.error?.includes('critical') || taskResult.error?.includes('blocked')) {
+              hasError = true;
+              errorMessage = taskResult.error;
+              exitReason = 'critical_error';
               break;
             }
 
-            // If skipped for other reasons, continue to next task
-            continue;
-          }
+            // Circuit breaker: Check if we should trip
+            const circuitBreakerCheck = shouldTripCircuitBreaker(outcomeId, circuitBreakerThreshold);
+            if (circuitBreakerCheck.shouldTrip) {
+              appendLog(`[Circuit Breaker] TRIPPED: ${circuitBreakerCheck.reason}`);
+              appendLog(`[Circuit Breaker] Pattern detected: ${circuitBreakerCheck.pattern}`);
 
-          // Store estimate on task for future reference
-          if (complexityResult.estimate) {
-            updateTaskDb(task.id, {
-              complexity_score: complexityResult.estimate.complexity_score,
-              estimated_turns: complexityResult.estimate.estimated_turns,
-            });
-          }
-        }
+              // Mark the circuit breaker as tripped
+              markCircuitBreakerTripped(outcomeId);
 
-        // Update progress
-        progress.status = 'running';
-        progress.currentTaskId = task.id;
-        progress.currentTaskTitle = task.title;
-        progress.lastUpdate = Date.now();
-        if (onProgress) onProgress({ ...progress });
+              // Create an escalation for human review
+              try {
+                const circuitBreakerAmbiguity: homr.HomrAmbiguitySignal = {
+                  detected: true,
+                  type: 'blocking_decision',
+                  description: `Circuit breaker tripped: ${circuitBreakerCheck.failureCount} consecutive task failures with pattern "${circuitBreakerCheck.pattern}"`,
+                  evidence: [
+                    `Threshold: ${circuitBreakerThreshold} consecutive failures`,
+                    `Actual failures: ${circuitBreakerCheck.failureCount}`,
+                    `Pattern: ${circuitBreakerCheck.pattern}`,
+                    `Most recent failed task: ${task.title}`,
+                  ],
+                  affectedTasks: [task.id],
+                  suggestedQuestion: 'Multiple tasks are failing with a similar pattern. How should we proceed?',
+                  options: [
+                    {
+                      id: 'increase_turn_limit',
+                      label: 'Increase Turn Limit',
+                      description: 'Double the max turns for affected tasks and retry',
+                      implications: 'Tasks will have more time to complete but may still fail',
+                    },
+                    {
+                      id: 'break_into_subtasks',
+                      label: 'Break Into Subtasks',
+                      description: 'Decompose complex tasks into smaller, more manageable pieces',
+                      implications: 'Creates new subtasks that replace the original failing tasks',
+                    },
+                    {
+                      id: 'skip_failing_tasks',
+                      label: 'Skip Failing Tasks',
+                      description: 'Mark failing tasks as skipped and continue with remaining work',
+                      implications: 'Some work will be incomplete but progress can continue',
+                    },
+                    {
+                      id: 'pause_and_review',
+                      label: 'Pause for Manual Review',
+                      description: 'Stop all work and wait for human investigation',
+                      implications: 'Workers will remain paused until manually resumed',
+                    },
+                  ],
+                };
 
-        // Mark task as running
-        startTask(task.id);
-
-        // Create task workspace
-        const taskWorkspace = join(outcomeWorkspace, task.id);
-        if (!existsSync(taskWorkspace)) {
-          mkdirSync(taskWorkspace, { recursive: true });
-        }
-
-        // Write CLAUDE.md and progress.txt
-        const claudeMdPath = join(taskWorkspace, 'CLAUDE.md');
-        writeFileSync(claudeMdPath, generateTaskInstructions(
-          outcome.name,
-          intent,
-          task,
-          outcomeSkillContext || undefined,
-          outcomeId,
-          gitConfig,
-          outcome.isolation_mode || 'workspace',
-          outcomeWorkspace
-        ));
-
-        const progressPath = join(taskWorkspace, 'progress.txt');
-        writeFileSync(progressPath, generateInitialProgress(task));
-
-        // Spawn Claude for this task
-        const ralphPrompt = `You are working on a specific task. Read CLAUDE.md for full instructions.
-Complete the task, updating progress.txt as you go. When done, write DONE to progress.txt.`;
-
-        // Use task's max_attempts if it's been increased (e.g., via HOMЯ escalation), otherwise use config default
-        const taskMaxTurns = Math.max(task.max_attempts || maxTurns, maxTurns);
-
-        const args = [
-          '-p', ralphPrompt,
-          '--dangerously-skip-permissions',
-          '--output-format', 'json',
-          '--max-turns', String(taskMaxTurns),
-        ];
-
-        appendLog(`Spawning Claude for task (max turns: ${taskMaxTurns})`);
-
-        // Build guard context for command validation
-        const taskGuardContext: TaskGuardContext = {
-          workerId,
-          outcomeId,
-          taskId: task.id,
-          workspacePath: outcomeWorkspace,
-        };
-
-        const taskResult = await executeTask(
-          taskWorkspace,
-          args,
-          progressPath,
-          workerId,
-          task,
-          appendLog,
-          taskGuardContext
-        );
-
-        // Log guard activity if any commands were blocked
-        if (taskResult.guardBlocks && taskResult.guardBlocks > 0) {
-          appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
-        }
-
-        if (taskResult.success) {
-          completeTask(task.id);
-          progress.completedTasks++;
-          appendLog(`Task completed: ${task.title}`);
-          logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
-
-          // Circuit breaker: Record success (resets consecutive failures)
-          recordSuccess(outcomeId);
-
-          // Record progress entry with full output for auditing
-          createProgressEntry({
-            outcome_id: outcomeId,
-            worker_id: workerId,
-            iteration,
-            content: `Completed: ${task.title}`,
-            full_output: taskResult.fullOutput,
-            task_id: task.id,
-          });
-
-          // HOMЯ observation - analyze the completed task
-          if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
-            try {
-              appendLog(`Running HOMЯ observation...`);
-              const observationResult = await homr.observeAndProcess({
-                task,
-                fullOutput: taskResult.fullOutput,
-                intent,
-                outcomeId,
-                workerId,
-              });
-
-              if (observationResult.observation) {
-                appendLog(`HOMЯ: ${observationResult.observation.summary}`);
-                if (observationResult.failurePatternDetected) {
-                  appendLog(`HOMЯ: Failure pattern detected - consecutive failures`);
-                  if (observationResult.workerPaused) {
-                    appendLog(`HOMЯ: Worker paused for review - awaiting human input`);
-                    workerState.running = false; // Stop the worker loop
-                  }
-                }
-                if (observationResult.escalated) {
-                  appendLog(`HOMЯ: Escalation created - human input needed`);
-                }
-                if (observationResult.steered) {
-                  appendLog(`HOMЯ: Steering actions executed`);
-                }
+                await homr.createEscalation(outcomeId, circuitBreakerAmbiguity, task);
+                appendLog(`[Circuit Breaker] Escalation created for human review`);
+              } catch (escalationError) {
+                appendLog(`[Circuit Breaker] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'Unknown error'}`);
               }
-            } catch (homrError) {
-              appendLog(`HOMЯ observation failed: ${homrError instanceof Error ? homrError.message : 'Unknown error'}`);
+
+              // Pause the worker
+              appendLog(`[Circuit Breaker] Pausing worker to await human decision`);
+              workerState.running = false;
+              exitReason = 'circuit_breaker';
+              break;
             }
           }
-        } else {
-          failTask(task.id);
-          appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
-          logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
 
-          // Circuit breaker: Record failure for pattern analysis
-          recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
+          // Update stats
+          const newStats = getTaskStats(outcomeId);
+          progress.totalTasks = newStats.total;
+          progress.completedTasks = newStats.completed;
+          progress.lastUpdate = Date.now();
 
-          // Record failure with full output for debugging
-          createProgressEntry({
-            outcome_id: outcomeId,
-            worker_id: workerId,
-            iteration,
-            content: `Failed: ${task.title} - ${taskResult.error}`,
-            full_output: taskResult.fullOutput,
-            task_id: task.id,
-          });
-
-          // Check if this is a critical error
-          if (taskResult.error?.includes('critical') || taskResult.error?.includes('blocked')) {
-            hasError = true;
-            errorMessage = taskResult.error;
-            break;
-          }
-
-          // Circuit breaker: Check if we should trip
-          const circuitBreakerCheck = shouldTripCircuitBreaker(outcomeId, circuitBreakerThreshold);
-          if (circuitBreakerCheck.shouldTrip) {
-            appendLog(`[Circuit Breaker] TRIPPED: ${circuitBreakerCheck.reason}`);
-            appendLog(`[Circuit Breaker] Pattern detected: ${circuitBreakerCheck.pattern}`);
-
-            // Mark the circuit breaker as tripped
-            markCircuitBreakerTripped(outcomeId);
-
-            // Create an escalation for human review
-            try {
-              const circuitBreakerAmbiguity: homr.HomrAmbiguitySignal = {
-                detected: true,
-                type: 'blocking_decision',
-                description: `Circuit breaker tripped: ${circuitBreakerCheck.failureCount} consecutive task failures with pattern "${circuitBreakerCheck.pattern}"`,
-                evidence: [
-                  `Threshold: ${circuitBreakerThreshold} consecutive failures`,
-                  `Actual failures: ${circuitBreakerCheck.failureCount}`,
-                  `Pattern: ${circuitBreakerCheck.pattern}`,
-                  `Most recent failed task: ${task.title}`,
-                ],
-                affectedTasks: [task.id],
-                suggestedQuestion: 'Multiple tasks are failing with a similar pattern. How should we proceed?',
-                options: [
-                  {
-                    id: 'increase_turn_limit',
-                    label: 'Increase Turn Limit',
-                    description: 'Double the max turns for affected tasks and retry',
-                    implications: 'Tasks will have more time to complete but may still fail',
-                  },
-                  {
-                    id: 'break_into_subtasks',
-                    label: 'Break Into Subtasks',
-                    description: 'Decompose complex tasks into smaller, more manageable pieces',
-                    implications: 'Creates new subtasks that replace the original failing tasks',
-                  },
-                  {
-                    id: 'skip_failing_tasks',
-                    label: 'Skip Failing Tasks',
-                    description: 'Mark failing tasks as skipped and continue with remaining work',
-                    implications: 'Some work will be incomplete but progress can continue',
-                  },
-                  {
-                    id: 'pause_and_review',
-                    label: 'Pause for Manual Review',
-                    description: 'Stop all work and wait for human investigation',
-                    implications: 'Workers will remain paused until manually resumed',
-                  },
-                ],
-              };
-
-              await homr.createEscalation(outcomeId, circuitBreakerAmbiguity, task);
-              appendLog(`[Circuit Breaker] Escalation created for human review`);
-            } catch (escalationError) {
-              appendLog(`[Circuit Breaker] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'Unknown error'}`);
-            }
-
-            // Pause the worker
-            appendLog(`[Circuit Breaker] Pausing worker to await human decision`);
-            workerState.running = false;
+          // Check if all done
+          if (newStats.pending === 0 && newStats.claimed === 0 && newStats.running === 0) {
+            appendLog(`All tasks completed!`);
+            exitReason = 'all_tasks_complete';
             break;
           }
         }
 
-        // Update stats
-        const newStats = getTaskStats(outcomeId);
-        progress.totalTasks = newStats.total;
-        progress.completedTasks = newStats.completed;
-        progress.lastUpdate = Date.now();
+        // If the while condition failed (iteration >= maxIterations), tag exit reason
+        if (iteration >= maxIterations && exitReason === 'unknown') {
+          const stats = getTaskStats(outcomeId);
+          exitReason = (stats.pending > 0 || stats.running > 0) ? 'max_iterations' : 'all_tasks_complete';
+        }
+      } catch (err) {
+        hasError = true;
+        errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        appendLog(`Worker error: ${errorMessage}`);
+        exitReason = 'uncaught_exception';
+      }
 
-        // Check if all done
-        if (newStats.pending === 0 && newStats.claimed === 0 && newStats.running === 0) {
-          appendLog(`All tasks completed!`);
-          break;
+      // --- Self-heal restart decision ---
+      const canRestart = selfHeal
+        && RESTARTABLE_EXITS.has(exitReason)
+        && restartCount < healCfg.maxRestarts
+        && !isWorkerPaused(workerId);
+
+      if (canRestart) {
+        const stats = getTaskStats(outcomeId);
+        if (stats.pending > 0 || stats.running > 0) {
+          restartCount++;
+          appendLog(`[Self-Heal] Restarting (${restartCount}/${healCfg.maxRestarts}), reason: ${exitReason}, backoff: ${backoffMs / 1000}s`);
+
+          createProgressEntry({
+            outcome_id: outcomeId,
+            worker_id: workerId,
+            iteration,
+            content: `[Self-Heal] Auto-restart ${restartCount}/${healCfg.maxRestarts} after ${exitReason}. Backing off ${backoffMs / 1000}s.`,
+          });
+
+          logWorkerRestarted(outcomeId, outcome.name, workerName, restartCount, exitReason);
+
+          await sleepMs(backoffMs);
+
+          // Re-check pause after backoff (user may have stopped us during wait)
+          if (isWorkerPaused(workerId)) {
+            exitReason = 'user_paused';
+            // Fall through to cleanup below
+          } else {
+            backoffMs = Math.min(backoffMs * healCfg.backoffMultiplier, healCfg.maxBackoffMs);
+            // Reset per-cycle state for fresh iteration budget
+            workerState.running = true;
+            hasError = false;
+            errorMessage = undefined;
+            continue restart;
+          }
         }
       }
-    } catch (err) {
-      hasError = true;
-      errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      appendLog(`Worker error: ${errorMessage}`);
-    }
 
-    // Cleanup
-    clearInterval(heartbeatInterval);
+      // --- Cleanup (runs once when we're truly done) ---
+      clearInterval(heartbeatInterval);
 
-    // Stop supervisor (saves final change snapshot)
-    stopSupervisor(outcomeId, workerId);
-    appendLog(`Supervisor stopped`);
+      // Stop supervisor (saves final change snapshot)
+      stopSupervisor(outcomeId, workerId);
+      appendLog(`Supervisor stopped`);
 
-    // Final status - check if paused by intervention or stopped manually
-    const wasPaused = !workerState.running && !hasError;
-    if (hasError) {
-      failWorker(workerId);
-      progress.status = 'failed';
-      progress.error = errorMessage;
-      logWorkerFailed(outcomeId, outcome.name, workerName, errorMessage);
-    } else if (wasPaused) {
-      updateWorker(workerId, { status: 'paused' });
-      progress.status = 'stopped';
-    } else {
-      completeWorker(workerId);
-      progress.status = 'completed';
-      logWorkerCompleted(outcomeId, outcome.name, workerName, progress.completedTasks);
-    }
+      // Final status - check if paused by intervention or stopped manually
+      const wasPaused = !workerState.running && !hasError;
+      if (hasError) {
+        failWorker(workerId);
+        progress.status = 'failed';
+        progress.error = errorMessage;
+        logWorkerFailed(outcomeId, outcome.name, workerName, errorMessage);
+      } else if (wasPaused) {
+        updateWorker(workerId, { status: 'paused' });
+        progress.status = 'stopped';
+      } else {
+        completeWorker(workerId);
+        progress.status = 'completed';
+        logWorkerCompleted(outcomeId, outcome.name, workerName, progress.completedTasks);
+      }
 
-    progress.lastUpdate = Date.now();
-    activeWorkers.delete(workerId);
+      if (restartCount > 0) {
+        appendLog(`[Self-Heal] Finished after ${restartCount} restart(s). Final status: ${progress.status}`);
+      }
 
-    appendLog(`Worker finished: ${progress.status}`);
+      progress.lastUpdate = Date.now();
+      activeWorkers.delete(workerId);
 
-    if (onProgress) {
-      onProgress({ ...progress });
+      appendLog(`Worker finished: ${progress.status}`);
+
+      if (onProgress) {
+        onProgress({ ...progress });
+      }
+
+      break; // Exit the restart: while loop
     }
   })();
 

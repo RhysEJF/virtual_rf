@@ -27,6 +27,7 @@ const activityConfig: Record<ActivityType, { icon: string; color: string }> = {
   analysis_completed: { icon: '◉', color: 'text-status-success' },
   analysis_failed: { icon: '⊘', color: 'text-status-error' },
   improvement_created: { icon: '↑', color: 'text-accent' },
+  worker_restarted: { icon: '↻', color: 'text-status-warning' },
 };
 
 function formatTimeAgo(timestamp: number): string {

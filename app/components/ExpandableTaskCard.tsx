@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
+import { GateSatisfyModal } from './GateSatisfyModal';
 import type { Task, TaskStatus, TaskGate } from '@/lib/db/schema';
 
 interface TaskSkillStatus {
@@ -88,6 +89,9 @@ export function ExpandableTaskCard({
   const [optimizingApproach, setOptimizingApproach] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Gate satisfy modal state
+  const [satisfyingGate, setSatisfyingGate] = useState<TaskGate | null>(null);
 
   // Gate creation state
   const [showAddGate, setShowAddGate] = useState(false);
@@ -405,7 +409,9 @@ export function ExpandableTaskCard({
 
   return (
     <div className={`border rounded-lg overflow-hidden ${
-      isBlocked
+      task.has_pending_gates
+        ? 'border-border bg-bg-secondary border-l-4 border-l-status-error'
+        : isBlocked
         ? 'border-border/50 bg-bg-secondary/50 opacity-70'
         : 'border-border bg-bg-secondary'
     }`}>
@@ -506,8 +512,12 @@ export function ExpandableTaskCard({
                 </Badge>
               )}
               {task.has_pending_gates && (
-                <Badge variant="warning" className="text-[10px]" title="Awaiting human input">
-                  Gated ({task.pending_gate_count})
+                <Badge variant="error" className="animate-pulse" title="Awaiting human input">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline -mt-0.5 mr-1">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                  Needs Input ({task.pending_gate_count})
                 </Badge>
               )}
               <Badge variant={status.variant}>
@@ -927,28 +937,9 @@ export function ExpandableTaskCard({
                           variant="primary"
                           size="sm"
                           className="text-[10px] px-2 py-0.5"
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation();
-                            if (gate.type === 'document_required') {
-                              const input = prompt('Provide the required input:');
-                              if (input !== null) {
-                                await fetch(`/api/tasks/${task.id}/gates/${gate.id}/satisfy`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ response_data: input }),
-                                });
-                                window.location.reload();
-                              }
-                            } else {
-                              if (confirm(`Approve gate: ${gate.label}?`)) {
-                                await fetch(`/api/tasks/${task.id}/gates/${gate.id}/satisfy`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({}),
-                                });
-                                window.location.reload();
-                              }
-                            }
+                            setSatisfyingGate(gate);
                           }}
                         >
                           {gate.type === 'document_required' ? 'Provide Input' : 'Approve'}
@@ -1004,6 +995,17 @@ export function ExpandableTaskCard({
             )}
           </div>
         </div>
+      )}
+      {satisfyingGate && (
+        <GateSatisfyModal
+          gate={satisfyingGate}
+          taskId={task.id}
+          onClose={() => setSatisfyingGate(null)}
+          onSatisfied={() => {
+            setSatisfyingGate(null);
+            window.location.reload();
+          }}
+        />
       )}
     </div>
   );

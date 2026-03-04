@@ -210,7 +210,7 @@ function categorizeError(error: string): string {
   if (errorLower.includes('timeout') || errorLower.includes('timed out')) {
     return 'timeout';
   }
-  if (errorLower.includes('turn') || errorLower.includes('iteration') || errorLower.includes('max_turns')) {
+  if (errorLower.includes('turn') || errorLower.includes('iteration') || errorLower.includes('max_turns') || errorLower.includes('code null')) {
     return 'turn_limit_exhausted';
   }
   if (errorLower.includes('permission') || errorLower.includes('access denied')) {
@@ -1355,6 +1355,21 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             break;
           }
 
+          // Turn exhaustion: release task back to pending without burning an attempt
+          if (taskResult.turnExhausted) {
+            appendLog(`[Turn Exhaustion] Max turns reached on "${task.title}". Releasing back to pending (no attempt burned).`);
+            releaseTask(task.id);
+            createProgressEntry({
+              outcome_id: outcomeId,
+              worker_id: workerId,
+              iteration,
+              content: `Turn limit exhausted on: ${task.title} — task released back to pending`,
+              full_output: taskResult.fullOutput,
+              task_id: task.id,
+            });
+            continue;
+          }
+
           if (taskResult.success) {
             completeTask(task.id);
             progress.completedTasks++;
@@ -1760,6 +1775,37 @@ function extractCostFromOutput(output: string, taskId?: string): number {
 }
 
 /**
+ * Detect if Claude CLI exited due to max turns exhaustion.
+ * Checks for JSON result with subtype 'error_max_turns' (primary),
+ * and falls back to keyword matching when exit code is null (signal kill).
+ */
+function detectTurnExhaustion(fullOutput: string, exitCode: number | null): boolean {
+  if (!fullOutput) return false;
+
+  // Primary: JSON result with subtype 'error_max_turns' (from --output-format json)
+  const lines = fullOutput.split('\n').filter(l => l.trim());
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const line = lines[i].replace(/^\[(stdout|stderr)\]\s*/, '');
+      const parsed = JSON.parse(line);
+      if (parsed.type === 'result' && parsed.subtype === 'error_max_turns') {
+        return true;
+      }
+    } catch { /* skip non-JSON lines */ }
+  }
+
+  // Secondary: code === null + turn-related keywords in output
+  if (exitCode === null) {
+    const lower = fullOutput.toLowerCase();
+    if (lower.includes('max turns') || lower.includes('max_turns') || lower.includes('turn limit')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Execute a single task with Claude CLI
  * Returns success status and captured full output for auditing
  */
@@ -1771,7 +1817,7 @@ async function executeTask(
   task: Task,
   appendLog: (msg: string) => void,
   guardContext?: TaskGuardContext
-): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number; rateLimited?: boolean }> {
+): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number; rateLimited?: boolean; turnExhausted?: boolean }> {
   return new Promise((resolve) => {
     try {
       const claudeProcess = spawn('claude', args, {
@@ -1909,6 +1955,22 @@ async function executeTask(
         const isRateLimited = /you've hit your limit|rate.?limit|resets \d+am/i.test(fullOutput);
         if (isRateLimited) {
           resolve({ success: false, error: 'Rate limited', fullOutput, guardBlocks: totalGuardBlocks, rateLimited: true });
+          return;
+        }
+
+        // Detect turn exhaustion (max turns reached)
+        const isTurnExhausted = detectTurnExhaustion(fullOutput, code);
+        if (isTurnExhausted) {
+          // Check if progress.txt says DONE — work may actually be complete
+          if (existsSync(progressPath)) {
+            const content = readFileSync(progressPath, 'utf-8');
+            const parsed = parseTaskProgress(content);
+            if (parsed.done) {
+              resolve({ success: true, fullOutput, guardBlocks: totalGuardBlocks });
+              return;
+            }
+          }
+          resolve({ success: false, error: 'Turn limit exhausted', fullOutput, guardBlocks: totalGuardBlocks, turnExhausted: true });
           return;
         }
 
@@ -2290,6 +2352,21 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     // Log guard activity if any commands were blocked
     if (taskResult.guardBlocks && taskResult.guardBlocks > 0) {
       appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
+    }
+
+    // Turn exhaustion: release task back to pending without burning an attempt
+    if (taskResult.turnExhausted) {
+      appendLog(`[Turn Exhaustion] Max turns reached on "${task.title}". Releasing back to pending (no attempt burned).`);
+      releaseTask(task.id);
+      createProgressEntry({
+        outcome_id: outcomeId,
+        worker_id: workerId,
+        iteration,
+        content: `Turn limit exhausted on: ${task.title} — task released back to pending`,
+        full_output: taskResult.fullOutput,
+        task_id: task.id,
+      });
+      continue;
     }
 
     if (taskResult.success) {

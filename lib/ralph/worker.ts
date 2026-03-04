@@ -100,6 +100,7 @@ type WorkerExitReason =
   | 'circuit_breaker'       // Repeated failures, human review
   | 'homr_paused'           // HOMR observer paused for review
   | 'critical_error'        // Task reported critical/blocked error
+  | 'rate_limited'          // Hit subscription rate limit — pause, not fail
   | 'uncaught_exception'    // Unexpected throw — RESTARTABLE
   | 'max_iterations'        // Hit iteration limit — RESTARTABLE
   | 'unknown';              // Fallback — RESTARTABLE
@@ -1520,6 +1521,23 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             appendLog(`[Guard] ${taskResult.guardBlocks} dangerous commands were blocked during task execution`);
           }
 
+          // Rate limit: release task back to pending and pause the worker
+          if (taskResult.rateLimited) {
+            appendLog(`[Rate Limit] Hit subscription limit. Releasing task "${task.title}" back to pending.`);
+            releaseTask(task.id);
+            createProgressEntry({
+              outcome_id: outcomeId,
+              worker_id: workerId,
+              iteration,
+              content: `Rate limited on: ${task.title} — task released back to pending`,
+              full_output: taskResult.fullOutput,
+              task_id: task.id,
+            });
+            workerState.running = false;
+            exitReason = 'rate_limited';
+            break;
+          }
+
           if (taskResult.success) {
             completeTask(task.id);
             progress.completedTasks++;
@@ -1936,7 +1954,7 @@ async function executeTask(
   task: Task,
   appendLog: (msg: string) => void,
   guardContext?: TaskGuardContext
-): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number }> {
+): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number; rateLimited?: boolean }> {
   return new Promise((resolve) => {
     try {
       const claudeProcess = spawn('claude', args, {
@@ -2068,6 +2086,13 @@ async function executeTask(
         // Log guard summary
         if (totalGuardBlocks > 0) {
           appendLog(`[Guard] Task completed with ${totalGuardBlocks} blocked dangerous commands`);
+        }
+
+        // Detect rate limiting from Claude CLI output
+        const isRateLimited = /you've hit your limit|rate.?limit|resets \d+am/i.test(fullOutput);
+        if (isRateLimited) {
+          resolve({ success: false, error: 'Rate limited', fullOutput, guardBlocks: totalGuardBlocks, rateLimited: true });
+          return;
         }
 
         if (existsSync(progressPath)) {

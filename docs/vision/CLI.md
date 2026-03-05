@@ -89,9 +89,10 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Task gates (`flow gate list/add/satisfy`) | Complete |
 | Telegram bot management (`flow telegram start/stop/status`) | Complete |
 | Task refinement (`flow refine`) | Complete |
+| Task optimization (`flow task optimize`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 39 commands implemented (full coverage)
+**Current:** 40 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -192,6 +193,7 @@ flow task list <outcome-id> [--status=<s>] [--phase=<p>]
 flow task show <id>
 flow task add <outcome-id> --title="..." [--description="..."] [--priority=<n>]
 flow task update <id> [--status=<s>] [--title="..."]
+flow task optimize <id> [--field <field>] [--create]         # AI-optimize + detect capabilities
 flow task delete <id>
 flow refine <outcome-id>                                    # Enrich pending tasks (intent, approach, complexity, deps)
 ```

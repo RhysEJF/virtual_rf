@@ -7,12 +7,14 @@
 
 export {
   detectCapabilities,
+  detectCapabilitiesWithClaude,
   getExistingCapabilities,
   listCapabilities,
   type DetectedCapability,
   type ExistingCapability,
   type DetectionResult,
   type ListCapabilitiesResult,
+  type ClaudeCapabilityResult,
 } from './detection';
 
 export {

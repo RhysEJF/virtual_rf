@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { GateSatisfyModal } from './GateSatisfyModal';
+import { TaskCapabilitySuggestion } from './TaskCapabilitySuggestion';
 import type { Task, TaskStatus, TaskGate } from '@/lib/db/schema';
+import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 
 interface TaskSkillStatus {
   name: string;
@@ -108,6 +110,9 @@ export function ExpandableTaskCard({
   // Capabilities state (required_capabilities field)
   const [capabilities, setCapabilities] = useState<CapabilityStatus[]>([]);
   const [loadingCapabilities, setLoadingCapabilities] = useState(false);
+
+  // Detected new capabilities from optimization
+  const [detectedNewCapabilities, setDetectedNewCapabilities] = useState<CapabilityNeed[]>([]);
 
   const status = statusConfig[task.status];
   const hasContext = Boolean(task.task_intent || task.task_approach);
@@ -375,6 +380,11 @@ export function ExpandableTaskCard({
         // Refresh skills if any were detected during optimization
         if (data.detectedSkills && data.detectedSkills.length > 0) {
           fetchSkills();
+        }
+
+        // Show detected new capabilities
+        if (data.detectedCapabilities && data.detectedCapabilities.length > 0) {
+          setDetectedNewCapabilities(data.detectedCapabilities);
         }
       }
     } catch (err) {
@@ -713,6 +723,19 @@ export function ExpandableTaskCard({
               className="w-full h-20 p-3 text-sm bg-bg-primary border border-border rounded-lg resize-none focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
             />
           </div>
+
+          {/* Detected New Capabilities (from optimization) */}
+          {detectedNewCapabilities.length > 0 && (
+            <TaskCapabilitySuggestion
+              capabilities={detectedNewCapabilities}
+              outcomeId={task.outcome_id}
+              onCreated={() => {
+                setDetectedNewCapabilities([]);
+                fetchCapabilities();
+              }}
+              onDismiss={() => setDetectedNewCapabilities([])}
+            />
+          )}
 
           {/* Skills Section */}
           <div>

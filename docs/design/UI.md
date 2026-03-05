@@ -74,7 +74,8 @@ app/
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| ExpandableTaskCard | `ExpandableTaskCard.tsx` | Task details with gate creation, indicators, and satisfy buttons (~22KB) |
+| ExpandableTaskCard | `ExpandableTaskCard.tsx` | Task details with gate creation, capability detection, and satisfy buttons (~23KB) |
+| TaskCapabilitySuggestion | `TaskCapabilitySuggestion.tsx` | Inline capability suggestions after task optimization (~3KB) |
 | GateSatisfyModal | `GateSatisfyModal.tsx` | Modal for gate satisfaction (replaces browser prompt/confirm) |
 | ProgressView | `ProgressView.tsx` | Real-time progress |
 | ActivityFeed | `ActivityFeed.tsx` | Event timeline |

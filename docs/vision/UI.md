@@ -53,6 +53,8 @@ The UI is the user's window into Digital Twin. It provides:
 | Gate satisfy modal (replaces browser dialogs) | Complete |
 | Gated task visual accent (red border + pulsing badge) | Complete |
 | Task refinement button (pre-execution enrichment) | Complete |
+| Task-level capability detection (Claude-powered) | Complete |
+| TaskCapabilitySuggestion inline component | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 

@@ -332,6 +332,10 @@ kill -9 <PID>
 - [x] CapabilitySuggestionBanner UI after approach optimization
 - [x] Manual replanning endpoint (`/api/outcomes/[id]/capabilities/replan`)
 - [x] Deduplication to prevent duplicate capability tasks
+- [x] Claude-powered semantic capability detection (`detectCapabilitiesWithClaude()`)
+- [x] Task-level capability detection during field optimization
+- [x] TaskCapabilitySuggestion inline component for task cards
+- [x] `flow task optimize` CLI command with `--create` auto-creation
 
 ### Skills System (Complete)
 - [x] Global skills library (`/skills` directory, DB-tracked)
@@ -456,9 +460,9 @@ kill -9 <PID>
 
 ### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] 39 commands implemented (full API coverage)
+- [x] 40 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
-- [x] Task management: tasks, task (add/update)
+- [x] Task management: tasks, task (add/update/optimize)
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
 - [x] HOMЯ integration: homr (--supervise, --yolo), escalations, answer, dismiss
 - [x] Resources: skills, skill, tools, tool, outputs, files, docs (list/add/paste/rm)

@@ -10,9 +10,9 @@
 
 | File | Purpose | Size |
 |------|---------|------|
-| `lib/ralph/worker.ts` | Main worker logic | ~35KB |
+| `lib/ralph/worker.ts` | Main worker logic | ~50KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
-| `lib/db/tasks.ts` | Task claiming and status | ~6KB |
+| `lib/db/tasks.ts` | Task claiming, status, decomposition lock | ~8KB |
 | `lib/db/progress.ts` | Progress entry recording | ~3KB |
 
 ---
@@ -253,6 +253,97 @@ Key behavior:
 ### Error Categorization
 
 `categorizeError` recognizes turn exhaustion via the pattern `'code null'` (the error string from a null exit code), categorizing it as `turn_limit_exhausted`. This feeds into the circuit breaker's failure pattern analysis.
+
+---
+
+## Rate-Limit Exit Detection
+
+When the CLI output matches rate-limit patterns, the worker pauses rather than failing:
+
+```typescript
+// Detection regex in close handler
+const rateLimitPattern = /you've hit your limit|rate.?limit|resets \d+am/i;
+if (rateLimitPattern.test(fullOutput)) {
+  resolve({ success: false, rateLimited: true, fullOutput });
+}
+```
+
+The worker loop checks `rateLimited` before `turnExhausted` and exits with `exitReason = 'rate_limited'`. Since `rate_limited` is NOT in `RESTARTABLE_EXITS`, the self-healing loop does not retry.
+
+---
+
+## Self-Healing Restart Loop
+
+Workers wrap the main execution loop in a restart loop that recovers from infrastructure failures:
+
+### Exit Reason Classification
+
+```typescript
+type WorkerExitReason =
+  | 'user_paused' | 'all_tasks_complete' | 'gate_reached'
+  | 'complexity_escalation' | 'circuit_breaker' | 'homr_paused'
+  | 'critical_error' | 'rate_limited'      // Semantic — NOT restarted
+  | 'uncaught_exception' | 'max_iterations' | 'unknown';  // Infrastructure — RESTARTED
+
+const RESTARTABLE_EXITS = new Set([
+  'uncaught_exception', 'max_iterations', 'unknown'
+]);
+```
+
+### Restart Flow
+
+```
+runWorkerLoop(config)
+       │
+       ▼
+┌─────────────────────────┐
+│ restart: while (true)   │◀─────────────┐
+│                         │              │
+│   Run main worker loop  │              │
+│   (claim → execute →    │              │
+│    record → repeat)     │         Wait backoff
+│                         │         (10s → 120s)
+│   exitReason = ...      │              │
+│                         │              │
+└─────────┬───────────────┘              │
+          │                              │
+    Is it restartable?                   │
+    ├── NO  → return (done)              │
+    └── YES → restartCount < 5? ─────YES─┘
+                      │
+                     NO → mark failed, return
+```
+
+### Configuration
+
+```typescript
+const RESTART_BACKOFF_BASE_MS = 10_000;  // 10 seconds
+const RESTART_BACKOFF_MAX_MS = 120_000;  // 2 minutes
+const RESTART_BACKOFF_MULTIPLIER = 2;
+const MAX_RESTARTS = 5;
+```
+
+---
+
+## Atomic Decomposition Lock
+
+Prevents race conditions when multiple processes try to decompose the same task:
+
+```typescript
+// lib/db/tasks.ts
+export function claimDecompositionLock(taskId: string): boolean {
+  const result = db.prepare(`
+    UPDATE tasks
+    SET decomposition_status = 'in_progress', updated_at = ?
+    WHERE id = ?
+    AND (decomposition_status IS NULL OR decomposition_status = 'failed')
+  `).run(timestamp, taskId);
+
+  return result.changes > 0;  // true = lock acquired
+}
+```
+
+Used by `decomposeTask()` in `lib/agents/task-decomposer.ts` to replace the previous check-then-set pattern. The single atomic UPDATE eliminates the TOCTOU window where two processes could both read `NULL` and both proceed.
 
 ---
 

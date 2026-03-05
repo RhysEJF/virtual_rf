@@ -122,6 +122,12 @@ CREATE TABLE tasks (
   task_intent TEXT,
   task_approach TEXT,
   gates TEXT DEFAULT '[]',         -- JSON array of TaskGate objects (human-in-the-loop)
+  depends_on TEXT,                 -- JSON array of task IDs
+  required_capabilities TEXT,      -- JSON array of 'skill:name' or 'tool:name'
+  complexity_score REAL,
+  estimated_turns INTEGER,
+  decomposition_status TEXT,       -- NULL/in_progress/completed/failed
+  decomposed_from_task_id TEXT,    -- Parent task if this is a subtask
   created_at TEXT,
   updated_at TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
@@ -374,6 +380,23 @@ export function claimNextTask(
   return claim.immediate(); // IMMEDIATE transaction
 }
 ```
+
+### Atomic Decomposition Lock
+
+```typescript
+// lib/db/tasks.ts
+export function claimDecompositionLock(taskId: string): boolean {
+  const result = db.prepare(`
+    UPDATE tasks
+    SET decomposition_status = 'in_progress', updated_at = ?
+    WHERE id = ?
+    AND (decomposition_status IS NULL OR decomposition_status = 'failed')
+  `).run(timestamp, taskId);
+  return result.changes > 0;
+}
+```
+
+Prevents TOCTOU race conditions when multiple processes (worker, HOMR auto-resolve) attempt to decompose the same task concurrently.
 
 ### Heartbeat & Stale Detection
 

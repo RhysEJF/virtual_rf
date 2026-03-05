@@ -40,6 +40,9 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Workspace isolation enforcement | Complete |
 | Task gate enforcement (human-in-the-loop) | Complete |
 | Turn exhaustion detection (graceful --max-turns handling) | Complete |
+| Rate-limit exit detection (keeps tasks pending) | Complete |
+| Self-healing restart loop (infrastructure failure recovery) | Complete |
+| Atomic decomposition lock (prevents duplicate subtasks) | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -127,6 +130,39 @@ When Claude CLI hits `--max-turns`, the worker detects this gracefully and avoid
 5. **Error Categorization** — `categorizeError()` classifies `turn`, `iteration`, `max_turns`, and `code null` errors as `turn_limit_exhausted` for circuit breaker tracking.
 
 This follows the same release-not-fail pattern as rate limiting, ensuring transient CLI limits don't permanently fail tasks that could succeed on retry.
+
+### Rate-Limit Exit Detection
+
+When Claude CLI hits a rate limit, the worker detects this and pauses (instead of failing tasks):
+
+1. **Detection** — Regex pattern `/you've hit your limit|rate.?limit|resets \d+am/i` is tested against the full CLI output.
+2. **Task Preserved** — The task is NOT failed or released — it stays in its current state. The worker simply stops processing.
+3. **Worker Pauses** — The worker exits with `exitReason = 'rate_limited'`, which is NOT in `RESTARTABLE_EXITS` — so the self-healing loop does not retry.
+4. **Distinction from Turn Exhaustion** — Turn exhaustion releases the task and continues to the next one. Rate limiting pauses the entire worker since no further API calls will succeed.
+
+### Self-Healing Restart Loop
+
+Workers can automatically recover from transient infrastructure failures (Claude CLI crashes, OOM kills, signal deaths):
+
+1. **Exit Reason Classification** — Every worker exit is classified into a `WorkerExitReason`:
+   - **Semantic exits** (intentional): `user_paused`, `all_tasks_complete`, `gate_reached`, `complexity_escalation`, `circuit_breaker`, `homr_paused`, `critical_error`, `rate_limited`
+   - **Infrastructure exits** (transient): `uncaught_exception`, `max_iterations`, `unknown`
+
+2. **Restartable Set** — Only infrastructure exits trigger restart: `RESTARTABLE_EXITS = { uncaught_exception, max_iterations, unknown }`
+
+3. **Exponential Backoff** — Restarts use exponential backoff: 10s → 20s → 40s → 80s → 120s (capped). Maximum 5 restart attempts before giving up.
+
+4. **State Preservation** — Between restarts, the current task is released back to pending. The worker record stays `running`. On restart, the worker re-enters the normal claim-execute loop.
+
+5. **Clean Exit** — If a semantic exit occurs inside the restart loop, the loop terminates normally (no more restarts).
+
+### Atomic Decomposition Lock
+
+Task decomposition uses an atomic SQL lock to prevent race conditions:
+
+1. **Problem** — Multiple processes (worker complexity check, HOMR auto-resolve) could simultaneously attempt to decompose the same task, creating duplicate subtasks.
+2. **Solution** — `claimDecompositionLock()` uses a single `UPDATE ... WHERE (decomposition_status IS NULL OR decomposition_status = 'failed')`. If another process already set the status, the UPDATE affects 0 rows and the second process bails out.
+3. **No TOCTOU Gap** — Unlike a separate check-then-set pattern, the atomic UPDATE eliminates the time window between reading the status and changing it.
 
 ### Task Complexity Estimation
 

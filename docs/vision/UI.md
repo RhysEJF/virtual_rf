@@ -50,6 +50,8 @@ The UI is the user's window into Digital Twin. It provides:
 | Workspace app server management | Complete |
 | Task gate indicators and satisfy buttons | Complete |
 | Task gate creation UI (Add Gate button) | Complete |
+| Gate satisfy modal (replaces browser dialogs) | Complete |
+| Gated task visual accent (red border + pulsing badge) | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 
@@ -168,6 +170,14 @@ OutputsSection now detects and serves apps from workspaces:
 - **Per-App Controls** - Run/Stop buttons for each detected app
 - **Live URLs** - Shows clickable URL when server is running
 - **Port Allocation** - Uses ports 3100-3199 to avoid conflicts
+
+### Task Gate UX
+
+Tasks with pending gates (human-in-the-loop checkpoints) are visually distinct:
+
+- **Red left border** — Cards with pending gates display `border-l-4 border-l-status-error`, making them stand out in the task list
+- **Pulsing "Needs Input" badge** — Red badge with lock icon and `animate-pulse`, replacing the previous amber "Gated" badge that was nearly invisible
+- **GateSatisfyModal** — Proper modal dialog replaces browser `prompt()`/`confirm()`. Shows gate label, description, textarea for document input or confirmation message for approvals
 
 ### Intervention System
 

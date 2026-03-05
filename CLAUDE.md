@@ -426,6 +426,9 @@ kill -9 <PID>
 - [x] Failure pattern categorization (timeout, permission, syntax, runtime)
 - [x] Turn limit risk assessment to prevent mid-task failures
 - [x] Turn exhaustion detection — release tasks to pending instead of failing (`detectTurnExhaustion`)
+- [x] Rate-limit exit detection — pauses worker instead of failing tasks
+- [x] Self-healing restart loop — exponential backoff recovery for infrastructure failures
+- [x] Atomic decomposition lock — prevents duplicate subtask creation via SQL UPDATE WHERE
 
 ### Destructive Command Guard (Complete)
 - [x] Command validation before execution (`lib/guard/index.ts`)
@@ -500,7 +503,7 @@ kill -9 <PID>
 - [x] Gate satisfaction on escalation resolution (`lib/homr/escalator.ts`)
 - [x] Gate escalations blocked from auto-resolve (`lib/homr/auto-resolver.ts`)
 - [x] API endpoints: `/api/tasks/[id]/gates`, `/api/tasks/[id]/gates/[gateId]/satisfy`
-- [x] UI: gated badge, gate section in ExpandableTaskCard, gate creation form, gate-specific EscalationAlert styling
+- [x] UI: red pulsing "Needs Input" badge, left border accent, GateSatisfyModal, gate creation form, gate-specific EscalationAlert styling
 - [x] CLI: `flow gate list/add/satisfy`, `flow task add --gate`
 - [x] Converse tools: `addGate`, `satisfyGate`, `listGates`
 - [x] Worker diagnostic logging for gated tasks

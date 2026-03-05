@@ -11,7 +11,9 @@ import { getOutcomeById } from '../db/outcomes';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getWorkspacePath } from '../workspace/detector';
+import { complete } from '../claude/client';
 import type { Skill } from '../db/schema';
+import type { CapabilityNeed } from '../agents/capability-planner';
 
 // ============================================================================
 // Types
@@ -547,4 +549,113 @@ function filterExistingSuggestions(
     const nameLower = s.name.toLowerCase().replace(/\s+/g, '-');
     return !existingPaths.has(pathLower) && !existingNames.has(nameLower);
   });
+}
+
+// ============================================================================
+// Claude-Powered Capability Detection
+// ============================================================================
+
+export interface ClaudeCapabilityResult {
+  existingSkills: string[];        // Names of genuinely relevant existing skills
+  newCapabilities: CapabilityNeed[];  // New skills/tools to propose
+}
+
+/**
+ * Use Claude to semantically detect capability needs from text.
+ * Unlike pattern-based detection, this understands intent and can:
+ * - Correctly identify which existing skills are genuinely relevant
+ * - Propose new skills/tools that should be built
+ * - Avoid false positives from partial word matches
+ */
+export async function detectCapabilitiesWithClaude(
+  text: string,
+  field: 'intent' | 'approach',
+  taskTitle: string,
+  outcomeContext: string,
+  outcomeId?: string
+): Promise<ClaudeCapabilityResult> {
+  const fallback: ClaudeCapabilityResult = { existingSkills: [], newCapabilities: [] };
+
+  try {
+    // Gather existing skills (name + category only to keep prompt compact)
+    const allSkills = getAllSkills();
+    const skillSummaries = allSkills.map(s =>
+      `- "${s.name}" (${s.category || 'general'})`
+    ).join('\n');
+
+    // Gather outcome-specific capabilities if outcomeId provided
+    let outcomeCapabilities = '';
+    if (outcomeId) {
+      const existing = getExistingCapabilities(outcomeId);
+      const outcomeSpecific = existing.filter(e => !allSkills.some(s => s.name === e.name));
+      if (outcomeSpecific.length > 0) {
+        outcomeCapabilities = '\n\nOutcome-specific capabilities already built:\n' +
+          outcomeSpecific.map(c => `- [${c.type}] "${c.name}"`).join('\n');
+      }
+    }
+
+    const prompt = `You are analyzing a task's ${field} text to detect capability needs.
+
+TASK: ${taskTitle}
+CONTEXT: ${outcomeContext}
+
+TEXT TO ANALYZE:
+${text}
+
+EXISTING SKILLS IN THE SYSTEM:
+${skillSummaries || '(none)'}${outcomeCapabilities}
+
+Analyze the text and return a JSON object with:
+1. "existingSkills": Array of skill names from the existing list that are GENUINELY useful for this task. Only include skills that would actually help accomplish what's described. Do NOT match on partial word overlaps.
+2. "newCapabilities": Array of NEW capabilities that should be built. Each needs: type ("skill" or "tool"), name (descriptive), path (e.g. "skills/name.md" or "tools/name.ts"), description (what it does), specification (detailed spec for building it). Only propose capabilities when the text clearly describes something that needs a reusable skill or tool. Return empty arrays when nothing is needed.
+
+Return ONLY valid JSON, no explanation. Example:
+{"existingSkills":["Market Intelligence"],"newCapabilities":[{"type":"skill","name":"UX Anti-Pattern Detection","path":"skills/ux-anti-pattern-detection.md","description":"Identify destructive UX patterns","specification":"A skill for systematically identifying and categorizing destructive UX patterns in digital products"}]}`;
+
+    const result = await complete({
+      prompt,
+      description: `Detect capabilities for task: ${taskTitle}`,
+      maxTurns: 1,
+      outcomeId,
+    });
+
+    if (!result.success || !result.text) {
+      return fallback;
+    }
+
+    // Parse JSON from response (handle potential markdown wrapping)
+    let jsonText = result.text.trim();
+    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[1].trim();
+    }
+
+    const parsed = JSON.parse(jsonText);
+
+    // Validate existing skills against actual skill names
+    const validSkillNames = new Set(allSkills.map(s => s.name));
+    const existingSkills = Array.isArray(parsed.existingSkills)
+      ? parsed.existingSkills.filter((name: string) => validSkillNames.has(name))
+      : [];
+
+    // Validate and normalize new capabilities
+    const newCapabilities: CapabilityNeed[] = Array.isArray(parsed.newCapabilities)
+      ? parsed.newCapabilities
+          .filter((cap: Record<string, unknown>) =>
+            cap && typeof cap.name === 'string' && typeof cap.type === 'string'
+          )
+          .map((cap: Record<string, unknown>) => ({
+            type: cap.type === 'tool' ? 'tool' as const : 'skill' as const,
+            name: String(cap.name),
+            path: String(cap.path || `${cap.type === 'tool' ? 'tools' : 'skills'}/${String(cap.name).toLowerCase().replace(/\s+/g, '-')}.${cap.type === 'tool' ? 'ts' : 'md'}`),
+            description: String(cap.description || `Build ${cap.type}: ${cap.name}`),
+            specification: String(cap.specification || ''),
+          }))
+      : [];
+
+    return { existingSkills, newCapabilities };
+  } catch (error) {
+    console.error('Claude capability detection failed:', error);
+    return fallback;
+  }
 }

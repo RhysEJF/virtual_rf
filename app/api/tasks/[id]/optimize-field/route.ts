@@ -3,14 +3,14 @@
  *
  * POST /api/tasks/[id]/optimize-field
  * Optimizes a single field (intent or approach) content
- * Also detects skill references and updates required_skills
+ * Uses Claude-powered semantic detection for skills and new capabilities
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getTaskById, updateTask } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
-import { getAllSkills } from '@/lib/db/skills';
 import { complete } from '@/lib/claude/client';
+import { detectCapabilitiesWithClaude } from '@/lib/capabilities/detection';
 
 const OPTIMIZE_INTENT_PROMPT = `You are helping structure the "WHAT" (intent) for a task.
 
@@ -88,7 +88,7 @@ export async function POST(
       .replace('{outcomeContext}', outcomeContext)
       .replace('{content}', content);
 
-    // Run Claude
+    // Run Claude to optimize text
     const result = await complete({
       prompt,
       description: `Optimize task ${field} for: ${task.title}`,
@@ -103,12 +103,18 @@ export async function POST(
 
     const optimizedText = result.text.trim();
 
-    // Detect skill references in the optimized content
-    const detectedSkills = detectSkillReferences(optimizedText, content);
+    // Use Claude to semantically detect capabilities from both original and optimized text
+    const combinedText = `${optimizedText}\n\n---\nOriginal input:\n${content}`;
+    const capabilityResult = await detectCapabilitiesWithClaude(
+      combinedText,
+      field,
+      task.title,
+      outcomeContext,
+      task.outcome_id
+    );
 
-    // If skills were detected, update the task's required_skills
-    if (detectedSkills.length > 0) {
-      // Get existing skills
+    // Update required_skills if existing skills were detected
+    if (capabilityResult.existingSkills.length > 0) {
       let existingSkills: string[] = [];
       if (task.required_skills) {
         try {
@@ -118,20 +124,22 @@ export async function POST(
         }
       }
 
-      // Merge with detected skills (deduplicate)
-      const allSkills = Array.from(new Set([...existingSkills, ...detectedSkills]));
-
-      // Update the task
+      const allSkills = Array.from(new Set([...existingSkills, ...capabilityResult.existingSkills]));
       updateTask(id, {
         required_skills: JSON.stringify(allSkills),
       });
     }
 
-    // Return the optimized text
+    // Return the optimized text with capability detection results
     return NextResponse.json({
       success: true,
       optimized: optimizedText,
-      detectedSkills: detectedSkills.length > 0 ? detectedSkills : undefined,
+      detectedSkills: capabilityResult.existingSkills.length > 0
+        ? capabilityResult.existingSkills
+        : undefined,
+      detectedCapabilities: capabilityResult.newCapabilities.length > 0
+        ? capabilityResult.newCapabilities
+        : undefined,
     });
   } catch (error) {
     console.error('Error optimizing task field:', error);
@@ -140,65 +148,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
-
-/**
- * Detect skill references in text
- * Looks for mentions of existing skills and common skill patterns
- */
-function detectSkillReferences(optimizedText: string, originalText: string): string[] {
-  const combinedText = `${optimizedText} ${originalText}`.toLowerCase();
-  const detectedSkills: string[] = [];
-
-  // Get all existing skills
-  const allSkills = getAllSkills();
-
-  // Check for mentions of existing skills
-  for (const skill of allSkills) {
-    const skillNameLower = skill.name.toLowerCase();
-    // Check if skill name appears in text
-    if (combinedText.includes(skillNameLower)) {
-      detectedSkills.push(skill.name);
-      continue;
-    }
-
-    // Check for partial matches (e.g., "perplexity" for "Perplexity API")
-    const words = skillNameLower.split(/[\s-_]+/);
-    for (const word of words) {
-      if (word.length > 4 && combinedText.includes(word)) {
-        detectedSkills.push(skill.name);
-        break;
-      }
-    }
-  }
-
-  // Detect common tool/API patterns that might need skills
-  const toolPatterns = [
-    { pattern: /\b(perplexity|perplexity\s*api)\b/i, skill: 'Perplexity API' },
-    { pattern: /\b(tavily|tavily\s*api)\b/i, skill: 'Tavily Search' },
-    { pattern: /\b(firecrawl)\b/i, skill: 'Firecrawl' },
-    { pattern: /\b(exa|exa\s*api)\b/i, skill: 'Exa Search' },
-    { pattern: /\b(serp|serp\s*api|serpapi)\b/i, skill: 'SerpAPI' },
-    { pattern: /\b(browserbase)\b/i, skill: 'Browserbase' },
-    { pattern: /\b(github\s*api|octokit)\b/i, skill: 'GitHub API' },
-    { pattern: /\b(web\s*scraping|scrape)\b/i, skill: 'Web Scraping' },
-    { pattern: /\b(research|deep\s*research)\b/i, skill: 'Research' },
-  ];
-
-  for (const { pattern, skill } of toolPatterns) {
-    if (pattern.test(combinedText) && !detectedSkills.includes(skill)) {
-      // Only add if an existing skill with similar name exists, or mark as potential new skill
-      const existingSkill = allSkills.find(
-        s => s.name.toLowerCase().includes(skill.toLowerCase().split(' ')[0])
-      );
-      if (existingSkill) {
-        detectedSkills.push(existingSkill.name);
-      } else {
-        // Add as a potential skill to be built
-        detectedSkills.push(skill);
-      }
-    }
-  }
-
-  return Array.from(new Set(detectedSkills));
 }

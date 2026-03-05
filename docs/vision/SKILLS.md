@@ -34,6 +34,10 @@ Think of skills as "employee training manuals" that workers read before starting
 | - API endpoints (/api/capabilities/*) | Complete |
 | - CLI commands (flow capability, skill new, tool new) | Complete |
 | - Conversational API tools | Complete |
+| **Claude-powered capability detection** | Complete |
+| - Semantic skill matching (replaces substring matching) | Complete |
+| - New capability proposal at task level | Complete |
+| - `flow task optimize` CLI command | Complete |
 | Task refiner skill (pre-execution enrichment) | Complete |
 
 **Overall:** Complete and production-ready
@@ -93,11 +97,13 @@ requires:
 
 ### Skill Search & Matching
 
-Skills are discovered through two mechanisms:
+Skills are discovered through three mechanisms:
 
 1. **Name/keyword matching** — `searchSkills()` checks if the task's title + description contains the skill's name, category, or description keywords. This is a reverse search: the query (long) is checked for the presence of skill identifiers (short), not vice versa.
 
 2. **Trigger matching** — Skills with explicit `triggers` in their frontmatter are matched when any trigger keyword appears in the task query.
+
+3. **Claude-powered semantic detection** — `detectCapabilitiesWithClaude()` sends the task text and the full list of existing skills to Claude for semantic analysis. This avoids false positives from partial word matches (e.g., "patterns" matching "Cli Patterns") and can propose entirely new capabilities when the text describes something that doesn't exist yet. Used during task field optimization.
 
 ### Skill Scanner
 
@@ -116,11 +122,12 @@ Skills can declare what API keys they need via the `requires` field. The UI show
 
 1. **Automatic loading** - Skills are injected into worker context based on task requirements
 2. **Trigger matching** - Relevant skills found by keyword matching
-3. **Capability building** - Missing skills are created during capability phase
-4. **Key validation** - Skills with missing API keys are flagged in UI
-5. **Repository sync** - Skills can be synced to private/team repos for sharing
-6. **Auto-save** - If enabled, skills sync automatically when built
-7. **Unified creation** - Skills/tools can be created from any interface (UI, CLI, conversational API)
+3. **Semantic detection** - Claude analyzes task text to find relevant skills and propose new ones
+4. **Capability building** - Missing skills are created during capability phase
+5. **Key validation** - Skills with missing API keys are flagged in UI
+6. **Repository sync** - Skills can be synced to private/team repos for sharing
+7. **Auto-save** - If enabled, skills sync automatically when built
+8. **Unified creation** - Skills/tools can be created from any interface (UI, CLI, conversational API)
 
 ---
 

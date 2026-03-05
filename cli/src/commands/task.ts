@@ -302,10 +302,19 @@ interface UpdateOptions extends OutputOptions {
   optimizeDescription?: boolean;
 }
 
+interface DetectedCapability {
+  type: 'skill' | 'tool';
+  name: string;
+  path: string;
+  description: string;
+  specification: string;
+}
+
 interface OptimizeFieldResponse {
   success: boolean;
   optimized: string;
   detectedSkills?: string[];
+  detectedCapabilities?: DetectedCapability[];
 }
 
 const updateSubcommand = new Command('update')
@@ -496,10 +505,151 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
   }
 });
 
+// Optimize task: flow task optimize <task-id> [options]
+interface OptimizeOptions extends OutputOptions {
+  field?: string;
+  create?: boolean;
+}
+
+const optimizeSubcommand = new Command('optimize')
+  .description('AI-optimize task fields and detect needed capabilities')
+  .argument('<task-id>', 'Task ID to optimize')
+  .option('--field <field>', 'Field to optimize (intent or approach)', 'approach')
+  .option('--create', 'Auto-create detected capability tasks');
+
+addOutputFlags(optimizeSubcommand);
+
+optimizeSubcommand.action(async (taskId: string, options: OptimizeOptions) => {
+  try {
+    const field = options.field || 'approach';
+    if (!['intent', 'approach'].includes(field)) {
+      console.error(chalk.red('Error:'), 'Field must be "intent" or "approach"');
+      process.exit(1);
+    }
+
+    // Fetch current task to get its content
+    const { task } = await api.tasks.get(taskId) as { task: TaskWithDependencies };
+
+    const content = field === 'intent'
+      ? (task.task_intent || task.description || '')
+      : (task.task_approach || task.description || '');
+
+    if (!content.trim()) {
+      console.error(chalk.red('Error:'), `Task has no ${field} content to optimize. Set it first with: flow task update ${taskId} --description "..."`);
+      process.exit(1);
+    }
+
+    if (!options.json && !options.quiet) {
+      console.log(chalk.gray(`Optimizing ${field} via Claude...`));
+    }
+
+    const optimizeResponse = await api.post<OptimizeFieldResponse>(
+      `/tasks/${taskId}/optimize-field`,
+      { field, content }
+    );
+
+    if (!optimizeResponse.success) {
+      console.error(chalk.red('Error:'), 'Failed to optimize');
+      process.exit(1);
+    }
+
+    // Handle JSON output
+    if (options.json || options.quiet) {
+      if (handleOutput(optimizeResponse, options, taskId)) {
+        return;
+      }
+    }
+
+    // Update the task with optimized text
+    const updateField = field === 'intent' ? 'task_intent' : 'task_approach';
+    await api.tasks.update(taskId, { [updateField]: optimizeResponse.optimized });
+
+    // Display results
+    console.log();
+    console.log(chalk.green('✓') + ` Task ${field} optimized`);
+    console.log();
+
+    const preview = optimizeResponse.optimized.split('\n').slice(0, 5).join('\n');
+    console.log(chalk.bold.cyan(`Optimized ${field}:`));
+    console.log(chalk.white(preview.substring(0, 300) + (optimizeResponse.optimized.length > 300 ? '...' : '')));
+
+    if (optimizeResponse.detectedSkills && optimizeResponse.detectedSkills.length > 0) {
+      console.log();
+      console.log(chalk.bold.cyan('Existing skills matched:'));
+      for (const skill of optimizeResponse.detectedSkills) {
+        console.log(`  ${chalk.green('✓')} ${skill}`);
+      }
+    }
+
+    if (optimizeResponse.detectedCapabilities && optimizeResponse.detectedCapabilities.length > 0) {
+      console.log();
+      console.log(chalk.bold.yellow(`New capabilities detected (${optimizeResponse.detectedCapabilities.length}):`));
+      for (const cap of optimizeResponse.detectedCapabilities) {
+        const typeColor = cap.type === 'skill' ? chalk.green : chalk.yellow;
+        console.log(`  ${typeColor(`[${cap.type}]`)} ${chalk.white(cap.name)}`);
+        if (cap.description) {
+          console.log(`         ${chalk.gray(cap.description)}`);
+        }
+      }
+
+      if (options.create) {
+        // Auto-create capability tasks
+        console.log();
+        console.log(chalk.gray('Creating capability tasks...'));
+
+        let created = 0;
+        for (const cap of optimizeResponse.detectedCapabilities) {
+          try {
+            await api.post('/capabilities/create', {
+              outcomeId: task.outcome_id,
+              type: cap.type,
+              name: cap.name,
+              description: cap.description,
+              specification: cap.specification,
+            });
+            console.log(`  ${chalk.green('✓')} Created: ${cap.name}`);
+            created++;
+          } catch (err) {
+            const msg = err instanceof ApiError
+              ? ((err.body as { error?: string })?.error || err.message)
+              : String(err);
+            console.log(`  ${chalk.red('✗')} Failed: ${cap.name} — ${chalk.gray(msg)}`);
+          }
+        }
+
+        console.log();
+        console.log(chalk.green(`${created}/${optimizeResponse.detectedCapabilities.length} capability tasks created`));
+      } else {
+        console.log();
+        console.log(chalk.gray('Run with --create to auto-create capability tasks'));
+      }
+    }
+
+    console.log();
+
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
+      console.error(chalk.gray('Make sure the server is running (npm run dev)'));
+      process.exit(1);
+    }
+    if (error instanceof ApiError) {
+      if (error.status === 404) {
+        console.error(chalk.red('Error:'), `Task not found: ${taskId}`);
+      } else {
+        console.error(chalk.red('API Error:'), error.message);
+      }
+      process.exit(1);
+    }
+    throw error;
+  }
+});
+
 // Register subcommands
 taskCommand.addCommand(showSubcommand);
 taskCommand.addCommand(addSubcommand);
 taskCommand.addCommand(updateSubcommand);
+taskCommand.addCommand(optimizeSubcommand);
 
 // Also support direct task ID as argument: flow task <id>
 // This is the default action when no subcommand is provided

@@ -1353,9 +1353,13 @@ HOMЯ now detects when Ralph is stuck in a failure loop:
 - `repeated_drift` - Same drift type occurring across multiple tasks
 
 **Response:**
-1. Creates an escalation with options: Pause, Continue with guidance, or Skip failing tasks
+1. Creates an escalation with options: Increase Turn Limit, Break Into Subtasks, Skip Failing Tasks
 2. Automatically pauses all active workers for the outcome
 3. Logs the pattern detection in activity log
+
+**Failed Task Decomposition:**
+
+When the user (or auto-resolver) selects "Break Into Subtasks" for a failed task, the escalator resets the task to `pending` before decomposing. This is necessary because `decomposeTask()` marks the parent as `completed` (decomposed) and creates subtasks — a `failed` status would block that flow. The reset-then-decompose sequence means decomposition can recover tasks that have exhausted their retry budget.
 
 **Configuration:**
 ```typescript

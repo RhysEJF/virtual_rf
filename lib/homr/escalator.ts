@@ -533,14 +533,22 @@ async function applyBreakIntoSubtasks(
       continue;
     }
 
-    // Skip already completed or failed tasks
-    if (task.status === 'completed' || task.status === 'failed') {
+    // Skip already completed tasks (decomposition already happened)
+    // But allow failed tasks — the whole point of decomposition is to recover them
+    if (task.status === 'completed') {
       results.push({
         action: 'break_into_subtasks',
         success: false,
         details: { taskId, error: `Task already ${task.status}` },
       });
       continue;
+    }
+
+    // Reset failed tasks to pending before decomposing — decomposition replaces
+    // the parent with subtasks, so the failure status doesn't matter
+    if (task.status === 'failed') {
+      console.log(`[HOMЯ Escalator] Resetting failed task ${taskId} to pending for decomposition`);
+      updateTask(taskId, { status: 'pending' });
     }
 
     // IDEMPOTENCY CHECK: If decomposition is already completed, skip but report success

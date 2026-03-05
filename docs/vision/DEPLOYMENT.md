@@ -74,7 +74,7 @@ PHASE 2a: TELEGRAM CHAT (Current)
 ┌─────────────────────────────────────────┐
 │   Your Laptop                           │
 │   Claude Code CLI (via SDK)             │
-│   ~/telegram-workspace/ (sandboxed)     │
+│   ~/telegram-workspace/ (no sandbox)    │
 │   Flow CLI available as a skill         │
 └─────────────────────────────────────────┘
 

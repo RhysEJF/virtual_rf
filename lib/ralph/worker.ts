@@ -772,10 +772,22 @@ ${gitConfig.autoCommit ? '- Auto-commit is enabled: commit when making significa
 - Only create/modify files within: \`${workspacePath}/\`
 - Do NOT modify files in app/, lib/, or other main codebase directories
 - Do NOT access sensitive files (~/.ssh, ~/.aws, .env, credentials, etc.)
-- All paths should be relative to workspace or absolute paths within it
 - If a task requires files outside workspace, report as ERROR in progress.txt
 
 This isolation protects the main codebase. Violations will be flagged.
+
+## File Paths
+
+Your current working directory is a **task-specific** subdirectory. Other tasks have their own directories and CANNOT see files you create with relative paths.
+
+**For shared outputs** (deliverables, documents, files that other tasks will read):
+- ALWAYS use absolute paths starting with: \`${workspacePath}/\`
+- Example: \`${workspacePath}/guide/final/my-output.md\`
+
+**For scratch files** (intermediate notes only you need):
+- Relative paths are fine (they stay in your task directory)
+
+**IMPORTANT:** If your task description references files like \`guide/final/something.md\`, those are shared files. Use the absolute path: \`${workspacePath}/guide/final/something.md\`
 
 `;
   } else if (isolationMode === 'codebase') {
@@ -786,6 +798,17 @@ This outcome has **codebase access** - you may modify files in the main codebase
 - Use this power responsibly - follow existing patterns and conventions
 - Do NOT access sensitive files (~/.ssh, ~/.aws, .env, credentials, etc.)
 - Prefer focused, minimal changes over broad refactoring
+
+## File Paths
+
+Your current working directory is a **task-specific** subdirectory. Other tasks have their own directories and CANNOT see files you create with relative paths.
+
+**For shared outputs** (deliverables, documents, files that other tasks will read):
+- Use absolute paths to the outcome workspace: \`${workspacePath}/\`
+- Or absolute paths to the main codebase as needed
+
+**For scratch files** (intermediate notes only you need):
+- Relative paths are fine (they stay in your task directory)
 
 `;
   }

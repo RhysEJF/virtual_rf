@@ -43,6 +43,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Rate-limit exit detection (keeps tasks pending) | Complete |
 | Self-healing restart loop (infrastructure failure recovery) | Complete |
 | Atomic decomposition lock (prevents duplicate subtasks) | Complete |
+| Task refinement via worker (pre-execution enrichment) | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 

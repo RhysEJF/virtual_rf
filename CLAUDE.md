@@ -456,7 +456,7 @@ kill -9 <PID>
 
 ### CLI (Complete)
 - [x] Basic command structure (`cli/`)
-- [x] 38 commands implemented (full API coverage)
+- [x] 39 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
 - [x] Task management: tasks, task (add/update)
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
@@ -510,6 +510,14 @@ kill -9 <PID>
 - [x] Gate response data injection into worker CLAUDE.md
 - [x] AI-assisted gate suggestions in iterate, interpret, and execute-plan workflows
 - [x] HOMR steerer `add_gate` action for autonomous gate creation
+
+### Task Refinement (Complete)
+- [x] Task refiner skill (`~/flow-data/skills/task-refiner.md`) — methodology for pre-execution enrichment
+- [x] Refine API endpoint (`POST /api/outcomes/[id]/refine`) — creates refinement task + deploys worker
+- [x] CLI command (`flow refine <outcome-id>`) — trigger refinement from CLI
+- [x] "Refine Tasks" UI button on outcome page (visible when pending tasks exist)
+- [x] Activity logging (`task_refinement_started`)
+- [x] Idempotency check (prevents duplicate refinement tasks)
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

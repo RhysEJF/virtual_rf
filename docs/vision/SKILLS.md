@@ -34,6 +34,7 @@ Think of skills as "employee training manuals" that workers read before starting
 | - API endpoints (/api/capabilities/*) | Complete |
 | - CLI commands (flow capability, skill new, tool new) | Complete |
 | - Conversational API tools | Complete |
+| Task refiner skill (pre-execution enrichment) | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -50,7 +51,7 @@ Think of skills as "employee training manuals" that workers read before starting
 | **Outcome** | `~/flow-data/workspaces/out_{id}/skills/` | Built for specific outcome |
 
 App skills include internal development guides (e.g., `cli-patterns.md`, `update-docs.md`) and external-facing skills (e.g., `flow-cli.md` — teaches an external Claude Code instance how to use the Flow CLI).
-User skills are general-purpose (e.g., "market-intelligence", "campaign-planning").
+User skills are general-purpose (e.g., "market-intelligence", "campaign-planning") or system-level (e.g., `task-refiner.md` — methodology for pre-execution task enrichment, auto-injected during `flow refine`).
 Outcome skills are built during capability phase for that outcome's specific needs.
 
 ### Repository Sync

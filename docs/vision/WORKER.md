@@ -45,6 +45,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Self-healing restart loop (infrastructure failure recovery) | Complete |
 | Atomic decomposition lock (prevents duplicate subtasks) | Complete |
 | Task refinement via worker (pre-execution enrichment) | Complete |
+| Shared file path guidance (absolute paths for cross-task files) | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -259,6 +260,9 @@ The isolation mode is set per-outcome (with a system-wide default). When in work
 - Explicit workspace path boundary
 - Instructions to ONLY work within that directory
 - Warnings about restricted areas (`.env`, `.ssh`, credentials)
+- **File path guidance** distinguishing shared vs. task-local files
+
+**Shared vs. Task-Local Files:** Each task runs in a task-specific subdirectory (`workspaces/{outcomeId}/{taskId}/`). Files created with relative paths are invisible to other tasks. The CLAUDE.md instructs workers to use **absolute paths** to the outcome workspace for any shared outputs (deliverables, documents other tasks will read), and allows relative paths only for scratch files. This prevents decomposed subtask handoff failures where one subtask produces a file that a sibling subtask can't find.
 
 This provides defense-in-depth alongside the destructive command guard.
 

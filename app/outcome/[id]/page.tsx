@@ -213,6 +213,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [addingTask, setAddingTask] = useState(false);
+  const [refiningTasks, setRefiningTasks] = useState(false);
 
   // HOMЯ state
   const [showHomrActivityLog, setShowHomrActivityLog] = useState(false);
@@ -646,6 +647,31 @@ export default function OutcomeDetailPage(): JSX.Element {
       toast({ type: 'error', message: 'Failed to add task' });
     } finally {
       setAddingTask(false);
+    }
+  };
+
+  // Refine tasks handler
+  const handleRefineTasks = async () => {
+    setRefiningTasks(true);
+    try {
+      const response = await fetch(`/api/outcomes/${outcomeId}/refine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({ type: 'success', message: `Refining tasks... Worker ${data.workerId ? 'deployed' : 'pending'}.` });
+        fetchOutcome();
+      } else {
+        const data = await response.json();
+        toast({ type: 'error', message: data.error || 'Failed to refine tasks' });
+      }
+    } catch (err) {
+      toast({ type: 'error', message: 'Failed to refine tasks' });
+    } finally {
+      setRefiningTasks(false);
     }
   };
 
@@ -1176,14 +1202,28 @@ export default function OutcomeDetailPage(): JSX.Element {
                 >
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-text-tertiary text-sm">{outcome.tasks.length} total</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowAddTask(!showAddTask)}
-                      className="text-xs"
-                    >
-                      + Add Task
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {outcome.tasks.some((t: { status: string }) => t.status === 'pending') &&
+                       !outcome.tasks.some((t: { title: string; status: string }) => t.title === 'Refine pending tasks' && (t.status === 'pending' || t.status === 'running')) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRefineTasks}
+                          disabled={refiningTasks}
+                          className="text-xs"
+                        >
+                          {refiningTasks ? 'Refining...' : 'Refine Tasks'}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowAddTask(!showAddTask)}
+                        className="text-xs"
+                      >
+                        + Add Task
+                      </Button>
+                    </div>
                   </div>
 
                   {showAddTask && (

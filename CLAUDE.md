@@ -512,6 +512,14 @@ kill -9 <PID>
 - [x] AI-assisted gate suggestions in iterate, interpret, and execute-plan workflows
 - [x] HOMR steerer `add_gate` action for autonomous gate creation
 
+### Task Refinement (Complete)
+- [x] Task refiner skill (`~/flow-data/skills/task-refiner.md`) — methodology for pre-execution enrichment
+- [x] Refine API endpoint (`POST /api/outcomes/[id]/refine`) — creates refinement task + deploys worker
+- [x] CLI command (`flow refine <outcome-id>`) — trigger refinement from CLI
+- [x] "Refine Tasks" UI button on outcome page (visible when pending tasks exist)
+- [x] Activity logging (`task_refinement_started`)
+- [x] Idempotency check (prevents duplicate refinement tasks)
+
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
 - [ ] Agent messaging system (workers that talk to each other)

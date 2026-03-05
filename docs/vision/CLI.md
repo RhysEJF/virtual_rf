@@ -88,9 +88,10 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Workspace app serving (`flow serve`) | Complete |
 | Task gates (`flow gate list/add/satisfy`) | Complete |
 | Telegram bot management (`flow telegram start/stop/status`) | Complete |
+| Task refinement (`flow refine`) | Complete |
 | Interactive chat mode | **Not started** |
 
-**Current:** 38 commands implemented (full coverage)
+**Current:** 39 commands implemented (full coverage)
 **Target:** Interactive mode and additional polish
 
 ---
@@ -192,6 +193,7 @@ flow task show <id>
 flow task add <outcome-id> --title="..." [--description="..."] [--priority=<n>]
 flow task update <id> [--status=<s>] [--title="..."]
 flow task delete <id>
+flow refine <outcome-id>                                    # Enrich pending tasks (intent, approach, complexity, deps)
 ```
 
 #### Workers

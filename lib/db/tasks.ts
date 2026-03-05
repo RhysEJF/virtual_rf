@@ -967,6 +967,32 @@ export function cleanupStaleClaims(): number {
 }
 
 // ============================================================================
+// Atomic Decomposition Lock
+// ============================================================================
+
+/**
+ * Atomically claim the decomposition lock for a task.
+ * Uses a single UPDATE with a WHERE clause to prevent TOCTOU race conditions
+ * where two processes both check decomposition_status before either sets it.
+ *
+ * Returns true if the lock was acquired, false if another process already has it
+ * (decomposition_status is already 'in_progress' or 'completed').
+ */
+export function claimDecompositionLock(taskId: string): boolean {
+  const db = getDb();
+  const timestamp = now();
+
+  const result = db.prepare(`
+    UPDATE tasks
+    SET decomposition_status = 'in_progress', updated_at = ?
+    WHERE id = ?
+    AND (decomposition_status IS NULL OR decomposition_status = 'failed')
+  `).run(timestamp, taskId);
+
+  return result.changes > 0;
+}
+
+// ============================================================================
 // Update
 // ============================================================================
 

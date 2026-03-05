@@ -9,7 +9,7 @@
  */
 
 import { claudeComplete } from '../claude/client';
-import { createTask, updateTask, getTaskById, getSubtasksByParentTaskId, CreateTaskInput } from '../db/tasks';
+import { createTask, updateTask, getTaskById, getSubtasksByParentTaskId, claimDecompositionLock, CreateTaskInput } from '../db/tasks';
 import { detectCircularDependencies, validateDependencies } from '../db/dependencies';
 import type { Task, Intent, Approach, DecompositionStatus } from '../db/schema';
 import { ComplexityEstimate, ComplexityThresholds, estimateTaskComplexity } from './task-complexity-estimator';
@@ -68,8 +68,8 @@ const DEFAULT_THRESHOLDS: DecompositionThresholds = {
  * Decompose a high-complexity task into smaller subtasks.
  * Returns the created subtask IDs with proper dependencies between them.
  *
- * Uses atomic state transitions to prevent race conditions:
- * 1. Sets decomposition_status = 'in_progress' BEFORE calling Claude
+ * Uses atomic locking to prevent race conditions:
+ * 1. Atomically claims decomposition lock via SQL UPDATE WHERE (prevents TOCTOU)
  * 2. Sets decomposition_status = 'completed' and status = 'completed' AFTER subtasks created
  * 3. Sets decomposition_status = 'failed' if decomposition fails
  *
@@ -105,21 +105,6 @@ export async function decomposeTask(
     };
   }
 
-  // ============================================================================
-  // Check if decomposition is already in progress (another worker may be handling it)
-  // ============================================================================
-  const currentTask = getTaskById(task.id);
-  if (currentTask?.decomposition_status === 'in_progress') {
-    console.log(`[TaskDecomposer] Task ${task.id} decomposition already in progress, skipping`);
-    return {
-      success: false,
-      originalTaskId: task.id,
-      subtasks: [],
-      createdTaskIds: [],
-      reasoning: 'Decomposition already in progress by another worker',
-    };
-  }
-
   // Get or estimate complexity
   let estimate = complexityEstimate;
   if (!estimate) {
@@ -141,10 +126,23 @@ export async function decomposeTask(
   }
 
   // ============================================================================
-  // Atomic State Transition: Set decomposition_status = 'in_progress'
+  // Atomic Decomposition Lock: Claim exclusive decomposition rights
+  // Uses a single SQL UPDATE with WHERE clause to prevent TOCTOU race conditions.
+  // If another process already set decomposition_status to 'in_progress' or 'completed',
+  // the UPDATE affects 0 rows and we bail out.
   // ============================================================================
-  console.log(`[TaskDecomposer] Setting decomposition_status='in_progress' for task ${task.id}`);
-  await updateTask(task.id, { decomposition_status: 'in_progress' });
+  const lockAcquired = claimDecompositionLock(task.id);
+  if (!lockAcquired) {
+    console.log(`[TaskDecomposer] Task ${task.id} decomposition lock not acquired (already in_progress or completed), skipping`);
+    return {
+      success: false,
+      originalTaskId: task.id,
+      subtasks: [],
+      createdTaskIds: [],
+      reasoning: 'Decomposition already in progress or completed by another process',
+    };
+  }
+  console.log(`[TaskDecomposer] Acquired decomposition lock for task ${task.id}`);
 
   // Use Claude to decompose the task
   const prompt = buildDecompositionPrompt(task, estimate, outcomeIntent, outcomeApproach, thresholds, effectiveMaxTurns);

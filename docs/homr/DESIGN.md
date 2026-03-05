@@ -1393,12 +1393,15 @@ interface AutoResolveConfig {
 
 **Resolution Strategies:**
 
-1. **Heuristic Resolution** - For known patterns like complexity escalations:
-   - If escalation type is `complexity_warning` → auto-select "break_into_subtasks"
-   - If escalation type is `ambiguity` with clear winner → auto-select highest-confidence option
+1. **Heuristic Resolution** - For known patterns:
+   - Security/gate escalations → never auto-resolve (requires human)
+   - First failure → retry (subsequent failures → human review)
+   - Ambiguity → always human
+   - Complexity escalations → fall through to Claude evaluation (not hardcoded)
 
-2. **Claude-Based Resolution** - For complex cases:
-   - Analyzes escalation context, options, and implications
+2. **Claude-Based Resolution** - For complex cases and complexity escalations:
+   - Analyzes escalation context, options, task type, and implications
+   - Considers task domain: research/writing tasks may benefit from increased turn limits rather than decomposition; coding tasks with many files may benefit from decomposition
    - Generates a confidence score and reasoning
    - Only applies if confidence ≥ threshold
 
@@ -1415,7 +1418,7 @@ In semi-auto mode, the auto-resolver does NOT apply the resolution immediately. 
 
 After successful auto-resolution, the system automatically:
 1. Checks if any workers are running for the outcome
-2. If no workers running and pending tasks exist, spawns a new worker
+2. If no workers running and pending tasks exist, spawns a new worker with `enableComplexityCheck: false` and `maxTurns: 40` to prevent re-escalation cascades
 3. Logs the worker spawn in activity log
 
 **API:**

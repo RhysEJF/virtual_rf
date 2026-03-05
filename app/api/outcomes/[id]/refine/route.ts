@@ -92,7 +92,6 @@ export async function POST(
       task_approach: 'Use flow CLI tools to inspect each task, assess complexity, enrich structured fields, set dependencies, and decompose oversized tasks. Follow the task-refiner skill methodology.',
       complexity_score: 4,
       estimated_turns: Math.min(40, pendingTasks.length * 3 + 10),
-      required_skills: ['task-refiner'],
     });
 
     // Log activity

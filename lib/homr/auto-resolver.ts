@@ -88,23 +88,7 @@ function tryHeuristicResolution(
     };
   }
 
-  // Complexity escalations: prefer decomposition
-  if (escalationType === 'complexity') {
-    const decomposeOption = options.find(o =>
-      o.id.toLowerCase().includes('break') ||
-      o.id.toLowerCase().includes('subtask') ||
-      o.id.toLowerCase().includes('decompose')
-    );
-
-    if (decomposeOption) {
-      return {
-        shouldAutoResolve: true,
-        selectedOption: decomposeOption.id,
-        reasoning: 'Complexity escalation - decomposition is the safest path forward. Breaking into subtasks prevents turn limit exhaustion and creates manageable work units.',
-        confidence: 0.9,
-      };
-    }
-  }
+  // Complexity escalations: let Claude evaluate (research tasks may just need more turns)
 
   // Failure escalations: retry once, then human
   if (escalationType === 'failure') {
@@ -182,7 +166,7 @@ RESPOND IN THIS EXACT JSON FORMAT:
 }
 
 GUIDELINES:
-- Complexity/turn limit issues → usually safe to auto-resolve with decomposition
+- Complexity/turn limit issues → consider the task type. Research, writing, and analysis tasks often just need more turns. Coding tasks with many files may benefit from decomposition. Weigh all options.
 - Ambiguous requirements → needs human
 - Security/destructive operations → NEVER auto-resolve
 - Repeated failures → human should review
@@ -409,8 +393,8 @@ export async function tryAutoResolve(
 
           const workerResult = await startRalphWorker({
             outcomeId: escalation.outcome_id,
-            maxTurns: 20,
-            enableComplexityCheck: true,
+            maxTurns: 40,
+            enableComplexityCheck: false,
             autoDecompose: false,
           });
 

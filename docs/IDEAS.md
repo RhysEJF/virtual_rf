@@ -1,6 +1,6 @@
 # Ideas & Future Improvements
 
-> A backlog of ideas that could improve Digital Twin. Not yet approved for implementation.
+> A backlog of ideas that could improve Flow. Not yet approved for implementation.
 
 ---
 
@@ -16,14 +16,11 @@
 1. `proposed` - Just captured, not yet evaluated
 2. `researching` - Actively exploring feasibility
 3. `planned` - Approved for implementation, create a feature doc in `docs/`
-4. `implemented` - Done, link to the feature doc or PR
+4. `implemented` - Done, move to Implemented Ideas table below
 
-**What to include:**
-- Clear problem statement (what limitation does this address?)
-- High-level solution (not implementation details)
-- Value proposition (why this matters)
-- Effort estimate (small/medium/large)
-- References (repos, articles, related ideas)
+**External technology evaluations** belong in `docs/research/` — this file is for Flow-specific ideas and enhancements.
+
+**Full synthesis**: See [`docs/research/flow-2.0-synthesis.md`](./research/flow-2.0-synthesis.md) for the cross-research analysis that generated ideas 4-11.
 
 **Reviewing ideas:**
 - Check this file when planning what to build next
@@ -34,546 +31,516 @@
 
 ## Ideas
 
-### 1. MCP Integration for Ralph Workers
+### 1. Dynamic Task Scoring Formula
 
 | Field | Value |
 |-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2025-01-31 |
-| **Source** | Research into Jeffrey Emanuel's agentic tooling |
-
-**Problem:**
-Ralph workers can only access the local filesystem and run shell commands. They can't browse the web, query databases, or access external APIs without custom tool-building for each capability.
-
-**Current Workaround:**
-The skill-builder can create TypeScript tools that make HTTP calls (e.g., a tool that calls the Serper API). Workers run these via `npx ts-node`. This works but is brittle - workers must manually invoke tools, parse output, and handle errors.
-
-**Proposed Solution:**
-Configure MCP (Model Context Protocol) servers for Ralph workers. MCP tools appear as first-class capabilities that Claude can call directly, like Read/Write/Bash.
-
-Two approaches:
-1. **Global MCP** - Configure in `~/.claude.json`, all Ralph workers get the capability
-2. **Per-outcome MCP** - Pass MCP config when spawning workers (more complex)
-
-Start with global `mcp-server-fetch` for web research capability.
-
-**Value:**
-- Workers can research the web autonomously
-- Browser automation becomes possible (Playwright MCP)
-- Database queries, vector search, etc. become native capabilities
-- Reduces need for custom tool-building for common capabilities
-
-**Effort:** Small (for basic fetch) / Medium (for full MCP gateway)
-
-**References:**
-- [mcp-server-fetch](https://github.com/anthropics/claude-code) - Official Anthropic web fetch
-- [llm_gateway_mcp_server](https://github.com/Dicklesworthstone/llm_gateway_mcp_server) - Comprehensive MCP gateway
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - Vision doc with MCP as "Vision 3"
-
----
-
-### 2. Agent Messaging System
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2025-01-31 |
-| **Source** | Research into Jeffrey Emanuel's mcp_agent_mail |
-
-**Problem:**
-Ralph workers operate in isolation. Two workers on the same outcome can't share discoveries, coordinate on files, or avoid duplicate work.
-
-**Proposed Solution:**
-Implement an inbox/messaging system between workers. Workers can send messages, share findings, and reserve files to prevent conflicts.
-
-**Value:**
-- Complex outcomes can have multiple coordinated workers
-- Discoveries compound instead of getting lost
-- File conflicts become impossible
-- Human can message workers directly
-
-**Effort:** Medium
-
-**References:**
-- [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) (1.6k stars)
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - "Vision 1: Workers That Talk"
-
----
-
-### 3. Task Dependency Graph
-
-| Field | Value |
-|-------|-------|
-| **Status** | `implemented` |
-| **Added** | 2025-01-31 |
-| **Implemented** | 2026-01-31 |
-| **Source** | Research into beads_viewer graph-aware task management |
-
-**Problem:**
-Tasks are a flat list. Workers claim whatever's next, sometimes starting work they can't complete because a dependency isn't done yet.
-
-**Solution Implemented:**
-- Added `depends_on` column to tasks table (JSON array of task IDs)
-- Built dependency validation and circular dependency detection (`lib/db/dependencies.ts`)
-- UI shows blocked/blocking relationships in ExpandableTaskCard
-- Workers automatically skip blocked tasks when claiming
-- HOMЯ steerer can set dependencies when analyzing task relationships
-
-**Value Delivered:**
-- Workers never start blocked tasks
-- UI clearly shows dependency relationships
-- Blocked tasks are visually distinguished
-- Task cards show what's blocking them and what they're blocking
-
-**References:**
-- [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) (1.1k stars)
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - "Vision 2: Tasks That Understand Dependencies"
-
----
-
-### 4. Destructive Command Guard
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2025-01-31 |
-| **Source** | Research into safety patterns for autonomous agents |
-
-**Problem:**
-Ralph workers run with `--dangerously-skip-permissions`. One bad command (rm -rf, DROP TABLE, force push) could be catastrophic.
-
-**Proposed Solution:**
-A safety layer that intercepts dangerous commands before execution. Could be implemented as:
-- A wrapper script that filters commands
-- A hook in the worker that checks before Bash execution
-- An MCP tool that validates commands
-
-**Value:**
-- Confidence to let workers run longer unsupervised
-- Catastrophic mistakes get caught
-- Audit trail of blocked operations
-- Builds trust in agent autonomy
-
-**Effort:** Small
-
-**References:**
-- [destructive_command_guard](https://github.com/Dicklesworthstone/destructive_command_guard) (283 stars)
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - "Vision 5: Safety Without Handholding"
-
----
-
-### 5. Cross-Outcome Session Search
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2025-01-31 |
-| **Source** | Research into institutional memory patterns |
-
-**Problem:**
-Each outcome is an island. Lessons learned, patterns discovered, and solutions developed stay trapped in that outcome's history.
-
-**Proposed Solution:**
-Index all worker outputs and progress logs. Provide semantic search across all past work. Workers can query "how did we handle X before?"
-
-**Value:**
-- Past work accelerates future work
-- Patterns emerge from history
-- New outcomes start with relevant context
-- System gets smarter with every completed outcome
-
-**Effort:** Large
-
-**References:**
-- [coding_agent_session_search](https://github.com/Dicklesworthstone/coding_agent_session_search) (398 stars)
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - "Vision 4: Memory That Persists"
-
----
-
-### 6. Multi-Model Routing
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2025-01-31 |
-| **Source** | Cost optimization research |
-
-**Problem:**
-Every task uses Claude via CLI subscription. Simple formatting and complex architecture decisions get the same heavyweight treatment.
-
-**Proposed Solution:**
-Route tasks to appropriate models based on complexity:
-- Trivial tasks → cheap/fast models (DeepSeek, Haiku)
-- Complex reasoning → Claude Opus
-- Simple checks → local WASM models
-
-**Value:**
-- 10x more work at same cost
-- Faster turnaround on simple tasks
-- Premium reasoning preserved for what matters
-
-**Effort:** Large (requires model routing infrastructure)
-
-**References:**
-- [swiss_army_llama](https://github.com/Dicklesworthstone/swiss_army_llama) (1k stars)
-- [RALPH_UNLEASHED.md](./RALPH_UNLEASHED.md) - "Vision 6: Smart Routing"
-
----
-
-### 7. HOMЯ Auto-Resolve Mode
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2026-02-03 |
-| **Source** | User feedback - manual escalation resolution is poor UX |
-
-**Problem:**
-Currently, every HOMЯ escalation requires human intervention. User must:
-1. See the escalation in the UI
-2. Read the options and context
-3. Make a decision
-4. Wait for the action to complete (e.g., decomposition)
-5. Manually restart workers
-
-This creates friction and defeats the purpose of autonomous workers. The human becomes a bottleneck.
-
-**Proposed Solution:**
-Add an "auto-resolve" capability where Claude evaluates escalations and makes decisions autonomously, with human oversight.
-
-#### Core Components
-
-**1. Auto-Resolver Agent**
-```typescript
-async function autoResolveEscalation(escalation: Escalation): Promise<{
-  shouldAutoResolve: boolean;
-  selectedOption: string;
-  reasoning: string;
-  confidence: number;  // 0.0 - 1.0
-}> {
-  const context = {
-    escalation,
-    task: getTaskById(escalation.trigger_task_id),
-    pastDecisions: getDecisionPatterns(escalation.outcome_id),
-    outcomeContext: getHomrContext(escalation.outcome_id),
-  };
-
-  return await claudeComplete(AUTO_RESOLVER_PROMPT, context);
-}
-```
-
-**2. Configurable Confidence Threshold**
-- Setting: `auto_resolve_confidence_threshold` (default: 0.8)
-- If confidence >= threshold → auto-resolve
-- If confidence < threshold → escalate to human
-- User can adjust from 0.0 (always human) to 1.0 (always auto)
-
-**3. Escalation Type Heuristics**
-| Escalation Type | Default Behavior | Reasoning |
-|-----------------|------------------|-----------|
-| Complexity (turn limit) | Auto: break_into_subtasks | Safe, well-understood outcome |
-| Ambiguous requirements | Human | Needs domain knowledge |
-| Multiple failures | Auto: increase limit once, then human | First retry is safe |
-| Security/destructive | Always human | Too risky to auto-resolve |
-
-#### Timing: Handling Async Operations
-
-When auto-resolve triggers an async operation (like decomposition), the system needs to handle timing. Three options:
-
-| Option | Pros | Cons |
-|--------|------|------|
-| **A. Synchronous decomposition** | Simple, no race conditions, immediate feedback | Blocks the resolution flow, slower perceived response |
-| **B. Worker orchestrator tracks pending ops** | Non-blocking, can parallelize, responsive UI | More complex state management, need to track operations |
-| **C. Worker polls for "ready" state** | Workers are self-managing, decentralized | Wastes worker turns polling, could miss edge cases |
-
-**Recommendation: Option B (Worker Orchestrator)**
-- Add `pending_operations` tracking to outcome or worker state
-- Before claiming tasks, worker checks for pending operations
-- Decomposition adds entry: `{ type: 'decomposition', taskId, startedAt }`
-- On completion, entry is removed
-- Worker waits if any pending operations affect its next task
-
-#### Human Stays "On The Loop"
-
-**Activity Feed Enhancements:**
-- Auto-resolved escalations appear with distinct styling (different color/icon)
-- Show: "🤖 Auto-resolved: [decision] (confidence: 85%)"
-- Clickable to expand reasoning
-
-**Override Capability:**
-- Human can undo auto-decisions within N minutes
-- "Undo" reverts the action if possible (mark task pending again, etc.)
-- Builds dataset of when auto-resolve was wrong
-
-**Configurable Modes:**
-| Mode | Behavior |
-|------|----------|
-| `manual` | All escalations go to human (current behavior) |
-| `semi-auto` | Auto-resolve with human review before applying |
-| `full-auto` | Auto-resolve and apply immediately |
-
-#### Future Enhancement: Pattern Learning
-
-**Deferred to v2** - Track decision outcomes to improve auto-resolve:
-
-1. **Store decision outcomes**
-   - When task completes after escalation → record "good outcome"
-   - When task fails after escalation → record "bad outcome"
-
-2. **Build pattern database**
-   ```typescript
-   interface DecisionPattern {
-     escalationType: string;
-     contextSignals: string[];  // e.g., "high_complexity", "bulk_task"
-     decision: string;
-     outcomeCount: number;
-     successRate: number;
-   }
-   ```
-
-3. **Use patterns in auto-resolve**
-   - If pattern has >80% success rate and >5 occurrences → boost confidence
-   - "We've seen this 12 times, chose 'decompose' 10 times, succeeded 9 times"
-
-This is more complex because it requires:
-- Tracking long-term outcomes (did the task eventually succeed?)
-- Correlating decisions to outcomes across sessions
-- Building a queryable pattern database
-
-**Value:**
-- 80% reduction in human interruptions
-- Workers can run truly autonomously for hours
-- Human time focused on genuinely ambiguous decisions
-- System learns from human decisions over time
-
-**Effort:** Medium (core auto-resolve) / Large (pattern learning)
-
-**References:**
-- [HOMЯ DESIGN.md](./homr/DESIGN.md) - Current escalation architecture
-- Existing `homr_context.decisions` table - Already stores some decision data
-
----
-
-### 8. Persistent Learnings Layer (Cross-Outcome Memory)
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
-| **Added** | 2026-02-03 |
-| **Source** | Design conversation - Memory architecture discussion |
-
-**Problem:**
-Each outcome is an island. HOMЯ discovers patterns and constraints during one outcome, but those learnings don't carry forward. A worker solving a similar problem next month starts from scratch.
-
-Current system:
-- Discoveries stored in `homr_context` JSON blob per outcome
-- No cross-outcome search capability
-- No tracking of which discoveries were actually helpful
-
-**Proposed Solution:**
-Build a persistent learnings layer with semantic search across all outcomes.
-
-#### Core Components
-
-**1. Learnings Table**
-```typescript
-interface Learning {
-  id: string;
-  content: string;
-  format: 'COIA';  // Context, Observation, Implication, Action
-  confidence: number;  // 0.0-1.0, decays over time if unused
-  times_used: number;
-  times_helpful: number;  // Worker marked it useful
-  last_used_at: number;
-  source_outcome_id: string;
-  source_task_id: string;
-  embedding?: number[];  // For semantic search
-  tags: string[];  // e.g., ["api", "authentication", "oauth"]
-}
-```
-
-**2. COIA Format (from the RALPH system)**
-```markdown
-### [Date] - [Brief Title]
-
-**Context**: What were you working on?
-**Observation**: What did you notice?
-**Implication**: How should this change future work?
-**Action**: Specific change to make
-```
-
-**3. Hybrid Search at Task Claim**
-```typescript
-const relevantLearnings = await searchLearnings({
-  query: task.title + task.description,
-  strategy: 'hybrid',  // BM25 + semantic embedding search
-  outcomeContext: task.outcome_id,  // Boost same-outcome learnings
-  limit: 5,
-  minConfidence: 0.6,
-});
-```
-
-**4. Usage Tracking**
-- Inject learning ID with content
-- Worker can mark learning as helpful: `LEARNING_HELPFUL: learn_123`
-- Track usage → boost confidence for helpful learnings
-- Decay confidence for unused learnings over time
-
-**Value:**
-- System gets smarter with every completed outcome
-- Past solutions accelerate future work
-- Confidence scoring surfaces the most valuable learnings
-- "How did we handle X before?" becomes a real capability
-
-**Effort:** Large
-
-**References:**
-- [Cross-Outcome Session Search](#5-cross-outcome-session-search) - Related idea
-- COIA pattern from RALPH system design
-- [HOMЯ Observer](../lib/homr/observer.ts) - Current discovery extraction
-
----
-
-### 9. Dynamic Task Scoring Formula
-
-| Field | Value |
-|-------|-------|
-| **Status** | `proposed` |
+| **Status** | `deferred` |
 | **Added** | 2026-02-03 |
 | **Source** | Design conversation - Task orchestration discussion |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | After concurrent workers are stable |
 
 **Problem:**
-Currently, workers claim tasks by simple priority number. This doesn't account for:
-- How many tasks are blocked waiting on this one
-- How long the task has been pending
-- Task type (capability tasks should complete first)
-- Worker specialization (some workers better at certain tasks)
+Currently, workers claim tasks by simple priority number. This doesn't account for how many tasks are blocked waiting on this one, how long the task has been pending, task type, or worker specialization.
 
 **Proposed Solution:**
-Replace simple priority with a scoring formula:
+Replace simple priority with a scoring formula: `priority + type_bonus + blocking_bonus + age_bonus`
 
-```typescript
-function calculateTaskScore(task: Task): number {
-  const base = task.priority || 3;  // Default priority
-  const typeBonus = task.phase === 'capability' ? 10 : 0;  // Capability tasks first
-  const blockingBonus = getTasksDependingOn(task.id).length * 5;  // More dependents = higher priority
-  const ageBonus = Math.min(10, (Date.now() - task.created_at) / (1000 * 60 * 60));  // +1 per hour, max 10
-
-  return base + typeBonus + blockingBonus + ageBonus;
-}
-```
-
-**Value:**
-- Critical path tasks naturally bubble up
-- Stale tasks don't get forgotten
-- Capability phase completes faster
-- Better parallelization of independent work
+**Value:** Critical path tasks bubble up, stale tasks don't get forgotten, capability phase completes faster.
 
 **Effort:** Small
 
-**References:**
-- Priority formula:`priority + type_bonus + blocking_bonus + age_bonus`
-- Current implementation: `lib/db/tasks.ts` - `claimNextTask()`
+**References:** `lib/db/tasks.ts` — `claimNextTask()`
+
+**Post-Interview Notes (2026-03-11):**
+Deferred. With a single sequential worker per outcome, the dependency graph already handles the most important ordering. The real pain point is upstream — task generation quality (shallow tasks, no interview, no pre-decomposition). Dynamic scoring is an optimization that only matters when multiple workers compete for tasks concurrently. Revisit after concurrent worker execution is stable and proven.
 
 ---
 
-### 10. Parallel Review Swarm
+### 2. Parallel Review Swarm
 
 | Field | Value |
 |-------|-------|
-| **Status** | `proposed` |
+| **Status** | `needs research` |
 | **Added** | 2026-02-03 |
 | **Source** | Design conversation - Two-phase generation pattern |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | After upstream quality improvements (Discovery Engine, Deterministic Verification) are in place |
 
 **Problem:**
 Current review is single-pass: one Reviewer agent checks all work. This misses issues that require specialized attention (security, performance, accessibility, etc.).
 
 **Proposed Solution:**
-Replace single reviewer with parallel specialized sub-agents:
+Replace single reviewer with parallel specialized sub-agents (security, performance, accessibility, consistency). Merge findings, deduplicate, create tasks.
 
-```typescript
-const reviewSwarm = [
-  { name: 'security', prompt: 'Check for OWASP top 10 vulnerabilities...' },
-  { name: 'performance', prompt: 'Check for N+1 queries, unnecessary renders...' },
-  { name: 'accessibility', prompt: 'Check for WCAG 2.1 compliance...' },
-  { name: 'consistency', prompt: 'Check naming conventions, code style...' },
-];
-
-// Run all reviews in parallel
-const results = await Promise.all(
-  reviewSwarm.map(r => reviewWithAgent(r.name, r.prompt, completedWork))
-);
-
-// Merge findings, deduplicate, create tasks
-const allIssues = mergeReviewResults(results);
-```
-
-**Value:**
-- Specialized expertise catches more issues
-- Parallel execution = faster reviews
-- Each reviewer has focused, smaller context
-- Easy to add new review dimensions
+**Value:** Specialized expertise catches more issues. Parallel execution = faster reviews.
 
 **Effort:** Medium
 
-**References:**
-- "Generate then polish" pattern
-- Current implementation: `lib/agents/reviewer.ts`
+**References:** `lib/agents/reviewer.ts`, [agent-teams.md](./research/agent-teams.md)
+
+**Post-Interview Notes (2026-03-11):**
+Flagged for research. The core realization is that **the real question isn't "should we parallelize the reviewer?" — it's "what should quality assurance look like across different outcome types?"** Flow isn't just building code. It handles research, content creation, and will eventually handle MCP-powered tool-calling workflows. "Review" means fundamentally different things for each:
+
+- **Code outcomes**: Did it compile? Do tests pass? Is it secure? (Largely automatable via deterministic verification)
+- **Research outcomes**: Is the analysis accurate? Are sources credible? Is the reasoning sound? (Hard to automate)
+- **Content outcomes**: Does it match the brief? Is the tone right? (Subjective, needs human or domain-expert review)
+- **MCP/tool outcomes**: Did the actions succeed? Were the right APIs called? (Verifiable but structurally different)
+
+Parallelizing the current code-focused reviewer is too narrow a solution. Deterministic Verification (#11) may absorb most code review value, and the Discovery Engine (#4) front-loads quality so review has less to catch. The review feature hasn't been stress-tested yet — the real bottleneck is upstream (task generation quality), so it's unclear where the current reviewer falls short.
+
+**Research needed:** Dedicated spike into modern AI review/testing frameworks (Claude Code's GitHub review, multi-agent testing swarms, dedicated AI review repos). Research question: "Given Flow handles code, research, content, and tool-calling outcomes, what's the right quality assurance architecture?" This idea may get absorbed into other ideas, deprecated in favor of more specific solutions, or reframed entirely based on findings.
 
 ---
 
-### 11. Evaluation Harness
+### 3. Evaluation Harness
 
 | Field | Value |
 |-------|-------|
-| **Status** | `proposed` |
+| **Status** | `needs research` |
 | **Added** | 2026-02-03 |
 | **Source** | Design conversation - "Metrics not vibes" philosophy |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | Phase 3 — after core agents are stable and iterating on prompt quality |
 
 **Problem:**
-We have no systematic way to measure if changes improve the system. Questions like "Does the new capability planner work better?" require manual testing and gut feel.
+No systematic way to measure if changes improve the system. "Does the new capability planner work better?" requires manual testing and gut feel.
 
 **Proposed Solution:**
-Build an eval suite that measures agent performance against known test cases.
+Build an eval suite that measures agent performance against known test cases. Regression detection, A/B testing prompts/models.
 
-```typescript
-interface Evaluation {
-  id: string;
-  name: string;
-  description: string;
-  input: {
-    intent: string;
-    expectedSkills?: string[];
-    expectedTasks?: string[];
-    testFiles?: string[];  // For code quality evals
-  };
-  assertions: {
-    type: 'tasks_generated' | 'skills_matched' | 'code_compiles' | 'tests_pass';
-    expected: unknown;
-  }[];
-}
-
-// Run eval suite
-const results = await runEvalSuite('capability-planner', [
-  { input: 'Build a REST API', assertions: [{ type: 'skills_matched', expected: ['api-design'] }] },
-  { input: 'Scrape website', assertions: [{ type: 'tasks_generated', expected: 3 }] },
-]);
-
-console.log(`Pass rate: ${results.passRate}%`);
-```
-
-**Value:**
-- Regression detection when changing agents
-- A/B test different prompts or models
-- Confidence to refactor core systems
-- Documentation of expected behavior
+**Value:** Confidence to refactor core systems. Documentation of expected behavior.
 
 **Effort:** Medium
 
-**References:**
-- Eval approach pattern
-- Anthropic's eval patterns
-- [improvement-analyzer.ts](../lib/agents/improvement-analyzer.ts) - Could generate evals from escalation patterns
+**References:** `lib/agents/improvement-analyzer.ts`
+
+**Post-Interview Notes (2026-03-11):**
+Deferred to Phase 3 for research. Much of this idea's value is already covered by other proposals: Deterministic Verification (#11) handles "did worker output work?", Research Mode (#7) provides metric-driven eval loops for user outcomes, Attempt Tracking (#10) gives post-hoc worker effectiveness data. The unique value here is evaluating *Flow's own internal agents* (capability planner, HOMR observer, task generator) — a meta-level concern. But this is a "tune the engine after it runs reliably" problem. Current workflow is to create new agents rather than iteratively optimize prompts, so there's no active pain point. Revisit once the core architecture is stable and prompt iteration becomes the bottleneck.
+
+---
+
+### 4. Discovery Engine (Flow 2.0)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `approved` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Source** | Flow 2.0 synthesis — addresses "garbage in" pain point |
+| **Category** | Major re-architecture |
+
+**Problem:**
+Task generation happens in a single Claude call with no research, no interview, no decomposition analysis. Produces shallow, vague tasks. Workers get stuck. User compensates by doing deep planning in Claude Code first, then manually feeding it to Flow.
+
+**Proposed Solution:**
+A smart planning layer that replaces single-shot task generation with a tiered planning pipeline. Implementation strategy: fork and adapt the best skills/agents from [Compound Engineering](./research/compound-engineering.md) (MIT, markdown-based, no telemetry), integrated with Flow's memory system, task schema, and worker infrastructure. See full brief in [discovery-engine-brief.md](./research/discovery-engine-brief.md).
+
+**Key design decisions (from interview):**
+- **Option C — Headless power + thin UI**: All planning happens through Claude Code / Telegram / CLI with a smart skill stack. Web UI stays as read-only dashboard for monitoring, with input retained as an entry point (not deprecated).
+- **Three tiers of planning depth**: QUICK (skip interview, generate tasks directly), STANDARD (clarity check, targeted questions, local research), DEEP (full discovery with external research, linked research outcomes that run overnight).
+- **Fork, don't build from scratch**: Adapt Compound Engineering's proven skills/agents rather than writing from zero. ~1 day adaptation work vs weeks from scratch.
+- **Autoresearch refinements**: Constrained action space principle applied to task scoping, simplicity criterion in plan evaluation, fixed-budget time-boxing for research phases, research findings logged for knowledge compounding.
+
+**Value:** Moves intelligence upstream. Eliminates the "generate tasks → hope workers don't get stuck → escalate → decompose → retry" cycle. Adapts planning depth to task complexity — no ceremony on simple outcomes, full discovery on complex ones.
+
+**Effort:** Medium (reduced by forking Compound Engineering skills)
+
+**References:** [compound-engineering.md](./research/compound-engineering.md), [autoresearch.md](./research/autoresearch.md), [tx-primitives.md](./research/tx-primitives.md), [harness-engineering.md](./research/harness-engineering.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md)
+
+---
+
+### 5. Resilient Worker (Flow 2.0)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `approved` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Source** | Flow 2.0 synthesis — addresses "everything breaks" pain point |
+| **Category** | Major re-architecture |
+
+**Problem:**
+When tasks fail, workers die, or rate limits hit, the whole system falls apart. Retries repeat the same mistakes. Partial progress is lost. User has to jump into Claude Code to debug. Overnight runs fail because the circuit breaker fires after 3 identical failures with no way to pick up where the last worker left off.
+
+**Proposed Solution:**
+Restructure the between-task orchestration layer as a task orchestration state machine. Not controlling what happens *inside* a Claude CLI turn (that's a black box — stdin is closed, CLAUDE.md is read once, progress.txt is one-way), but making the *between-task* decision points smarter with: attempt tracking, mid-task checkpointing, deterministic verification, teaching errors, and auto-commit instructions.
+
+**Key design decisions (from interview):**
+- **Not a process-level state machine** — Claude CLI is fire-and-forget. All state transitions happen AFTER the process exits and BEFORE the next one spawns. This is the controllable window.
+- **Core value is observability + memory between tasks** — structured record of what was tried, why it failed, what files were modified, and what remains. Next worker gets this context in CLAUDE.md.
+- **Enables reliable overnight runs** — the primary pain point. Tasks that fail 3x and trigger the circuit breaker do so because retries are blind. Attempt tracking + checkpointing + teaching errors make retries smart.
+- **Incremental implementation** — each capability (attempt tracking, checkpointing, verification, teaching errors) is independent and can ship separately.
+- **Auto-commit via instructions** — add git commit instructions to CLAUDE.md ("commit after each significant change"). Claude does it during execution. Not back-pressure, just better instructions.
+- **Subscription pooling** — feasible in theory (spawn with different env vars), needs investigation on Claude CLI profile support.
+
+**What's actually new vs. reorganization:**
+- Already exists (cleanup only): turn exhaustion detection, rate limit detection, circuit breaker, intervention checks, CLAUDE.md generation
+- New and feasible: attempt tracking (DB table + CLAUDE.md injection), mid-task checkpointing (parse output on exit, store progress), deterministic verification (run verify_command as subprocess after exit), teaching errors (structured failure context), auto-commit instructions
+
+**Reactive escalation pattern (from RF CLI Tool analysis):**
+The current circuit breaker counts consecutive failures (3 = trip) but doesn't read *what* HOMR discovered. In the RF CLI Tool outcome, HOMR correctly diagnosed "task ordering is fundamentally broken" by observation #3, but 4 more doomed tasks still ran. The fix is a content-aware circuit breaker:
+- When HOMR discovers a `blocker` with `relevantTasks: ["*"]` (affects all tasks), immediately pause the worker and create an escalation. Don't wait for 3 failures.
+- Between tasks, run a sequential gate check (from Compound Engineering): "Has HOMR flagged a systemic blocker? If yes, stop." Simple but prevents wasted runs.
+- With Event Backbone (#6): `discovery.made` event with `type: blocker` + `scope: *` → listener triggers immediate pause + escalation. Real-time reaction instead of post-hoc.
+- This replaces the fragile count-based circuit breaker with an intelligent, content-driven one. Count-based remains as a fallback safety net.
+
+**Value:** Turns overnight runs from "hope it works" to "trust it works." Retries get smarter instead of repeating. Progress survives interruption. Verification catches failures in seconds, not minutes. Content-aware circuit breaker prevents running doomed tasks.
+
+**Effort:** High (but incremental — each capability ships independently)
+
+**References:** [loom-integration.md](./research/loom-integration.md), [tx-primitives.md](./research/tx-primitives.md), [harness-engineering.md](./research/harness-engineering.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md), [compound-engineering.md](./research/compound-engineering.md)
+
+---
+
+### 6. Event Backbone — Common Operational Picture (Flow 2.0)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `approved` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Source** | Flow 2.0 synthesis — enables Telegram-first, voice, and real-time coordination |
+| **Category** | Major re-architecture |
+
+**Problem:**
+12+ setInterval polls across the UI (3-30s delays). Gates/escalations disconnected from execution context. No foundation for real-time voice interaction. Telegram relies on same polling APIs. No shared operational picture for coordinating parallel workers or enabling real-time observability.
+
+**Proposed Solution:**
+Unified event bus with two layers: in-memory pub/sub for real-time SSE delivery to all clients, and SQLite persistence for event history and analytics. Typed events (`worker.started`, `task.completed`, `task.failed`, `discovery.made`, `worker.signal`, `gate.triggered`, etc.) with rich JSON payloads. All clients (web UI, Telegram, HOMR agents, future coordinator agents) subscribe to relevant events.
+
+**Key design decisions (from interview):**
+- **Common Operational Picture** — not just faster UI. This is the coordination infrastructure from swarm intelligence. All agents share a real-time view of system state. Enables pattern detection across concurrent workers, trend correlation, and system-wide observability.
+- **Absorbs Idea #16 (Worker Stigmergy Signals)** — worker signals (file claims, discoveries, warnings, progress) become `worker.signal` events on the bus. No separate signals.jsonl needed.
+- **Sequential observation preserved by default** — task completes → HOMR observe (await) → store discoveries → claim next task. The 30-60s observation cost is worth it for context quality. Observations build progressive understanding (proven by RF CLI Tool outcome: 7 observations building from "first failure" to "systemic diagnosis" to "complete reset needed").
+- **Configurable "fast mode"** — for outcomes with many independent tasks, observation runs async. Discoveries land for Task C instead of Task B. Throughput over context.
+- **SQLite persistence enables analytics** — correlate trends across events. "What events preceded this escalation?" "Do failures cluster at certain times?" "Which task patterns cause turn exhaustion?"
+- **HOMR agents become event-driven** — Observer subscribes to `task.completed`/`task.failed`. Steerer subscribes to `discovery.made`. Escalator watches failure patterns across workers in real-time.
+
+- **Reactive escalation via events** — when HOMR emits a `discovery.made` event with `type: blocker` and `scope: *`, event listeners trigger immediate worker pause + escalation creation. This is how Event Backbone and Resilient Worker (#5) work together to prevent running doomed tasks. The event bus is the communication channel; the content-aware circuit breaker (#5) is the logic. See RF CLI Tool outcome analysis: HOMR diagnosed the problem by observation #3 but 4 more tasks ran needlessly.
+
+**Value:** Real-time coordination infrastructure. Instant UI/Telegram updates. Foundation for parallel workers, voice interface, and system-wide analytics. Enables future coordinator agents that watch cross-worker patterns. Reactive escalation prevents wasted runs on known-broken task ordering.
+
+**Effort:** Medium
+
+**References:** [ag-ui.md](./research/ag-ui.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md), [swarms-assessment-flow-2.0.md](./research/swarms-assessment-flow-2.0.md)
+
+---
+
+### 7. Evolve Mode (formerly Research Mode)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `approved` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Source** | Flow 2.0 synthesis + GEPA skill learning research |
+| **Category** | New capability |
+
+**Problem:**
+Flow is built for "complete a PRD" outcomes. Many valuable outcomes are optimization problems (improve test coverage, tune prompts, reduce bundle size, optimize skills) that don't fit the task-completion model. Skills are static once created — no feedback loop from worker outcomes back to skill content.
+
+**Proposed Solution:**
+A hill-climbing optimization loop that can operate at **task level** (the primitive) or **outcome level** (all tasks are optimization loops). Workers modify code/config/skills → commit → run metric_command → keep if improved, revert if not. Experiments tracked with progress visualization. Fixed time budget per experiment. HOMR analyzes trends (plateau detection, diminishing returns).
+
+**Key design decisions (from interview):**
+- **Task-level is the primitive, not outcome-level.** An optimization loop can be one task within a normal outcome (e.g., "optimize the worker instruction skill" alongside standard implementation tasks). Outcome-level "evolve mode" is just a convenience wrapper where all tasks happen to be optimization loops.
+- **GEPA-style skill evolution as a core use case.** GEPA research (UC Berkeley/Stanford/MIT) proves that optimizing markdown skills against measurable outcomes produces dramatic improvements — 55% → 82% resolve rate, 40% faster completion. Flow already has the raw materials: full output capture, task success/failure status, HOMR observations. The loop: analyze failures → propose skill mutations → test → keep improvements.
+- **Renamed from "Research Mode" to "Evolve Mode."** "Research" implies exploring and learning. This is measuring and improving — optimization, not exploration.
+
+**How it works at task level:**
+1. Task has `metric_command` (e.g., `npm test -- --coverage | grep Statements`) and `metric_target` (e.g., `>80%`)
+2. Worker modifies code/config/skill → creates speculative commit
+3. Flow runs `metric_command` after Claude CLI exits (between-task, fully feasible)
+4. Metric improved? Keep commit. Worse? `git revert`. Crash? Parse error, teach next attempt.
+5. Same task loops (new experiment) instead of completing. Task completes when: metric target hit, max experiments reached, or user stops.
+
+**Skill optimizer use case (GEPA integration):**
+A `skill-optimizer` task type that:
+1. Takes a skill file + test cases (past tasks with known success/failure)
+2. Runs the skill through Claude workers on the test cases
+3. Analyzes failures, proposes skill mutations (LLM reflection on Actionable Side Information — error messages, reasoning logs, not just scalar rewards)
+4. Tests mutations, keeps improvements
+5. Outputs an improved skill with measured performance gain
+
+**New schema:**
+- `metric_command`, `metric_baseline`, `metric_target` on tasks (nullable, only for evolve tasks)
+- `time_budget_seconds` on tasks (fixed budget per experiment for fair comparison)
+- `experiments` table: `id, task_id, outcome_id, commit_hash, metric_value, status (keep/discard/crash), description, created_at`
+- `outcome_type` enum or flag: `standard` | `evolve` (convenience, not required)
+
+**Value:** Opens entirely new use cases — skill/prompt optimization, performance tuning, test coverage improvement. Objective metrics radically more efficient than LLM-judged completion. Closes the feedback loop from worker outcomes back to skill content. GEPA data shows 40%+ speed improvements from optimized skills — directly addresses turn exhaustion.
+
+**Effort:** Medium (schema + worker loop variant + experiment tracking)
+
+**References:** [autoresearch.md](./research/autoresearch.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md), [GEPA: Automatically Learning Skills for Coding Agents](https://gepa-ai.github.io/gepa/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)
+
+---
+
+### 8. Client-Facing Agent Gateway
+
+| Field | Value |
+|-------|-------|
+| **Status** | `deferred` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | When there's a client use case — requires #4, #6 to exist first |
+| **Source** | Flow 2.0 synthesis — Flow as a service |
+| **Category** | New capability |
+
+**Problem:**
+Flow is a personal tool with no external-facing surface. Want to give clients a structured interface that collects requirements and feeds into Flow.
+
+**Proposed Solution:**
+Gateway agent between clients and Flow. Client intake bot (Telegram/web/API) interviews clients. Creates outcomes with user approval gate. Pushes filtered progress updates to clients. Handles delivery and iteration feedback.
+
+**Value:** Flow-as-a-service. User orchestrates, Flow executes, clients interact through controlled interface.
+
+**Effort:** Medium
+
+**References:** [ag-ui.md](./research/ag-ui.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md)
+
+**Post-Interview Notes (2026-03-11):**
+Deferred. Most of this is a future application of already-approved ideas: Discovery Engine (#4) provides the interview pipeline, Event Backbone (#6) provides filtered event streams, existing gate system provides approval before work starts. The unique additions (access control, multi-tenant routing, client-specific bot) only matter when Flow becomes a service with actual clients ingesting tasks. Not a priority for Flow 2.0 — revisit when there's a concrete client use case.
+
+---
+
+### 9. Oracle Network (Multi-LLM)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `deferred` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | When local models on own hardware are viable — future infrastructure |
+| **Source** | Flow 2.0 synthesis — diversity of intelligence |
+| **Category** | New capability |
+
+**Problem:**
+Everything runs through Claude CLI. Workers get stuck in reasoning loops. HOMR is Claude judging Claude. No diversity of perspective.
+
+**Proposed Solution:**
+Multi-LLM layer: oracle tool for workers to consult GPT-4o/Gemini mid-task, HOMR cross-validation with second model, smart routing of simple tasks to cheap/fast models, review diversity with parallel model checks.
+
+**Value:** Catches mistakes before they compound. Breaks Claude-judging-Claude loop. Cost optimization via routing.
+
+**Effort:** Low-Medium (oracle tool) to High (full routing)
+
+**References:** [loom-integration.md](./research/loom-integration.md), [multi-model-routing.md](./research/multi-model-routing.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md)
+
+**Post-Interview Notes (2026-03-11):**
+Deferred. Currently adds external API dependencies and costs to a zero-API-cost system. Long-term vision is running Flow locally with local models on own hardware (basement server). Revisit when that infrastructure exists. The architectural decisions in #5 and #6 shouldn't preclude multi-LLM later — keep the worker abstraction model-agnostic where possible.
+
+---
+
+### 10. Attempt Tracking + Teaching Errors
+
+| Field | Value |
+|-------|-------|
+| **Status** | `absorbed` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Absorbed into** | Idea #5 (Resilient Worker) |
+| **Source** | Flow 2.0 synthesis — quick win |
+| **Category** | Quick win |
+
+**Problem:**
+When a task fails and gets retried, the new worker has zero knowledge of what the previous worker tried. Frequently repeats the same failing strategy.
+
+**Proposed Solution:**
+Record what approach each worker tried, whether it worked, and why it failed. On retry, inject attempt history into CLAUDE.md: "Attempt 1 tried X, failed because Y." Failed verification output becomes structured teaching context.
+
+**Value:** Dramatically improves retry success rates. Eliminates Groundhog Day failures.
+
+**Effort:** Low-Medium (new table, extraction in worker completion, CLAUDE.md template update)
+
+**References:** [tx-primitives.md](./research/tx-primitives.md), [harness-engineering.md](./research/harness-engineering.md)
+
+---
+
+### 11. Deterministic Task Verification
+
+| Field | Value |
+|-------|-------|
+| **Status** | `absorbed` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Absorbed into** | Idea #5 (Resilient Worker) |
+| **Source** | Flow 2.0 synthesis — quick win |
+| **Category** | Quick win |
+
+**Problem:**
+Task success is determined by expensive, slow, subjective LLM review (HOMR observer + reviewer agent). Many completion criteria are objectively verifiable without LLM.
+
+**Proposed Solution:**
+Add `verify_command` to tasks (e.g., `npm run typecheck && npm test`). Exit code 0 = pass. Run after worker marks task done, before LLM review. Auto-attach verification commands during task generation where possible.
+
+**Value:** Objective pass/fail in seconds vs minutes for LLM review. Catches obvious failures immediately. Reviewer only needed for subjective criteria.
+
+**Effort:** Low-Medium
+
+**References:** [tx-primitives.md](./research/tx-primitives.md), [harness-engineering.md](./research/harness-engineering.md)
+
+---
+
+### 12. Task Proliferation Guards
+
+| Field | Value |
+|-------|-------|
+| **Status** | `approved` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Source** | Flow 2.0 synthesis — quick win |
+| **Category** | Quick win |
+
+**Problem:**
+Multiple paths create tasks dynamically (auto-decomposition, HOMR steerer, iterate, capability planning, reviews). Nothing prevents runaway task creation from making outcomes unmanageable.
+
+**Proposed Solution:**
+Hard limits: `max_pending_tasks` (default 100), `max_subtask_depth` (default 3), `max_children_per_task` (default 10). Advisory mode (log warnings at 80%) then enforce mode (block creation). Configurable globally and per-outcome.
+
+**Key design decisions (from interview):**
+- **Default raised to 100** — the book project needed 80-100 pending tasks. 50 is too aggressive.
+- **Less critical once Discovery Engine (#4) ships** — proper upfront decomposition with complexity scoring reduces mid-run decomposition to edge cases. Guards become a safety net, not primary protection.
+- **Ship as part of resilience work** — a few lines of code (check before `createTask()`). No deep design needed.
+
+**Value:** Prevents runaway decomposition. Cheap safety net even after Discovery Engine improves upfront planning.
+
+**Effort:** Low
+
+**References:** [tx-primitives.md](./research/tx-primitives.md)
+
+---
+
+### 13. Mid-Task Checkpointing
+
+| Field | Value |
+|-------|-------|
+| **Status** | `absorbed` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Absorbed into** | Idea #5 (Resilient Worker) |
+| **Source** | Flow 2.0 synthesis — part of resilient worker |
+| **Category** | Quick win |
+
+**Problem:**
+Turn exhaustion is recurring. When a worker runs out of turns, the task is released and the next worker starts from scratch — potentially redoing hours of work.
+
+**Proposed Solution:**
+On turn exhaustion / rate limit / pause, capture a checkpoint: files modified, progress summary, remaining work. Next worker's CLAUDE.md includes "Continue from where the previous worker left off" with checkpoint data.
+
+**Value:** Saves wasted work. Makes long tasks survivable across multiple worker sessions.
+
+**Effort:** Medium
+
+**References:** [tx-primitives.md](./research/tx-primitives.md)
+
+---
+
+### 14. Simplicity Criterion in Worker Instructions
+
+| Field | Value |
+|-------|-------|
+| **Status** | `deferred` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | Test manually on next outcome, promote to default if proven |
+| **Source** | Flow 2.0 synthesis — quick win |
+| **Category** | Quick win |
+
+**Problem:**
+Workers optimize for task completion with no incentive to prefer simpler solutions. Complexity drifts across iterations.
+
+**Proposed Solution:**
+Add to CLAUDE.md template: "All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Removing code and getting equal or better results is a great outcome."
+
+**Value:** Reduces complexity drift across all outcomes. Universal benefit.
+
+**Effort:** Tiny
+
+**References:** [autoresearch.md](./research/autoresearch.md)
+
+**Post-Interview Notes (2026-03-11):**
+Deferred for manual testing. No evidence that this instruction actually improves AI worker output — YAGNI/KISS are proven for human developers but untested as LLM instructions. Risk of workers under-delivering by interpreting "simpler" as "less complete." Can be tested immediately without code changes: add as an outcome-specific skill (`workspaces/out_{id}/skills/simplicity.md`) or include in the design doc. If it proves beneficial across a few outcomes, promote to global default. Ideal candidate for Evolve Mode (#7) once that exists — A/B test with measured completion rates.
+
+---
+
+### 15. Outcome Templates
+
+| Field | Value |
+|-------|-------|
+| **Status** | `deferred` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Sequence** | After Discovery Engine (#4) is in use — assess whether knowledge compounding loop covers this |
+| **Source** | SWARMS assessment — REPLICATE dimension gap |
+| **Category** | Quick win |
+
+**Problem:**
+Every outcome starts from scratch. Users describe intent, get tasks generated, workers execute — but the system never learns *structural patterns* from successful outcomes. A "build a Next.js API" outcome that succeeded beautifully doesn't inform the next "build a Next.js API" outcome at all. The REPLICATE dimension (ability to reproduce successful patterns) scores lowest across all Flow 2.0 ideas.
+
+**Proposed Solution:**
+Capture successful outcome structures as reusable templates:
+
+1. **Template extraction** — When an outcome completes successfully (clean review, user satisfied), offer to save its structure as a template: task breakdown pattern, skill assignments, gate placements, dependency graph, verification commands, and the approach doc skeleton.
+2. **Template library** — Store in `~/flow-data/templates/` as YAML/JSON. Include metadata: outcome type, domain tags, success rate, times used, average completion time.
+3. **Template matching** — During outcome creation (or in the Discovery Engine), match new intents against existing templates. "This looks like a REST API project — use the api-backend template? It typically generates 8 tasks with 95% first-pass success."
+4. **Template evolution** — Track which template-derived outcomes succeed vs fail. Templates that consistently produce good results get higher confidence scores. Templates that drift get flagged for refresh.
+5. **Community templates** — Future: share templates across Flow instances (ties into Client Gateway).
+
+**Value:** Dramatically improves task generation quality for recurring outcome types. Reduces "garbage in" problem without requiring the full Discovery Engine. Each successful outcome makes the next one better — true replication.
+
+**Effort:** Medium (template extraction + storage is small; matching and evolution add complexity)
+
+**References:** [swarms-assessment-flow-2.0.md](./research/swarms-assessment-flow-2.0.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md)
+
+---
+
+### 16. Worker-to-Worker Environmental Signaling (Stigmergy)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `absorbed` |
+| **Added** | 2026-03-11 |
+| **Reviewed** | 2026-03-11 |
+| **Absorbed into** | Idea #6 (Event Backbone) |
+| **Source** | SWARMS assessment — MOBILIZE dimension gap, stigmergy shortfall |
+| **Category** | New capability |
+
+**Problem:**
+Workers coordinate exclusively through HOMR (observer-mediated, post-hoc, expensive Claude calls). There is no mechanism for workers to leave lightweight signals for each other in the shared environment. When Worker A discovers that a file is fragile, or claims ownership of a module, or finds a useful pattern, that knowledge only reaches other workers if HOMR happens to observe it and inject it via the steerer — minutes to hours later, at the cost of a full Claude API call per observation.
+
+Real swarms coordinate primarily through stigmergy: agents modify the shared environment, and other agents react to those modifications directly. This is fast (near-zero latency), cheap (no mediator), and scales linearly O(N) vs HOMR's O(N²) observation cost.
+
+**Proposed Solution:**
+Add a lightweight signal layer to outcome workspaces:
+
+1. **Signal file** — `workspace/.flow/signals.jsonl`, append-only, one JSON object per line. Workers read on task start, write during execution.
+2. **Signal types:**
+   - `file_claim` — "I'm actively modifying `src/api/routes.ts`, avoid concurrent edits"
+   - `discovery` — "The auth middleware expects JWT tokens with `sub` claim, not `user_id`"
+   - `warning` — "`package.json` has a version conflict on `lodash`, don't add it as a dependency"
+   - `progress` — "API endpoints 1-5 of 12 complete, starting on 6-8"
+   - `request` — "Need someone to create the test fixtures before I can write integration tests"
+3. **Signal properties:**
+   - **TTL** — Signals expire (file_claims: 30min, discoveries: 24h, warnings: outcome lifetime)
+   - **Cost** — Zero LLM calls. Just file I/O.
+   - **Scaling** — O(N) reads. Each worker reads once on start, optionally re-reads between tasks.
+   - **Decay** — Expired signals are garbage-collected, keeping the file small.
+4. **Worker integration:**
+   - Inject signal-reading instructions into CLAUDE.md: "Before starting work, read `.flow/signals.jsonl` for signals from other workers."
+   - Workers append signals naturally during execution (no special tooling needed — just echo JSON to a file).
+5. **Complementary to HOMR:**
+   - Signals = fast path (immediate, cheap, local). Used for coordination hints.
+   - HOMR = deep path (analyzed, expensive, strategic). Used for quality oversight, trend detection, escalation.
+   - HOMR steerer can *read* signals to enrich its context without additional Claude calls.
+
+**Value:** Enables real-time worker coordination without HOMR overhead. File claims prevent merge conflicts. Discovery signals eliminate redundant investigation. Warning signals prevent known-bad approaches. Moves Flow closer to true swarm intelligence with stigmergic coordination.
+
+**Effort:** Low-Medium (signal file format + CLAUDE.md injection is small; TTL/GC and worker integration add moderate work)
+
+**References:** [swarms-assessment-flow-2.0.md](./research/swarms-assessment-flow-2.0.md), [flow-2.0-synthesis.md](./research/flow-2.0-synthesis.md)
 
 ---
 
@@ -581,9 +548,12 @@ console.log(`Pass rate: ${results.passRate}%`);
 
 *Move ideas here when they ship, with links to the feature doc or PR.*
 
-| Idea | Implemented | Link |
-|------|-------------|------|
-| Task Dependency Graph | 2026-01-31 | `lib/db/dependencies.ts`, PR #1 |
+| Idea | Implemented | Notes |
+|------|-------------|-------|
+| Task Dependency Graph | 2026-01-31 | `lib/db/dependencies.ts` |
+| Destructive Command Guard | 2026-02 | `lib/guard/index.ts`, `lib/db/guard-blocks.ts` |
+| HOMR Auto-Resolve Mode | 2026-02 | `lib/homr/auto-resolver.ts`, manual/semi-auto/full-auto modes |
+| Persistent Learnings Layer | 2026-02 | `lib/db/memory.ts`, BM25 + vector search, cross-outcome bridge |
 
 ---
 

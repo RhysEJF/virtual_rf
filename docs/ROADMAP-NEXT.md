@@ -1,8 +1,8 @@
-# Next Features Roadmap - Working Document
+# Flow Roadmap
 
-> Sequential feature planning document. Work through each section, update status, then create outcomes.
+> Feature planning and tracking document.
 
-**Last Updated:** 2026-02-05
+**Last Updated:** 2026-03-11
 
 ---
 
@@ -10,379 +10,97 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| 1. MCP Integration | 🟡 Needs refinement | Design exists, not implemented |
-| 2. Project Analyzer Agent | 🔴 Needs design | Not started |
+| 1. MCP Integration | 🔵 In consideration | Design exists, see `docs/research/mcp-integration.md` |
+| 2. Project Analyzer Agent | 🔵 In consideration | Concept designed, not started |
 | 3. Conversational API | ✅ **IMPLEMENTED** | `/api/converse` + sessions + intent classification |
-| 4. Cross-Outcome Memory | ✅ **IMPLEMENTED** | Core system complete, task injection pending |
+| 4. Cross-Outcome Memory | ✅ **IMPLEMENTED** | Core system complete (BM25 + vector search, cross-outcome bridge) |
 | 5. Workspace Isolation | ✅ **IMPLEMENTED** | Schema, CLI flags, Settings UI, Worker enforcement |
 | 6. Retro Tools in Converse | ✅ **IMPLEMENTED** | 5 tools added to converse agent |
+| 7. Telegram Integration | ✅ **IMPLEMENTED** | Bot, workspace, security hardening |
+| 8. Task Refinement | ✅ **IMPLEMENTED** | Refine API, CLI command, UI button |
 
 ---
 
-## 1. MCP Integration
+## In Consideration
 
-### What Workers Already Have
-- **WebFetch** - Fetch and analyze web pages (built into Claude Code)
-- **WebSearch** - Search the web (built into Claude Code)
-- **Bash** - Can run curl, wget, etc.
+### 1. MCP Integration
 
-### High-Value MCPs to Add
+Detailed research: [`docs/research/mcp-integration.md`](./research/mcp-integration.md)
 
-#### Tier 1: Core Capability Expansion
-| MCP | Purpose | Why It Matters |
-|-----|---------|----------------|
-| **Playwright MCP** | Browser automation, fill forms, screenshot | WebFetch can't handle JS-heavy sites, login flows |
-| **PostgreSQL/MySQL MCP** | Direct database queries | Structured queries vs parsing API responses |
-| **Vector DB MCP** | Semantic search (local: sqlite-vss + Ollama) | Foundation for cross-outcome memory |
-| **Exa API MCP** | Better web search than default | More relevant results, better for research tasks |
+Add MCP servers to Ralph workers for expanded capabilities (web browsing, database queries, browser automation, etc.). Tiered approach from core (Playwright, Vector DB) to specialized (Slack, Figma, Stripe).
 
-#### Tier 2: Communication & Output
-| MCP | Purpose | Why It Matters |
-|-----|---------|----------------|
-| **Email MCP** | Send/receive emails | Workers email completion reports, alerts |
-| **Google Slides MCP** | Create/edit presentations | Auto-generate pitch decks, research presentations |
-| **Google Drive MCP** | Read/write files to Drive | Share outputs directly to cloud storage |
+**Open questions:** Global vs per-outcome config, API key management, outcome-declared MCP requirements.
 
-#### Tier 3: Social & External
-| MCP | Purpose | Why It Matters |
-|-----|---------|----------------|
-| **Twitter/X MCP** | Post tweets, read timeline | Content distribution, market signals |
-| **Notion MCP** | Read/write Notion pages | Sync outcomes to Notion workspace |
-| **GitHub MCP** | Rich repo operations | Better than raw gh CLI for complex operations |
+### 2. Project Analyzer Agent
 
-#### Tier 4: Creative & Specialized
-| MCP | Purpose | Why It Matters |
-|-----|---------|----------------|
-| **Image Generation MCP** | DALL-E, Midjourney, Stable Diffusion | Create assets for outcomes |
-| **Calendar MCP** | Check availability, schedule | Workers could schedule reviews |
-| **Financial Data MCP** | Stock data, financial APIs | Advanced financial analysis outcomes |
-| **PDF Generation MCP** | Create professional PDFs | Reports, proposals, contracts |
+A proactive planning agent that analyzes PRD quality, evaluates approach coverage, identifies planning gaps, performs cross-outcome intelligence, and estimates success probability.
 
-### 10 Not-So-Obvious MCPs
+**Three implementation options considered:**
+- A: Separate agent (`lib/agents/project-analyzer.ts`) — called via button
+- B: Enhance orchestrator — add analysis phase before capability phase
+- C: HOMЯ extension — planning analysis as part of observer
 
-1. **Airtable MCP** - Workers manage databases without SQL, great for non-technical outcomes
-2. **Zapier/Make MCP** - Trigger automations in other tools (connect to 1000s of apps)
-3. **Figma MCP** - Read designs, extract specs, generate code from designs
-4. **Stripe MCP** - Check payments, create invoices, financial operations
-5. **HubSpot/Salesforce MCP** - CRM operations, lead management
-6. **Jira/Linear MCP** - Project management integration, sync tasks
-7. **Slack MCP** - Send messages to channels, read discussions for context
-8. **YouTube MCP** - Upload videos, manage playlists, pull transcripts
-9. **Whisper MCP** - Transcribe audio/video files locally
-10. **OCR/Document MCP** - Extract text from images, PDFs, scanned docs
-
-### Exa vs Default Web Search
-
-| Feature | Claude's WebSearch | Exa API |
-|---------|-------------------|---------|
-| Result Quality | Good general search | Optimized for AI/semantic queries |
-| Code Search | Basic | Excellent (finds code examples) |
-| Recent Content | Good | Excellent (real-time indexing) |
-| Research Papers | Basic | Excellent (semantic paper search) |
-| Pricing | Included | Paid API (~$0.005/query) |
-| Verdict | Good for general use | Better for research-heavy outcomes |
-
-### Implementation Approach
-
-**Phase 1: Core MCPs**
-- [ ] Add MCP configuration to Ralph worker spawn
-- [ ] Test with mcp-server-fetch (already available)
-- [ ] Add Playwright MCP for browser automation
-- [ ] Add local vector DB MCP (sqlite-vss)
-
-**Phase 2: Communication MCPs**
-- [ ] Email MCP (Gmail or SMTP)
-- [ ] Google Drive MCP
-- [ ] Google Slides MCP
-
-**Phase 3: Optional MCPs**
-- [ ] User-configurable MCP list per outcome
-- [ ] MCP marketplace/registry
-
-### Questions to Resolve
-- [ ] Global MCP config vs per-outcome MCP config?
-- [ ] How to handle MCP authentication (API keys)?
-- [ ] Should outcomes declare required MCPs in their approach?
-
-### Status: 🟡 Needs refinement on Phase 1 scope
+**Open questions:** Manual vs automatic trigger, auto-apply vs approval, depth of cross-outcome analysis.
 
 ---
 
-## 2. Project Analyzer Agent
+## Flow 2.0 Ideas (Under Review)
 
-### Current Review System (What Exists)
+Ideas from the [Flow 2.0 synthesis](./research/flow-2.0-synthesis.md) and [SWARMS assessment](./research/swarms-assessment-flow-2.0.md). Each idea is being reviewed through a structured interview process before entering planning.
 
-The **Reviewer Agent** (`lib/agents/reviewer.ts`) does:
-- Reviews **completed work** against PRD acceptance criteria
-- Runs after tasks complete (every N iterations)
-- Creates new tasks for issues found
-- Tracks convergence (fewer issues = getting closer to done)
-
-**What it does NOT do:**
-- Analyze PRD quality before work starts
-- Suggest improvements to the approach
-- Navigate outcome trees (parent/child outcomes)
-- Proactively identify gaps in planning
-- Compare outcomes to identify overlaps/synergies
-
-### What You Want: Project Analyzer
-
-A **proactive planning agent** that:
-
-1. **Analyzes PRD Quality**
-   - Is the intent clear enough?
-   - Are acceptance criteria measurable?
-   - Are there implicit requirements that should be explicit?
-
-2. **Evaluates Approach**
-   - Does the approach address all intent items?
-   - Are there skill gaps that need filling?
-   - Is the tech stack appropriate for the requirements?
-
-3. **Identifies Planning Gaps**
-   - Missing tasks that should exist
-   - Task dependencies that aren't captured
-   - Unrealistic scope vs available capabilities
-
-4. **Cross-Outcome Intelligence**
-   - Navigate parent/child outcome relationships
-   - Identify semantic overlaps between outcomes
-   - Suggest consolidation or task sharing
-
-5. **Success Probability Assessment**
-   - Based on patterns from completed outcomes
-   - Complexity estimation vs capability match
-   - Risk factors (new tech, unclear requirements, etc.)
-
-### Proposed Interface
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  OUTCOME: Build Chrome Extension                             │
-│                                                              │
-│  [Analyze Project]  ← NEW BUTTON                            │
-│                                                              │
-│  ┌─ PROJECT ANALYSIS ──────────────────────────────────────┐│
-│  │                                                          ││
-│  │  Intent Quality: 🟡 Needs Work                          ││
-│  │  • "Block distracting websites" - which websites?       ││
-│  │  • No acceptance criteria for "distraction"             ││
-│  │  • Suggestion: Define blocklist management UI           ││
-│  │                                                          ││
-│  │  Approach Gaps: 2 found                                 ││
-│  │  • No plan for Chrome Web Store submission              ││
-│  │  • Missing: How does user configure blocklist?          ││
-│  │                                                          ││
-│  │  Task Coverage: 🟢 Good                                 ││
-│  │  • 12 tasks cover core functionality                    ││
-│  │  • Missing: User onboarding flow                        ││
-│  │                                                          ││
-│  │  Success Probability: 78%                               ││
-│  │  • Similar outcomes succeeded at this complexity        ││
-│  │  • Risk: Chrome extension APIs can be tricky            ││
-│  │                                                          ││
-│  │  [Apply Suggestions] [Dismiss]                          ││
-│  │                                                          ││
-│  └──────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Implementation Options
-
-**Option A: Separate Agent**
-- New `lib/agents/project-analyzer.ts`
-- Called via button click
-- Returns analysis + suggestions
-- User approves changes
-
-**Option B: Enhance Orchestrator**
-- Add analysis phase before capability phase
-- Automatic but shows results for approval
-- More integrated workflow
-
-**Option C: HOMЯ Extension**
-- Add "planning analysis" to HOMЯ observer
-- Runs when approach is optimized
-- Suggestions become escalations if significant
-
-### Questions to Resolve
-- [ ] When should analysis run? (Manual button vs automatic)
-- [ ] Should suggestions auto-apply or require approval?
-- [ ] How deep should cross-outcome analysis go?
-- [ ] What data do we need to train success probability?
-
-### Status: 🔴 Needs design decisions
+| # | Idea | Category | Status | Sequence Trigger | Notes |
+|---|------|----------|--------|-----------------|-------|
+| 1 | Dynamic Task Scoring | Quick win | ⏸️ Deferred | After concurrent workers are stable | Low priority — single worker + dependency graph handles ordering. Only matters with multiple workers competing for tasks. |
+| 2 | Parallel Review Swarm | New capability | 🔬 Needs research | After upstream quality improvements (Discovery Engine, Deterministic Verification) | Reframe as "QA architecture across outcome types" — current idea too narrow. Research modern AI review frameworks first. |
+| 3 | Evaluation Harness | New capability | 🔬 Needs research | Phase 3 — after core agents are stable and iterating on prompt quality | Most value covered by #7/#10/#11. Unique value is meta-eval of Flow's own agents — not an active pain point yet. |
+| 4 | Discovery Engine | Major | ✅ Approved | Priority — #1 pain point | Option C (headless + thin UI). Three-tier depth. Fork Compound Engineering skills. See [brief](./research/discovery-engine-brief.md). |
+| 5 | Resilient Worker | Major | ✅ Approved | Priority — enables overnight runs | Between-task state machine (not process-level). Attempt tracking, checkpointing, verification, teaching errors. Incremental. |
+| 6 | Event Backbone (COP) | Major | ✅ Approved | Priority — coordination infrastructure | Common Operational Picture. SSE + SQLite. Absorbs #16 stigmergy. Sequential observation default, fast mode optional. |
+| 7 | Evolve Mode | New capability | ✅ Approved | After Resilient Worker (#5) ships | Task-level optimization primitive. GEPA-style skill evolution. Hill-climbing with metric_command + keep/revert. |
+| 8 | Client-Facing Gateway | New capability | ⏸️ Deferred | When there's a client use case | Future application of #4 + #6. Not needed for Flow 2.0. |
+| 9 | Oracle Network (Multi-LLM) | New capability | ⏸️ Deferred | When local models on own hardware are viable | Adds API costs/dependencies. Long-term vision: local models on basement server. |
+| 10 | Attempt Tracking | Quick win | 🔀 Absorbed into #5 | N/A | Core Resilient Worker capability — makes retries smart. |
+| 11 | Deterministic Verification | Quick win | 🔀 Absorbed into #5 | N/A | verify_command run between tasks. Discovery Engine (#4) attaches them. |
+| 12 | Task Proliferation Guards | Quick win | ✅ Approved | Ship early — cheap safety net | Default 100 pending tasks. Less critical after Discovery Engine but still valuable. |
+| 13 | Mid-Task Checkpointing | Quick win | 🔀 Absorbed into #5 | N/A | Save progress on turn exhaustion, next worker continues from checkpoint. |
+| 14 | Simplicity Criterion | Quick win | ⏸️ Deferred | Test manually first, promote if proven | No evidence it helps LLMs. Test as outcome-specific skill, then A/B test with Evolve Mode. |
+| 15 | Outcome Templates | Quick win | ⏸️ Deferred | After Discovery Engine — may be covered by knowledge compounding loop | Revisit once #4 is live to see if solutions docs already capture this value. |
+| 16 | Worker Stigmergy Signals | New capability | 🔀 Absorbed into #6 | N/A | Worker signals become events on the event bus. |
 
 ---
 
-## 3. Conversational API
+## Implemented Features
 
-### Status: ✅ IMPLEMENTED
+### 3. Conversational API (2026-02-04)
+- `/api/converse` endpoint (POST for chat, GET for session info)
+- Intent classification (create, status, worker control, escalations, iterate)
+- Session management with context tracking and entity resolution
+- CLI: `flow converse` / `flow talk`
 
-**Implementation Date:** 2026-02-04
+### 4. Cross-Outcome Memory (2026-02-04)
+- Memory database with types (fact, pattern, preference, decision, lesson, context)
+- BM25 full-text search (FTS5) + vector search (sqlite-vss + Ollama)
+- Hybrid search, query expansion, tag system, association system
+- Retrieval logging with usefulness feedback
+- **Remaining follow-ups:** Task claim injection, HOMR discovery auto-indexing, graph-based retrieval, memory UI
 
-### What's Built
+### 5. Workspace Isolation (2026-02-05)
+- `IsolationMode` type (`workspace` | `codebase`)
+- System config default + per-outcome override
+- Worker workspace boundary enforcement in CLAUDE.md generation
+- CLI: `flow new --isolated`, `flow config isolation-mode`
 
-#### `/api/converse` Endpoint (`app/api/converse/route.ts` - 1200+ lines)
+### 6. Retro Tools in Converse (2026-02-05)
+- 5 tools: triggerRetroAnalysis, getRetroJobStatus, getRetroJobDetails, listRecentRetroJobs, createFromRetroProposal
 
-- **POST /api/converse** - Multi-turn chat endpoint
-- **GET /api/converse?session_id=** - Retrieve session info and history
+### 7. Telegram Integration (2026-03)
+- Bot via `claude-code-telegram` with Claude Code sessions
+- Dedicated workspace with CLAUDE.md context and Flow CLI skill
+- Security: user ID whitelist, macOS sandbox, command blocking
 
-#### Intent Classification (`lib/agents/intent-classifier.ts`)
-
-Supports intent types:
-- `create_outcome` - "Build me a landing page"
-- `check_status` - "What's running?"
-- `list_outcomes` / `show_outcome` - "Show my projects"
-- `list_tasks` - "Show tasks for X"
-- `start_worker` / `stop_worker` / `pause_worker` - Worker control
-- `answer_escalation` / `show_escalations` - Escalation handling
-- `iterate` - "Change the button to blue"
-- `audit_outcome` / `review_outcome` - Quality checks
-- `help` / `general_query`
-
-#### Session Management (`lib/db/sessions.ts`)
-
-- `conversation_sessions` table - Tracks active sessions with context
-- `conversation_messages` table - Stores message history
-- `buildEnrichedContext()` - Aggregates session state, intent history, entity references
-- `updateSessionAfterClassification()` - Tracks intent history for disambiguation
-- Pronoun/entity resolution - "start worker" after "show landing page" knows which outcome
-
-#### CLI Integration
-
-- `flow converse` / `flow talk` - REPL mode using local tool execution (not HTTP API)
-- `lib/converse/` - Tool definitions and executor for CLI mode
-
-### What's NOT Built Yet
-
-1. **Telegram Bridge** - External client using `/api/converse`
-2. **Session Expiration** - Sessions persist indefinitely (no cleanup)
-3. **Message Summarization** - No auto-summarize for long conversations
-4. **Web Chat UI** - No web-based chat interface (only CLI REPL)
-
----
-
-## 4. Cross-Outcome Memory
-
-### Status: ✅ CORE IMPLEMENTED
-
-**Implementation Date:** 2026-02-04
-
-### What's Built
-
-#### Memory Database (`lib/db/memory.ts` - 1200+ lines)
-
-Full CRUD operations for cross-outcome memories:
-- **Memory types**: `fact`, `pattern`, `preference`, `decision`, `lesson`, `context`
-- **Importance levels**: `low`, `medium`, `high`, `critical`
-- **Confidence scores** and expiration tracking
-- **Supersession** - mark old memories as superseded by newer ones
-- **Access tracking** - `access_count`, `last_accessed_at`
-
-#### BM25 Full-Text Search (FTS5)
-
-- `memories_fts` virtual table for fast text search
-- `searchMemoriesBM25()` - BM25 ranked search
-- `searchMemoriesExactPhrase()` - Exact phrase matching
-- `searchMemoriesByKeywords()` - Multi-keyword AND search
-- `searchMemoriesAdvanced()` - Boolean queries (must/should/must-not)
-- Auto-fallback to LIKE search if FTS5 unavailable
-
-#### Embedding & Vector Search (`lib/embedding/`)
-
-- `lib/embedding/ollama.ts` - Ollama integration for embeddings
-- `lib/embedding/hybrid-search.ts` - Combined BM25 + vector search
-- `lib/db/memory-vss.ts` - sqlite-vss vector extension support
-- `searchMemoriesHybrid()` - Multi-source retrieval with dedup
-- `searchMemoriesVector()` - Pure vector similarity search
-
-#### Query Expansion (`lib/embedding/query-expansion.ts`)
-
-- `expandQuery()` - Expand to 5+ related queries via Claude
-- `shouldExpandQuery()` - Determine if expansion is needed
-- `searchMemoriesExpanded()` - Search with auto-expansion
-
-#### Tag System
-
-- `memory_tags` table with usage counts
-- `memory_tag_links` for many-to-many
-- `getMemoriesByTag()`, `getMemoriesByTags()` (AND logic)
-
-#### Association System
-
-- `memory_associations` table - Link memories to outcomes/tasks/other memories
-- Association types: `relevant_to_outcome`, `relevant_to_task`, `supersedes`, etc.
-- `getMemoriesForOutcome()`, `getMemoriesForTask()`
-
-#### Retrieval Logging
-
-- `memory_retrievals` table - Track when memories are shown
-- `logRetrieval()` - Record with method, query, relevance score
-- `markRetrievalUsefulness()` - +1/-1 feedback
-- `getRetrievalStatsForMemory()` - Usage analytics
-
-### What's NOT Built Yet
-
-1. **Task Claim Injection** - Steerer doesn't auto-inject memories at task claim time
-2. **HOMЯ Discovery Indexing** - Observations not automatically indexed as memories
-3. **Graph-Based Retrieval** - Code import/dependency graph not implemented
-4. **Memory API Endpoints** - No `/api/memory/` routes for UI
-5. **Memory UI** - No web interface for browsing/managing memories
-
-### Implementation Checklist Update
-
-**Phase 1: Core Infrastructure** ✅ COMPLETE
-- [x] Ollama setup with nomic-embed-text
-- [x] sqlite-vss extension integration
-- [x] FTS5 table for BM25 search
-- [x] Memory service with basic search
-
-**Phase 2: Enhanced Retrieval** ✅ MOSTLY COMPLETE
-- [x] Query expansion via Claude
-- [x] Multi-source search with dedup
-- [ ] Steerer integration (task claim injection) ← **NEXT**
-- [ ] Chat/iterate integration
-
-**Phase 3: Feedback & Learning** 🟡 PARTIAL
-- [x] Usage tracking infrastructure
-- [ ] Index existing HOMЯ discoveries
-- [ ] Memory pruning for unhelpful
-
-**Phase 4: Advanced (Future)**
-- [ ] Graph-based code retrieval
-- [ ] Episodic memory from progress compaction
-- [ ] Task output learning extraction
-
-### Full Vision Doc
-See: [docs/vision/MEMORY.md](./vision/MEMORY.md)
-
----
-
-## Working Through This Document
-
-### Process
-
-1. **Read current section** - Understand what's designed/missing
-2. **Discuss with user** - Resolve open questions
-3. **Update this doc** - Mark questions resolved, add decisions
-4. **When ready** - Create outcome with `flow new` or web UI
-5. **Move to next section**
-
-### Current Focus
-
-**Completed:**
-- ✅ Cross-Outcome Memory (core system built)
-- ✅ Conversational API (`/api/converse` + CLI converse mode)
-- ✅ Retro Tools in Converse (5 tools added)
-- ✅ Workspace Isolation (schema, CLI, UI, worker enforcement)
-
-**Next Up:**
-- Memory Task Injection (wire existing memory system to steerer)
-- HOMЯ Discovery Indexing (auto-index observations as memories)
-- Project Analyzer Agent (new capability)
-- MCP Integration (can be done incrementally)
-- Telegram Bridge (external client for `/api/converse`)
+### 8. Task Refinement (2026-03)
+- Refine API endpoint, CLI command (`flow refine`), UI button
+- Pre-execution task enrichment via dedicated skill
 
 ---
 
@@ -392,27 +110,29 @@ See: [docs/vision/MEMORY.md](./vision/MEMORY.md)
 |------|---------|----------|-----------|
 | 2026-02-04 | Cross-Outcome Memory | Must be 100% local | Insights are valuable, no data leakage |
 | 2026-02-04 | Cross-Outcome Memory | Use Ollama + sqlite-vss | Free, runs on Mac, good quality |
-| 2026-02-04 | Cross-Outcome Memory | Three retrieval sources (Vector + BM25 + Graph) | Recommended approach: catches semantic, exact, and code context |
+| 2026-02-04 | Cross-Outcome Memory | Three retrieval sources (Vector + BM25 + Graph) | Catches semantic, exact, and code context |
 | 2026-02-04 | Cross-Outcome Memory | Query expansion to 5 queries | Better recall for related concepts |
 | 2026-02-04 | Cross-Outcome Memory | Max 5 memories per injection | Context window limits |
 | 2026-02-04 | Cross-Outcome Memory | 0.7 minimum similarity threshold | Quality over quantity |
 | 2026-02-04 | Cross-Outcome Memory | Show conflicting memories with dates | Let worker decide, don't hide context |
 | 2026-02-04 | Cross-Outcome Memory | Never expire, track usefulness (+1/-1) | Natural pruning via feedback loop |
 | 2026-02-04 | Cross-Outcome Memory | Multiple injection points | Task claim + chat/iterate + planning |
-| 2026-02-04 | Cross-Outcome Memory | Start with HOMЯ discoveries only | Proven data source, add task outputs later |
-| 2026-02-05 | Retro Tools | Add 5 retro tools to converse mode | Feature parity with CLI for retrospective analysis |
+| 2026-02-04 | Cross-Outcome Memory | Start with HOMR discoveries only | Proven data source, add task outputs later |
+| 2026-02-05 | Retro Tools | Add 5 retro tools to converse mode | Feature parity with CLI |
 | 2026-02-05 | Roadmap | Audit implementation status | Found Memory + Converse API + Workspace Isolation were built but not documented |
-
----
-
-## Next Steps (Priority Order)
-
-1. **Memory Task Injection** - Wire steerer to inject memories at task claim time
-2. **HOMЯ Discovery Indexing** - Auto-index observations as memories
-3. **Telegram Bridge** - External client using `/api/converse`
-4. **Project Analyzer Agent** - Proactive planning analysis
-5. **MCP Integration** - Phase 1 (Playwright, local vector DB)
-
----
-
-*Update this document as we work through each feature.*
+| 2026-03-11 | Discovery Engine | Option C: headless power + thin UI | Planning in Claude Code/Telegram/CLI, web UI stays as dashboard. Don't rebuild Claude Code inside Flow. |
+| 2026-03-11 | Discovery Engine | Three-tier planning depth (QUICK/STANDARD/DEEP) | Not all outcomes need interview. System adapts or user specifies. Prevents ceremony on simple tasks. |
+| 2026-03-11 | Discovery Engine | Fork Compound Engineering skills (MIT) | Proven planning methodology (47 skills, v2.40). Adapt to Flow's task schema/memory/workspace. ~1 day vs weeks from scratch. |
+| 2026-03-11 | Discovery Engine | Web UI input retained (not deprecated) | User not ready to go fully headless. Web UI input feeds same pipeline as CLI/Telegram. |
+| 2026-03-11 | Discovery Engine | Linked research outcomes for Tier 3 | Complex outcomes can spawn overnight research as separate linked outcome before planning resumes. |
+| 2026-03-11 | Resilient Worker | Between-task state machine, not process-level | Claude CLI is fire-and-forget (stdin closed, CLAUDE.md read once). All state transitions happen between tasks, not during. |
+| 2026-03-11 | Resilient Worker | Incremental implementation | Each capability (attempts, checkpoints, verification, teaching errors) ships independently. |
+| 2026-03-11 | Resilient Worker | Primary goal: reliable overnight runs | Circuit breaker fires because retries are blind. Attempt tracking + checkpointing makes retries smart. |
+| 2026-03-11 | Event Backbone | Common Operational Picture, not just faster UI | Coordination infrastructure from swarm intelligence. All agents share real-time system state. |
+| 2026-03-11 | Event Backbone | Sequential observation preserved by default | 30-60s HOMR observation cost is worth it for context quality. Fast mode optional for independent tasks. |
+| 2026-03-11 | Event Backbone | Absorbs Idea #16 (Worker Stigmergy) | Worker signals become events on the bus. No separate signals.jsonl needed. |
+| 2026-03-11 | Resilient Worker + Event Backbone | Reactive escalation pattern | Content-aware circuit breaker: HOMR blocker with scope `*` → immediate pause + escalation via event bus. Replaces fragile count-based breaker (count stays as fallback). Proven by RF CLI Tool data: HOMR diagnosed problem at obs #3, 4 more tasks ran needlessly. |
+| 2026-03-11 | Resilient Worker | Sequential gate checks between tasks | From Compound Engineering: before claiming next task, check "has HOMR flagged a systemic blocker?" If yes, stop. |
+| 2026-03-11 | Evolve Mode | Task-level primitive, not outcome-level only | Optimization loop can be one task in a normal outcome. Outcome-level is convenience wrapper. |
+| 2026-03-11 | Evolve Mode | GEPA-style skill evolution as core use case | Analyze failures → propose skill mutations → test → keep improvements. 55%→82% resolve rate proven. |
+| 2026-03-11 | Evolve Mode | Renamed from "Research Mode" | "Evolve" captures optimization + evolutionary skill learning. "Research" implied exploration. |

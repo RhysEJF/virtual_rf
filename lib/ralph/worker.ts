@@ -1749,7 +1749,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             // Run verification if task has a verify_command
             if (task.verify_command) {
               appendLog(`[Verification] Running verify command: ${task.verify_command}`);
-              const verifyResult = runVerification(task.id, task.verify_command, outcomeWorkspace);
+              const verifyResult = await runVerification(task.id, task.verify_command, outcomeWorkspace);
               appendLog(`[Verification] ${verifyResult.passed ? 'PASSED' : 'FAILED'} (${verifyResult.durationMs}ms)`);
 
               if (!verifyResult.passed) {
@@ -2277,9 +2277,13 @@ async function executeTask(
 ): Promise<{ success: boolean; error?: string; fullOutput?: string; guardBlocks?: number; rateLimited?: boolean; turnExhausted?: boolean }> {
   return new Promise((resolve) => {
     try {
+      // Strip CLAUDECODE env var to prevent nested session detection blocking the CLI
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.CLAUDECODE;
+
       const claudeProcess = spawn('claude', args, {
         cwd: taskWorkspace,
-        env: { ...process.env },
+        env: cleanEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 

@@ -70,6 +70,17 @@ Outcome skills are built during capability phase for that outcome's specific nee
 
 Skills placed in these directories are automatically composed by the appropriate agent — no manual wiring needed.
 
+**Discovery skills:**
+- `clarity-check.md` — Scores specificity, ambiguity, scope, and technical depth to select tier
+- `interview.md` — Generates 3-5 targeted questions with YAGNI principle
+- `local-research.md` — Codebase + memory system context gathering
+- `plan-writer.md` — Generates PLAN.md documents with verify_commands
+- `task-generator.md` — Converts plans to Flow tasks with dependencies and complexity scores
+
+**Evolve skills:**
+- `optimize-task.md` — GEPA methodology (Goal, Explore, Propose, Apply) for hill-climbing
+- `skill-evolution.md` — Strategies for iteratively improving skills themselves
+
 ### Repository Sync
 
 Skills (and tools) can be synced to external repositories for reuse:
@@ -127,7 +138,6 @@ Global skills are now presented to workers as a lightweight markdown table rathe
 This applies to both the `buildSkillCatalog()` (outcome skills) and `buildSkillContext()` (global skill auto-discovery) paths.
 
 3. **Claude-powered semantic detection** — `detectCapabilitiesWithClaude()` sends the task text and the full list of existing skills to Claude for semantic analysis. This avoids false positives from partial word matches (e.g., "patterns" matching "Cli Patterns") and can propose entirely new capabilities when the text describes something that doesn't exist yet. Used during task field optimization.
->>>>>>> b321f24 (feat(capabilities): add Claude-powered semantic capability detection at task level)
 
 ### Skill Scanner
 

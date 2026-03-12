@@ -11,9 +11,15 @@
 | File | Purpose | Size |
 |------|---------|------|
 | `lib/ralph/worker.ts` | Main worker logic | ~50KB |
+| `lib/ralph/verification.ts` | Deterministic verify_command execution | ~1KB |
+| `lib/ralph/teaching-errors.ts` | Retry context builder from past failures | ~2KB |
+| `lib/ralph/evolve-loop.ts` | Hill-climbing optimization loop | ~6KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
 | `lib/db/tasks.ts` | Task claiming, status, decomposition lock | ~8KB |
 | `lib/db/progress.ts` | Progress entry recording | ~3KB |
+| `lib/db/attempts.ts` | Task attempt tracking CRUD | ~2KB |
+| `lib/db/checkpoints.ts` | Task checkpoint CRUD | ~2KB |
+| `lib/db/experiments.ts` | Evolve experiment CRUD | ~3KB |
 
 ---
 
@@ -432,6 +438,197 @@ To use a document: Read `../docs/{filename}` for the full content.
 ```
 
 Documents are uploaded via the web UI (`DocumentsSection.tsx`), CLI (`flow docs add`), or converse tools (`saveDocument`).
+
+---
+
+## Deterministic Verification
+
+After a task signals DONE, the worker runs the task's `verify_command` (if set) to objectively confirm success.
+
+### `runVerification(taskId, command, workspacePath)` — `lib/ralph/verification.ts`
+
+```typescript
+interface VerificationResult {
+  passed: boolean;
+  output: string;      // Last 2000 chars of stdout+stderr
+  durationMs: number;
+}
+
+function runVerification(
+  taskId: string,
+  command: string,
+  workspacePath: string
+): Promise<VerificationResult>
+```
+
+- Uses `child_process.exec` with 60s timeout and 1MB buffer
+- Non-zero exit code = failed, zero = passed
+- Returns a Promise (async) to avoid deadlocking the worker's event loop
+
+### Worker Integration
+
+```
+Worker: task signals DONE
+  → if verify_command exists:
+      run verification in task workspace
+      → passed?  mark completed
+      → failed?  re-queue with error note, burn attempt
+  → if no verify_command:
+      mark completed (normal flow)
+```
+
+---
+
+## Teaching Errors (Retry Context)
+
+When a task has prior failed attempts, the failure history is formatted and injected into the worker's CLAUDE.md.
+
+### `buildTeachingContext(taskId)` — `lib/ralph/teaching-errors.ts`
+
+```typescript
+function buildTeachingContext(taskId: string): string
+```
+
+Reads `task_attempts` and `task_checkpoints` for the given task and produces a markdown block with two sections:
+
+1. **Previous Attempts** — For each failed attempt: approach tried, why it failed, error output (last 2000 chars), files modified. Ends with "Do NOT repeat the same approaches."
+2. **Previous Progress** — From the latest checkpoint: what was completed, remaining work, files modified, git SHA.
+
+Returns empty string if no attempts or checkpoints exist (first attempt).
+
+### Injection Point
+
+The teaching context is inserted into the generated CLAUDE.md between the Design Doc section and the Current Task section, giving the worker failure history before it reads the task instructions.
+
+---
+
+## Attempt and Checkpoint APIs
+
+### `lib/db/attempts.ts`
+
+```typescript
+interface TaskAttempt {
+  id: number;
+  task_id: string;
+  attempt_number: number;
+  worker_id: string | null;
+  approach_summary: string | null;
+  failure_reason: string | null;
+  files_modified: string | null;   // JSON array
+  error_output: string | null;     // Last 2000 chars
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+function recordAttempt(input: RecordAttemptInput): TaskAttempt
+function getAttempts(taskId: string): TaskAttempt[]
+function getAttemptCount(taskId: string): number
+```
+
+### `lib/db/checkpoints.ts`
+
+```typescript
+interface TaskCheckpoint {
+  id: number;
+  task_id: string;
+  worker_id: string | null;
+  progress_summary: string | null;
+  remaining_work: string | null;
+  files_modified: string | null;   // JSON array
+  git_sha: string | null;
+  created_at: string;
+}
+
+function saveCheckpoint(input: SaveCheckpointInput): TaskCheckpoint
+function getLatestCheckpoint(taskId: string): TaskCheckpoint | null
+function getCheckpoints(taskId: string): TaskCheckpoint[]
+```
+
+---
+
+## Evolve Mode (Hill-Climbing Optimization)
+
+### `runEvolveLoop(task, workspacePath, executeIteration)` — `lib/ralph/evolve-loop.ts`
+
+Runs iterative optimization on a task that has `metric_command` set.
+
+```typescript
+interface EvolveResult {
+  iterations: number;
+  bestValue: number | null;
+  baselineValue: number | null;
+  improvement: number;
+  stopped: 'budget_exhausted' | 'plateau_detected' | 'error';
+}
+
+function runEvolveLoop(
+  task: EvolveTask,
+  workspacePath: string,
+  executeIteration: (task, iteration, prevContext, workspacePath) => Promise<string | null>
+): Promise<EvolveResult>
+```
+
+### Loop Flow
+
+```
+1. initGitIfNeeded(workspacePath)       — git init + initial commit if not a repo
+2. Measure baseline via metric_command  — store on task if not set
+3. For each iteration up to optimization_budget:
+   a. Build context string from prior experiments
+   b. Call executeIteration() (spawns Claude CLI)
+   c. git add -A && git commit
+   d. Run metric_command → get new score
+   e. If improved: recordExperiment(kept=true), update bestValue
+      If regression: git revert HEAD, recordExperiment(kept=false)
+   f. If 3 consecutive non-improvements → plateau_detected, stop
+4. Emit experiment.completed event after each iteration
+```
+
+### `lib/db/experiments.ts`
+
+```typescript
+interface Experiment {
+  id: number;
+  task_id: string;
+  outcome_id: string;
+  iteration: number;
+  metric_value: number | null;
+  metric_command: string;
+  baseline_value: number | null;
+  change_summary: string | null;
+  git_sha: string | null;
+  kept: number;                    // 1=kept, 0=reverted
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+function recordExperiment(input: RecordExperimentInput): Experiment
+function getExperiments(options: { taskId?, outcomeId?, kept? }): Experiment[]
+function getExperimentCount(taskId: string): number
+function getBestExperiment(taskId: string): Experiment | null
+```
+
+### API
+
+- `GET /api/outcomes/[id]/experiments` — List experiments for an outcome
+
+---
+
+## Event Bus Integration
+
+The worker emits events via `getEventBus().emit()` at key lifecycle points:
+
+| Event | When |
+|-------|------|
+| `worker.started` | Worker begins |
+| `task.claimed` | Task claimed |
+| `task.completed` | Task completed |
+| `task.failed` | Task failed |
+| `worker.stopped` | Worker exits |
+| `worker.paused` | Worker paused (rate limit, circuit breaker) |
+| `experiment.completed` | Evolve iteration finishes |
+
+Events are consumed by the SSE endpoint (`/api/outcomes/[id]/stream`) for real-time UI updates and persisted to the `events` table with 7-day retention.
 
 ---
 

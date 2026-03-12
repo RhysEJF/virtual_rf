@@ -154,14 +154,14 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
           }
 
           const cost = jsonResponse.total_cost_usd || 0;
-          // Try different possible field names for the response text
+          // Extract response text — use nullish coalescing to preserve empty strings
           const responseAny = jsonResponse as unknown as Record<string, unknown>;
           const text = (
-            jsonResponse.result ||
-            responseAny.content ||
-            responseAny.text ||
-            responseAny.message ||
-            responseAny.response ||
+            jsonResponse.result ??
+            responseAny.content ??
+            responseAny.text ??
+            responseAny.message ??
+            responseAny.response ??
             ''
           ) as string;
 

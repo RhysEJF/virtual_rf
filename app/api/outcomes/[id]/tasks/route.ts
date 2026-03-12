@@ -169,6 +169,9 @@ export async function POST(
       task_approach: body.task_approach,
       depends_on: dependsOn,
       gates: body.gates,
+      verify_command: body.verify_command,
+      complexity_score: body.complexity_score,
+      estimated_turns: body.estimated_turns,
     });
 
     // Auto-create escalations for any gates

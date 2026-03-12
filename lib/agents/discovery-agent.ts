@@ -357,10 +357,15 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation):
   const result = await claudeComplete({
     prompt,
     outcomeId,
-    maxTurns: 1,
+    maxTurns: 3,
     disableNativeTools: true,
     description: 'Discovery task generation from description',
   });
+
+  console.log(`[Discovery] Task generation result: success=${result.success}, textLen=${result.text?.length ?? 0}, error=${result.error || 'none'}`);
+  if (!result.text || result.error) {
+    throw new Error(`Claude CLI error during task generation: ${result.error || 'empty response'}`);
+  }
 
   await parseAndCreateTasks(outcomeId, result.text);
 }
@@ -390,7 +395,7 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation).`;
   const result = await claudeComplete({
     prompt,
     outcomeId,
-    maxTurns: 1,
+    maxTurns: 3,
     disableNativeTools: true,
     description: 'Discovery task generation from plan',
   });

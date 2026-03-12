@@ -93,11 +93,25 @@ Before capability planning begins, the orchestrator runs a discovery pass to res
 | `STANDARD` | Moderate complexity | Domain research + competitive analysis + technology assessment |
 | `DEEP` | Novel or high-stakes outcomes | Full research sweep across multiple discovery skills |
 
-**Discovery skills** — Specialized skills in `~/flow-data/skills/discovery/` are used by the discovery agent (`lib/agents/discovery-agent.ts`). Skills in this directory are auto-discovered and composed based on the selected tier.
+**Discovery pipeline phases** — The discovery agent runs a sequence of phases, each backed by a skill in `~/flow-data/skills/discovery/`:
+
+| Phase | Skill | QUICK | STANDARD | DEEP | Purpose |
+|-------|-------|:-----:|:--------:|:----:|---------|
+| Clarity Check | `clarity-check.md` | Yes | Yes (auto-selects tier) | Yes | Score specificity, ambiguity, scope, technical depth |
+| Interview | `interview.md` | No | Optional | Yes | 3-5 targeted questions with YAGNI principle |
+| Research | `local-research.md` | Light | Yes | Full | Codebase + memory system context gathering |
+| Planning | `plan-writer.md` | No | Yes | Yes | Generate PLAN.md with verify_commands |
+| Task Generation | `task-generator.md` | Yes | Yes | Yes | Convert plan to Flow tasks with dependencies and complexity scores |
+
+For QUICK tier, discovery skips directly from clarity check to task generation. For STANDARD and DEEP, a PLAN.md document is generated in the outcome workspace and tasks are created with `verify_command`, `complexity_score`, and `depends_on` fields populated.
 
 **CLI flags:**
 - `--deep` — Force DEEP tier regardless of complexity estimate
-- `--from-plan` — Skip discovery, use an existing plan as-is
+- `--from-plan <path>` — Skip discovery, use an existing plan as-is
+
+**API:**
+- `POST /api/outcomes/[id]/discover` — Start discovery (accepts `tier` override in body)
+- `GET /api/outcomes/[id]/discover` — Check discovery session status
 
 Discovery output is stored as context and injected into the capability phase so the capability planner has richer domain knowledge before deciding what to build.
 

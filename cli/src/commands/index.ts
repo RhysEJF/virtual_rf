@@ -42,3 +42,4 @@ export { gateCommand } from './gate.js';
 export { telegramCommand } from './telegram.js';
 export { docsCommand } from './docs.js';
 export { refineCommand } from './refine.js';
+export { healthCommand } from './health.js';

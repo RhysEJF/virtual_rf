@@ -240,6 +240,42 @@ export interface ErrorResponse {
   error: string;
 }
 
+// Health types
+export interface HealthResponse {
+  status: string;
+  timestamp: number;
+  database: {
+    path: string;
+    size_bytes: number;
+    size_mb: number;
+  };
+  workers: {
+    total: number;
+    by_status: Record<string, number>;
+  };
+  tasks: {
+    total: number;
+    by_status: Record<string, number>;
+  };
+  recent_failures: {
+    count: number;
+    last_24h: Array<{
+      id: number;
+      task_id: string;
+      attempt_number: number;
+      worker_id: string;
+      failure_reason: string;
+      created_at: string;
+    }>;
+  };
+  events: {
+    last_hour: number;
+  };
+  guard_blocks: {
+    total: number;
+  };
+}
+
 // Iterate response
 export interface IterateResponse {
   success: boolean;
@@ -812,7 +848,7 @@ export const api = {
 
     // Start worker for outcome
     start(id: string): Promise<WorkerResponse> {
-      return api.post<WorkerResponse>(`/outcomes/${id}/start`);
+      return api.post<WorkerResponse>(`/outcomes/${id}/start`, undefined, { timeout: 120000 });
     },
   },
 
@@ -872,7 +908,7 @@ export const api = {
       return api.post<IterateResponse>(`/outcomes/${outcomeId}/iterate`, {
         feedback,
         ...options,
-      });
+      }, { timeout: 90000 });
     },
   },
 
@@ -881,7 +917,7 @@ export const api = {
     // Send a request to the dispatcher (smart routing)
     send(input: string, options?: { modeHint?: 'smart' | 'quick' | 'long'; skipMatching?: boolean; isolationMode?: IsolationMode }): Promise<DispatchResponse> {
       const body: DispatchInput = { input, ...options };
-      return api.post<DispatchResponse>('/dispatch', body);
+      return api.post<DispatchResponse>('/dispatch', body, { timeout: 180000 });
     },
 
     // Create new outcome (bypasses matching)
@@ -890,7 +926,7 @@ export const api = {
       if (isolationMode) {
         body.isolationMode = isolationMode;
       }
-      return api.post<DispatchResponse>('/dispatch', body);
+      return api.post<DispatchResponse>('/dispatch', body, { timeout: 180000 });
     },
   },
 
@@ -899,6 +935,14 @@ export const api = {
     // Get supervisor status
     status(): Promise<SupervisorStatus> {
       return api.get<SupervisorStatus>('/supervisor');
+    },
+  },
+
+  // Health - System health metrics
+  health: {
+    // Get system health status
+    status(): Promise<HealthResponse> {
+      return api.get<HealthResponse>('/health');
     },
   },
 

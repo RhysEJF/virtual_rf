@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 
 export interface VerificationResult {
   passed: boolean;
@@ -6,31 +6,37 @@ export interface VerificationResult {
   durationMs: number;
 }
 
-export function runVerification(taskId: string, command: string, workspacePath: string): VerificationResult {
+export function runVerification(taskId: string, command: string, workspacePath: string): Promise<VerificationResult> {
   const startTime = Date.now();
 
-  try {
-    const output = execSync(command, {
+  return new Promise((resolve) => {
+    const child = exec(command, {
       cwd: workspacePath,
       timeout: 60000, // 60s default
       encoding: 'utf-8',
       maxBuffer: 1024 * 1024, // 1MB
-      stdio: ['pipe', 'pipe', 'pipe'],
+    }, (error, stdout, stderr) => {
+      const durationMs = Date.now() - startTime;
+
+      if (error) {
+        const output = [stdout || '', stderr || ''].filter(Boolean).join('\n');
+        resolve({
+          passed: false,
+          output: output.slice(-2000),
+          durationMs,
+        });
+      } else {
+        resolve({
+          passed: true,
+          output: (stdout || '').slice(-2000),
+          durationMs,
+        });
+      }
     });
 
-    return {
-      passed: true,
-      output: (output || '').slice(-2000),
-      durationMs: Date.now() - startTime,
-    };
-  } catch (error: unknown) {
-    const execError = error as { stdout?: string; stderr?: string; status?: number };
-    const output = [execError.stdout || '', execError.stderr || ''].filter(Boolean).join('\n');
-
-    return {
-      passed: false,
-      output: output.slice(-2000),
-      durationMs: Date.now() - startTime,
-    };
-  }
+    // Safety: kill if still running after timeout + buffer
+    setTimeout(() => {
+      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+    }, 65000);
+  });
 }

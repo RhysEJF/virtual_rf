@@ -51,7 +51,8 @@ export const startCommand = command
         {
           parallel: options.parallel,
           useWorktree: options.worktree,
-        }
+        },
+        { timeout: 120000 }
       );
 
       // Handle JSON/quiet output

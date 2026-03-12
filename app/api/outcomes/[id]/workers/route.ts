@@ -92,9 +92,10 @@ export async function POST(
       );
     }
 
-    // Check if there are pending tasks
+    // Check if there are pending tasks (allow empty if discovery will create them)
     const pendingTasks = getPendingTasks(id);
-    if (pendingTasks.length === 0) {
+    const hasIntent = !!outcome.intent;
+    if (pendingTasks.length === 0 && !hasIntent) {
       return NextResponse.json(
         { error: 'No pending tasks to work on' },
         { status: 400 }
@@ -135,11 +136,14 @@ export async function POST(
       );
     }
 
+    const taskMsg = pendingTasks.length > 0
+      ? `Worker started with ${pendingTasks.length} pending tasks`
+      : 'Worker started — discovery pipeline will create tasks';
     return NextResponse.json(
       {
         success: true,
         workerId: result.workerId,
-        message: `Worker started with ${pendingTasks.length} pending tasks`,
+        message: taskMsg,
         parallel: body.parallel || false,
         usingWorktree: canUseWorktree,
       },

@@ -42,7 +42,7 @@ data/twin.db-shm  # Shared memory
 | `lib/db/index.ts` | - | Connection, migrations |
 | `lib/db/schema.ts` | - | TypeScript interfaces |
 | `lib/db/outcomes.ts` | outcomes, design_docs | Outcome CRUD, hierarchy |
-| `lib/db/tasks.ts` | tasks | Task CRUD, claiming |
+| `lib/db/tasks.ts` | tasks | Task CRUD, claiming, proliferation guards |
 | `lib/db/workers.ts` | workers | Worker CRUD, heartbeat |
 | `lib/db/progress.ts` | progress_entries | Progress CRUD |
 | `lib/db/review-cycles.ts` | review_cycles | Review history |
@@ -53,6 +53,11 @@ data/twin.db-shm  # Shared memory
 | `lib/db/homr.ts` | homr_* tables | HOMЯ Protocol |
 | `lib/db/repositories.ts` | repositories, outcome_items | Repository sync |
 | `lib/db/system-config.ts` | system_config | Global system settings |
+| `lib/db/guard-blocks.ts` | guard_blocks | Destructive command audit trail |
+| `lib/db/attempts.ts` | task_attempts | Task attempt tracking |
+| `lib/db/checkpoints.ts` | task_checkpoints | Task checkpoint CRUD |
+| `lib/db/experiments.ts` | experiments | Evolve mode experiment tracking |
+| `lib/events/persistence.ts` | events | Event bus persistence |
 
 ---
 
@@ -128,6 +133,10 @@ CREATE TABLE tasks (
   estimated_turns INTEGER,
   decomposition_status TEXT,       -- NULL/in_progress/completed/failed
   decomposed_from_task_id TEXT,    -- Parent task if this is a subtask
+  verify_command TEXT,             -- Shell command for post-task verification
+  metric_command TEXT,             -- Shell command outputting numeric metric (evolve mode)
+  metric_baseline REAL,            -- Baseline metric before optimization
+  optimization_budget INTEGER,     -- Max evolve iterations (default 5)
   created_at TEXT,
   updated_at TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
@@ -282,6 +291,96 @@ CREATE TABLE system_config (
 
 **Used for global settings like:**
 - `default_isolation_mode` - Default workspace isolation mode for new outcomes (`workspace` or `codebase`)
+- `max_pending_tasks` - Maximum pending tasks per outcome (default 100)
+- `max_subtask_depth` - Maximum decomposition depth (default 3)
+- `max_children_per_task` - Maximum subtasks per decomposition (default 15)
+
+### guard_blocks
+
+```sql
+CREATE TABLE guard_blocks (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  command TEXT NOT NULL,            -- The blocked command
+  pattern_matched TEXT NOT NULL,    -- Which pattern triggered the block
+  blocked_at INTEGER NOT NULL,
+  context TEXT                      -- JSON context about the block
+);
+```
+
+### task_attempts
+
+```sql
+CREATE TABLE task_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  worker_id TEXT,
+  approach_summary TEXT,
+  failure_reason TEXT,
+  files_modified TEXT,              -- JSON array
+  error_output TEXT,                -- Last 2000 chars
+  duration_seconds INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+```
+
+### task_checkpoints
+
+```sql
+CREATE TABLE task_checkpoints (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  worker_id TEXT,
+  progress_summary TEXT,
+  remaining_work TEXT,
+  files_modified TEXT,              -- JSON array
+  git_sha TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+```
+
+### experiments
+
+```sql
+CREATE TABLE experiments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  outcome_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL,
+  metric_value REAL,
+  metric_command TEXT NOT NULL,
+  baseline_value REAL,
+  change_summary TEXT,
+  git_sha TEXT,
+  kept INTEGER NOT NULL DEFAULT 0,  -- 1=kept, 0=reverted
+  duration_seconds INTEGER,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id),
+  FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
+);
+```
+
+### events
+
+```sql
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,               -- e.g., 'worker.started', 'task.completed'
+  outcome_id TEXT,
+  worker_id TEXT,
+  task_id TEXT,
+  data TEXT,                        -- JSON payload
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_events_outcome_time ON events(outcome_id, created_at);
+CREATE INDEX idx_events_type ON events(type);
+```
+
+Events are persisted via write-behind batching (500ms flush interval) and pruned after 7 days.
 
 ### outcome_items
 

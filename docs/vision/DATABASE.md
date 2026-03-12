@@ -73,6 +73,16 @@ Repositories can be configured per-outcome with inheritance through the outcome 
 - The `getEffectiveRepository()` function walks up the hierarchy to find the applicable repo
 - This enables different repositories for different clients/teams while supporting nested outcomes
 
+### Safety & Resilience Entities
+
+| Entity | Purpose |
+|--------|---------|
+| **Guard Blocks** | Audit trail of destructive commands intercepted before execution |
+| **Task Attempts** | Every attempt at a task: approach, failure reason, error output, duration |
+| **Task Checkpoints** | Progress snapshots saved on interruption (turn exhaustion), enabling resume |
+| **Experiments** | Hill-climbing optimization iterations with metric values and git SHAs |
+| **Events** | System event log with write-behind batching and 7-day retention |
+
 ### Analytics Entities
 
 | Entity | Purpose |

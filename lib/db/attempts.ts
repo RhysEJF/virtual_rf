@@ -2,9 +2,9 @@ import { getDb } from './index';
 
 export interface TaskAttempt {
   id: number;
-  task_id: number;
+  task_id: string;
   attempt_number: number;
-  worker_id: number | null;
+  worker_id: string | null;
   approach_summary: string | null;
   failure_reason: string | null;
   files_modified: string | null;

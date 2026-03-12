@@ -2,8 +2,8 @@ import { getDb } from './index';
 
 export interface TaskCheckpoint {
   id: number;
-  task_id: number;
-  worker_id: number | null;
+  task_id: string;
+  worker_id: string | null;
   progress_summary: string | null;
   remaining_work: string | null;
   files_modified: string | null;

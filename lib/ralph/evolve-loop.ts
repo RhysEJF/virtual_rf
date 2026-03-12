@@ -135,9 +135,12 @@ export async function runEvolveLoop(
     // Commit changes
     try {
       execSync('git add -A', { cwd: workspacePath, stdio: 'pipe' });
-      execSync(`git commit -m "Evolve iteration ${iteration}: ${(changeSummary || '').slice(0, 72)}" --allow-empty`, {
+      // Use env to pass commit message safely — avoids shell injection from changeSummary
+      const commitMsg = `Evolve iteration ${iteration}: ${(changeSummary || '').slice(0, 72).replace(/["`$\\]/g, '')}`;
+      execSync('git commit -m "$EVOLVE_MSG" --allow-empty', {
         cwd: workspacePath,
         stdio: 'pipe',
+        env: { ...process.env, EVOLVE_MSG: commitMsg },
       });
     } catch {
       // Nothing to commit

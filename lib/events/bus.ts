@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import type { FlowEvent } from './types';
-import { persistEvent } from './persistence';
+import { persistEvent, getEvents } from './persistence';
 
 class FlowEventBus {
   private emitter: EventEmitter;
@@ -19,9 +19,17 @@ class FlowEventBus {
       event.timestamp = new Date().toISOString();
     }
 
-    // Emit to in-memory subscribers
-    this.emitter.emit(event.type, event);
-    this.emitter.emit('*', event); // wildcard subscribers
+    // Emit to in-memory subscribers (wrapped in try/catch to prevent subscriber errors from crashing the caller)
+    try {
+      this.emitter.emit(event.type, event);
+    } catch (err) {
+      console.error(`[EventBus] Subscriber error on '${event.type}':`, err);
+    }
+    try {
+      this.emitter.emit('*', event); // wildcard subscribers
+    } catch (err) {
+      console.error(`[EventBus] Wildcard subscriber error:`, err);
+    }
 
     // Queue for persistence
     this.persistQueue.push(event);
@@ -49,15 +57,38 @@ class FlowEventBus {
     return () => this.emitter.off(pattern, handler);
   }
 
-  // Get latest event matching criteria
+  // Get latest event matching criteria — checks in-memory queue first, then DB
   getLatest(type: string, filter?: { outcomeId?: string; filter?: (e: FlowEvent) => boolean }): FlowEvent | null {
-    // Search persist queue in reverse for matching event
+    // Search persist queue in reverse for matching event (most recent first)
     for (let i = this.persistQueue.length - 1; i >= 0; i--) {
       const event = this.persistQueue[i];
       if (event.type !== type) continue;
       if (filter?.outcomeId && event.outcomeId !== filter.outcomeId) continue;
       if (filter?.filter && !filter.filter(event)) continue;
       return event;
+    }
+
+    // Fall back to DB search if not found in memory
+    try {
+      const rows = getEvents({
+        type,
+        outcomeId: filter?.outcomeId,
+        limit: 5,
+      });
+      for (const row of rows) {
+        const event: FlowEvent = {
+          type: row.type,
+          outcomeId: row.outcome_id,
+          workerId: row.worker_id,
+          taskId: row.task_id,
+          timestamp: row.created_at,
+          data: row.data ? JSON.parse(row.data) : undefined,
+        };
+        if (filter?.filter && !filter.filter(event)) continue;
+        return event;
+      }
+    } catch (err) {
+      console.error('[EventBus] Failed to query DB for latest event:', err);
     }
     return null;
   }

@@ -1532,7 +1532,7 @@ export async function startRalphWorker(
                   metric_baseline: task.metric_baseline,
                   optimization_budget: task.optimization_budget || 5,
                 },
-                outcomeWorkspace,
+                taskWorkspace, // Use task-level workspace to avoid git conflicts with concurrent workers
                 async (evolveTask, iter, previousExperiments, wsPath) => {
                   // Write evolve CLAUDE.md with iteration context
                   const evolveClaudeMd = join(taskWorkspace, 'CLAUDE.md');

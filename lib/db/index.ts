@@ -599,9 +599,9 @@ function runMigrations(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS task_attempts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
+      task_id TEXT NOT NULL,
       attempt_number INTEGER NOT NULL DEFAULT 1,
-      worker_id INTEGER,
+      worker_id TEXT,
       approach_summary TEXT,
       failure_reason TEXT,
       files_modified TEXT,
@@ -616,8 +616,8 @@ function runMigrations(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS task_checkpoints (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      worker_id INTEGER,
+      task_id TEXT NOT NULL,
+      worker_id TEXT,
       progress_summary TEXT,
       remaining_work TEXT,
       files_modified TEXT,
@@ -631,8 +631,8 @@ function runMigrations(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS experiments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      outcome_id INTEGER NOT NULL,
+      task_id TEXT NOT NULL,
+      outcome_id TEXT NOT NULL,
       iteration INTEGER NOT NULL DEFAULT 1,
       metric_value REAL,
       metric_command TEXT NOT NULL,

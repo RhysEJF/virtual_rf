@@ -85,20 +85,38 @@ export async function runOrchestrated(
   const approach = outcomeWithRelations.design_doc?.approach;
 
   // Discovery phase — run before capability analysis if no tasks exist
-  const existingTasks = getTasksByOutcome(outcomeId);
+  let existingTasks = getTasksByOutcome(outcomeId);
   if (existingTasks.length === 0) {
     console.log('[Orchestrator] No tasks found — triggering discovery pipeline');
     try {
       const { runDiscovery } = await import('../agents/discovery-agent');
-      await runDiscovery(outcomeId);
+      const session = await runDiscovery(outcomeId);
+      if (session.status === 'failed') {
+        return {
+          success: false,
+          phase: 'capability',
+          message: `Discovery pipeline failed: ${session.error || 'unknown error'}`,
+        };
+      }
     } catch (error) {
       console.error('[Orchestrator] Discovery failed:', error);
+      return {
+        success: false,
+        phase: 'capability',
+        message: `Discovery pipeline failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      };
     }
-    return {
-      success: true,
-      phase: 'capability',
-      message: 'Discovery pipeline ran — re-enter orchestration to continue',
-    };
+
+    // Re-check tasks after discovery — continue to capability/execution phases
+    existingTasks = getTasksByOutcome(outcomeId);
+    if (existingTasks.length === 0) {
+      return {
+        success: false,
+        phase: 'capability',
+        message: 'Discovery pipeline completed but generated no tasks',
+      };
+    }
+    console.log(`[Orchestrator] Discovery created ${existingTasks.length} tasks — continuing to capability analysis`);
   }
 
   // Check if we need to analyze for capabilities

@@ -2,8 +2,8 @@ import { getDb } from './index';
 
 export interface Experiment {
   id: number;
-  task_id: number;
-  outcome_id: number;
+  task_id: string;
+  outcome_id: string;
   iteration: number;
   metric_value: number | null;
   metric_command: string;

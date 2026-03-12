@@ -362,7 +362,7 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation):
     description: 'Discovery task generation from description',
   });
 
-  await parsAndCreateTasks(outcomeId, result.text);
+  await parseAndCreateTasks(outcomeId, result.text);
 }
 
 async function generateTasksFromPlan(outcomeId: string, planContent: string): Promise<void> {
@@ -395,10 +395,10 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation).`;
     description: 'Discovery task generation from plan',
   });
 
-  await parsAndCreateTasks(outcomeId, result.text);
+  await parseAndCreateTasks(outcomeId, result.text);
 }
 
-async function parsAndCreateTasks(outcomeId: string, rawText: string): Promise<void> {
+async function parseAndCreateTasks(outcomeId: string, rawText: string): Promise<void> {
   let tasks: Array<{
     title: string;
     description?: string;
@@ -410,17 +410,30 @@ async function parsAndCreateTasks(outcomeId: string, rawText: string): Promise<v
   }>;
 
   try {
-    const text = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    tasks = JSON.parse(text);
+    // Try stripping markdown code fences first, then parse
+    let text = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    // If JSON parse fails, try extracting the first JSON array from the text
+    try {
+      tasks = JSON.parse(text);
+    } catch {
+      // Claude sometimes wraps JSON in extra text — try to find the array
+      const arrayMatch = text.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        tasks = JSON.parse(arrayMatch[0]);
+      } else {
+        throw new Error('No JSON array found in response');
+      }
+    }
   } catch (error) {
     console.error('[Discovery] Failed to parse task generation result:', error);
     console.error('[Discovery] Raw text was:', rawText.slice(0, 500));
-    return;
+    throw new Error(`Discovery task generation failed: could not parse Claude response as JSON. Raw text starts with: ${rawText.slice(0, 200)}`);
   }
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
     console.warn('[Discovery] Task generation returned empty or non-array result');
-    return;
+    throw new Error('Discovery task generation returned empty or non-array result');
   }
 
   const createdIds: string[] = [];

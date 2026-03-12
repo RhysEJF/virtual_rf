@@ -5,6 +5,13 @@ import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { GateSatisfyModal } from './GateSatisfyModal';
 import { TaskCapabilitySuggestion } from './TaskCapabilitySuggestion';
+import { TaskDependencySection } from './task/TaskDependencySection';
+import { TaskSkillsSection } from './task/TaskSkillsSection';
+import { TaskCapabilitiesSection } from './task/TaskCapabilitiesSection';
+import { TaskGatesSection } from './task/TaskGatesSection';
+import { TaskAttemptHistory } from './task/TaskAttemptHistory';
+import { TaskCheckpointInfo } from './task/TaskCheckpointInfo';
+import { EvolvePanel } from './EvolvePanel';
 import type { Task, TaskStatus, TaskGate } from '@/lib/db/schema';
 import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 
@@ -23,13 +30,6 @@ interface AvailableSkill {
   description: string | null;
 }
 
-/** Blocking task information */
-interface BlockingTaskInfo {
-  id: string;
-  title: string;
-  status: TaskStatus;
-}
-
 /** Capability status information */
 interface CapabilityStatus {
   id: string;  // e.g., 'skill:database' or 'tool:api-client'
@@ -46,6 +46,7 @@ export interface TaskWithDependencies extends Task {
   parsed_gates?: TaskGate[];
   has_pending_gates?: boolean;
   pending_gate_count?: number;
+  attempt_count?: number;
 }
 
 interface ExpandableTaskCardProps {
@@ -92,6 +93,13 @@ export function ExpandableTaskCard({
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Evolve mode state
+  const [metricCommand, setMetricCommand] = useState(task.metric_command || '');
+  const [metricBaseline, setMetricBaseline] = useState(task.metric_baseline?.toString() || '');
+  const [optimizationBudget, setOptimizationBudget] = useState(task.optimization_budget?.toString() || '5');
+  const [showEvolveSetup, setShowEvolveSetup] = useState(false);
+  const [savingEvolve, setSavingEvolve] = useState(false);
+
   // Gate satisfy modal state
   const [satisfyingGate, setSatisfyingGate] = useState<TaskGate | null>(null);
 
@@ -123,14 +131,6 @@ export function ExpandableTaskCard({
   const dependencyIds = task.dependency_ids || [];
   const hasDependencies = dependencyIds.length > 0;
   const hasDependents = dependentIds.length > 0;
-
-  // Get blocking task info from task map
-  const getTaskInfo = (taskId: string): BlockingTaskInfo | null => {
-    if (!taskMap) return null;
-    const t = taskMap.get(taskId);
-    if (!t) return null;
-    return { id: t.id, title: t.title, status: t.status };
-  };
 
   // Fetch skills when expanded
   const fetchSkills = useCallback(async () => {
@@ -394,6 +394,60 @@ export function ExpandableTaskCard({
     }
   };
 
+  // Save evolve mode configuration
+  const handleSaveEvolve = async () => {
+    if (!metricCommand.trim()) return;
+    setSavingEvolve(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metric_command: metricCommand.trim(),
+          metric_baseline: metricBaseline ? parseFloat(metricBaseline) : null,
+          optimization_budget: optimizationBudget ? parseInt(optimizationBudget, 10) : 5,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.task && onUpdate) {
+        onUpdate(data.task);
+        setShowEvolveSetup(false);
+      }
+    } catch (err) {
+      console.error('Failed to save evolve config:', err);
+    } finally {
+      setSavingEvolve(false);
+    }
+  };
+
+  // Remove evolve mode from task
+  const handleRemoveEvolve = async () => {
+    setSavingEvolve(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metric_command: null,
+          metric_baseline: null,
+          optimization_budget: null,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.task && onUpdate) {
+        onUpdate(data.task);
+        setMetricCommand('');
+        setMetricBaseline('');
+        setOptimizationBudget('5');
+        setShowEvolveSetup(false);
+      }
+    } catch (err) {
+      console.error('Failed to remove evolve config:', err);
+    } finally {
+      setSavingEvolve(false);
+    }
+  };
+
   // Add gate to task
   const handleAddGate = async () => {
     if (!newGateLabel.trim()) return;
@@ -506,6 +560,12 @@ export function ExpandableTaskCard({
                     </svg>
                   </span>
                 )}
+                {/* Evolve mode indicator */}
+                {task.metric_command && (
+                  <span className="text-accent text-xs shrink-0" title="Evolve mode (hill-climbing optimization)">
+                    ⚗
+                  </span>
+                )}
               </div>
               {task.description && !expanded && (
                 <p className="text-text-tertiary text-xs mt-1 line-clamp-2">
@@ -516,6 +576,28 @@ export function ExpandableTaskCard({
 
             {/* Status badges - always visible */}
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              {/* Complexity badge */}
+              {task.complexity_score != null && (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-tertiary"
+                  title={`Complexity: ${task.complexity_score}/10${task.estimated_turns ? `, ~${task.estimated_turns} turns` : ''}`}
+                >
+                  C{task.complexity_score}{task.estimated_turns ? `/${task.estimated_turns}t` : ''}
+                </span>
+              )}
+              {/* Attempt count badge */}
+              {(task.attempt_count ?? 0) > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    (task.attempt_count ?? 0) >= task.max_attempts
+                      ? 'bg-status-error/10 text-status-error'
+                      : 'bg-status-warning/10 text-status-warning'
+                  }`}
+                  title={`${task.attempt_count}/${task.max_attempts} attempts`}
+                >
+                  {task.attempt_count}/{task.max_attempts}
+                </span>
+              )}
               {isBlocked && (
                 <Badge variant="warning" className="text-[10px]" title={`Blocked by ${blockedByIds.length} task(s)`}>
                   Blocked ({blockedByIds.length})
@@ -573,108 +655,8 @@ export function ExpandableTaskCard({
             )}
           </div>
 
-          {/* Dependencies Section - Show if task has dependencies or dependents */}
-          {(hasDependencies || hasDependents) && (
-            <div className="p-3 bg-bg-tertiary rounded-lg space-y-3">
-              {/* Blocked by (incomplete dependencies) */}
-              {isBlocked && blockedByIds.length > 0 && (
-                <div>
-                  <p className="text-xs text-status-warning font-medium mb-1.5 flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="12" />
-                      <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </svg>
-                    Blocked by ({blockedByIds.length})
-                  </p>
-                  <div className="space-y-1">
-                    {blockedByIds.map((depId) => {
-                      const info = getTaskInfo(depId);
-                      return (
-                        <div key={depId} className="flex items-center gap-2 text-xs">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
-                            info?.status === 'claimed' ? 'bg-status-info/20 text-status-info' :
-                            info?.status === 'failed' ? 'bg-status-error/20 text-status-error' :
-                            'bg-bg-secondary text-text-tertiary'
-                          }`}>
-                            {info?.status || 'pending'}
-                          </span>
-                          <span className="text-text-secondary truncate">
-                            {info?.title || depId}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* All Dependencies (including completed ones) */}
-              {hasDependencies && !isBlocked && (
-                <div>
-                  <p className="text-xs text-text-tertiary font-medium mb-1.5 flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 19V5M5 12l7-7 7 7" />
-                    </svg>
-                    Depends on ({dependencyIds.length})
-                  </p>
-                  <div className="space-y-1">
-                    {dependencyIds.map((depId) => {
-                      const info = getTaskInfo(depId);
-                      return (
-                        <div key={depId} className="flex items-center gap-2 text-xs">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            info?.status === 'completed' ? 'bg-status-success/20 text-status-success' :
-                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
-                            info?.status === 'failed' ? 'bg-status-error/20 text-status-error' :
-                            'bg-bg-secondary text-text-tertiary'
-                          }`}>
-                            {info?.status || 'pending'}
-                          </span>
-                          <span className="text-text-secondary truncate">
-                            {info?.title || depId}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Dependents (tasks that depend on this task) */}
-              {hasDependents && (
-                <div>
-                  <p className="text-xs text-status-info font-medium mb-1.5 flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 5v14M5 12l7 7 7-7" />
-                    </svg>
-                    Blocking ({dependentIds.length})
-                  </p>
-                  <div className="space-y-1">
-                    {dependentIds.map((depId) => {
-                      const info = getTaskInfo(depId);
-                      return (
-                        <div key={depId} className="flex items-center gap-2 text-xs">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            info?.status === 'completed' ? 'bg-status-success/20 text-status-success' :
-                            info?.status === 'running' ? 'bg-status-info/20 text-status-info' :
-                            info?.status === 'pending' ? 'bg-bg-secondary text-text-tertiary' :
-                            'bg-bg-secondary text-text-tertiary'
-                          }`}>
-                            {info?.status || 'pending'}
-                          </span>
-                          <span className="text-text-secondary truncate">
-                            {info?.title || depId}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Dependencies Section */}
+          <TaskDependencySection task={task} taskMap={taskMap} dependentIds={dependentIds} />
 
           {/* Task Intent (What) - Editable */}
           <div>
@@ -738,242 +720,176 @@ export function ExpandableTaskCard({
           )}
 
           {/* Skills Section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-text-tertiary uppercase tracking-wide">
-                Required Skills
+          <TaskSkillsSection
+            skills={skills}
+            availableSkills={availableSkills}
+            loadingSkills={loadingSkills}
+            showSkillDropdown={showSkillDropdown}
+            setShowSkillDropdown={setShowSkillDropdown}
+            onAddSkill={handleAddSkill}
+            onRemoveSkill={handleRemoveSkill}
+          />
+
+          {/* Required Capabilities Section */}
+          <TaskCapabilitiesSection capabilities={capabilities} loadingCapabilities={loadingCapabilities} />
+
+          {/* Gates Section (Human-in-the-Loop) */}
+          <TaskGatesSection
+            taskStatus={task.status}
+            parsedGates={task.parsed_gates || []}
+            showAddGate={showAddGate}
+            setShowAddGate={setShowAddGate}
+            newGateType={newGateType}
+            setNewGateType={setNewGateType}
+            newGateLabel={newGateLabel}
+            setNewGateLabel={setNewGateLabel}
+            addingGate={addingGate}
+            onAddGate={handleAddGate}
+            onSatisfyGate={(gate) => setSatisfyingGate(gate)}
+          />
+
+          {/* Verify Command */}
+          {task.verify_command && (
+            <div>
+              <label className="text-xs text-text-tertiary uppercase tracking-wide mb-1 block">
+                Verify Command
               </label>
-              <div className="relative">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs bg-bg-primary px-3 py-2 rounded border border-border text-text-secondary font-mono">
+                  {task.verify_command}
+                </code>
+                {task.status === 'completed' && (
+                  <Badge variant="success" className="text-[10px] shrink-0">Pass</Badge>
+                )}
+                {task.status === 'failed' && (
+                  <Badge variant="error" className="text-[10px] shrink-0">Fail</Badge>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Attempt History */}
+          <TaskAttemptHistory taskId={task.id} visible={expanded} />
+
+          {/* Evolve Mode Panel — shown when already configured */}
+          {task.metric_command && (
+            <EvolvePanel
+              taskId={task.id}
+              outcomeId={task.outcome_id}
+              metricCommand={task.metric_command}
+              metricBaseline={task.metric_baseline}
+              optimizationBudget={task.optimization_budget}
+            />
+          )}
+
+          {/* Evolve Mode Setup / Edit */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-text-tertiary uppercase tracking-wide">
+                Optimize Mode
+              </label>
+              {!showEvolveSetup && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowSkillDropdown(!showSkillDropdown)}
+                  onClick={() => setShowEvolveSetup(true)}
                   className="text-xs h-6 px-2"
                 >
-                  + Add Skill
+                  {task.metric_command ? 'Edit' : 'Enable'}
                 </Button>
-                {showSkillDropdown && (
-                  <div className="absolute right-0 top-full mt-1 w-64 bg-bg-primary border border-border rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-                    {availableSkills
-                      .filter(s => !skills.some(sk => sk.name === s.name))
-                      .map((skill) => (
-                        <button
-                          key={skill.id}
-                          onClick={() => handleAddSkill(skill.name)}
-                          className="w-full text-left px-3 py-2 hover:bg-bg-secondary text-sm"
-                        >
-                          <span className="text-text-primary">{skill.name}</span>
-                          <span className="text-text-tertiary text-xs ml-2">({skill.category})</span>
-                        </button>
-                      ))
-                    }
-                    {availableSkills.filter(s => !skills.some(sk => sk.name === s.name)).length === 0 && (
-                      <p className="px-3 py-2 text-text-tertiary text-sm">No more skills available</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {loadingSkills ? (
-              <p className="text-text-tertiary text-sm">Loading skills...</p>
-            ) : skills.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {skills.map((skill) => (
-                  <div
-                    key={skill.name}
-                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs border ${
-                      skill.status === 'ready'
-                        ? 'bg-status-success/10 border-status-success/30 text-status-success'
-                        : skill.status === 'needs_api_key'
-                        ? 'bg-status-warning/10 border-status-warning/30 text-status-warning'
-                        : 'bg-accent/10 border-accent/30 text-accent'
-                    }`}
-                  >
-                    <span>
-                      {skill.status === 'ready' && '✓'}
-                      {skill.status === 'needs_api_key' && '⚠'}
-                      {skill.status === 'will_be_built' && '⏳'}
-                    </span>
-                    <span>{skill.name}</span>
-                    {skill.status === 'needs_api_key' && skill.missingKeys && (
-                      <span className="text-[10px] opacity-80">
-                        (needs: {skill.missingKeys.join(', ')})
-                      </span>
-                    )}
-                    <button
-                      onClick={() => handleRemoveSkill(skill.name)}
-                      className="ml-1 opacity-60 hover:opacity-100"
-                      title="Remove skill"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-text-tertiary text-sm">
-                No skills mapped. Skills will be auto-detected when you optimize the approach.
-              </p>
-            )}
-          </div>
-
-          {/* Required Capabilities Section */}
-          {(capabilities.length > 0 || loadingCapabilities) && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-text-tertiary uppercase tracking-wide">
-                  Required Capabilities
-                </label>
-                {capabilities.some(c => !c.exists) && (
-                  <span className="text-[10px] text-status-warning flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="12" />
-                      <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </svg>
-                    Some capabilities need to be built
-                  </span>
-                )}
-              </div>
-
-              {loadingCapabilities ? (
-                <p className="text-text-tertiary text-sm">Loading capabilities...</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {capabilities.map((cap) => (
-                    <div
-                      key={cap.id}
-                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs border ${
-                        cap.exists
-                          ? 'bg-status-success/10 border-status-success/30 text-status-success'
-                          : 'bg-status-warning/10 border-status-warning/30 text-status-warning'
-                      }`}
-                      title={cap.exists ? `${cap.type}: ${cap.name} (ready)` : `${cap.type}: ${cap.name} (not yet built)`}
-                    >
-                      <span>
-                        {cap.exists ? '✓' : '⚠'}
-                      </span>
-                      <span className="text-[10px] opacity-70 uppercase">{cap.type}</span>
-                      <span>{cap.name}</span>
-                      {!cap.exists && (
-                        <span className="text-[10px] opacity-80">(pending)</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
               )}
             </div>
-          )}
-
-          {/* Gates Section (Human-in-the-Loop) */}
-          {(task.status === 'pending' || (task.parsed_gates && task.parsed_gates.length > 0)) && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-text-tertiary uppercase tracking-wide">
-                  Gates {task.parsed_gates && task.parsed_gates.length > 0
-                    ? `(${task.parsed_gates.filter(g => g.status === 'pending').length} pending)`
-                    : ''}
-                </label>
-                {task.status === 'pending' && (
+            {!showEvolveSetup && !task.metric_command && (
+              <p className="text-text-tertiary text-xs">
+                Enable hill-climbing optimization with a metric command that returns a numeric score.
+              </p>
+            )}
+            {showEvolveSetup && (
+              <div className="space-y-3 p-3 bg-bg-primary border border-border rounded-lg">
+                <div>
+                  <label className="text-xs text-text-secondary block mb-1">
+                    Metric Command <span className="text-status-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={metricCommand}
+                    onChange={(e) => setMetricCommand(e.target.value)}
+                    placeholder="e.g., node benchmark.js --json | jq .score"
+                    className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                  />
+                  <p className="text-[10px] text-text-tertiary mt-1">
+                    Shell command that outputs a single number. Higher = better.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-text-secondary block mb-1">Baseline</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={metricBaseline}
+                      onChange={(e) => setMetricBaseline(e.target.value)}
+                      placeholder="Current value"
+                      className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-text-secondary block mb-1">Budget (iterations)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={optimizationBudget}
+                      onChange={(e) => setOptimizationBudget(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSaveEvolve}
+                    disabled={savingEvolve || !metricCommand.trim()}
+                  >
+                    {savingEvolve ? 'Saving...' : task.metric_command ? 'Update' : 'Enable Optimize'}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setShowAddGate(!showAddGate)}
-                    className="text-xs h-6 px-2"
+                    onClick={() => {
+                      setShowEvolveSetup(false);
+                      setMetricCommand(task.metric_command || '');
+                      setMetricBaseline(task.metric_baseline?.toString() || '');
+                      setOptimizationBudget(task.optimization_budget?.toString() || '5');
+                    }}
                   >
-                    + Add Gate
+                    Cancel
                   </Button>
-                )}
-              </div>
-
-              {/* Add Gate Form */}
-              {showAddGate && (
-                <div className="mb-2 p-3 bg-bg-tertiary border border-border rounded-lg space-y-2">
-                  <select
-                    value={newGateType}
-                    onChange={(e) => setNewGateType(e.target.value as 'document_required' | 'human_approval')}
-                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
-                  >
-                    <option value="document_required">Document Required</option>
-                    <option value="human_approval">Human Approval</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={newGateLabel}
-                    onChange={(e) => setNewGateLabel(e.target.value)}
-                    placeholder="e.g., User interview responses"
-                    className="w-full p-2 text-sm bg-bg-primary border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent"
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleAddGate}
-                      disabled={addingGate || !newGateLabel.trim()}
-                      className="text-xs"
-                    >
-                      {addingGate ? 'Adding...' : 'Add'}
-                    </Button>
+                  {task.metric_command && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => { setShowAddGate(false); setNewGateLabel(''); }}
-                      className="text-xs"
+                      onClick={handleRemoveEvolve}
+                      disabled={savingEvolve}
+                      className="text-status-error hover:text-status-error/80 ml-auto"
                     >
-                      Cancel
+                      Disable
                     </Button>
-                  </div>
+                  )}
                 </div>
-              )}
-              {(!task.parsed_gates || task.parsed_gates.length === 0) && !showAddGate && (
-                <p className="text-text-tertiary text-sm">
-                  No gates — add a gate to require human input before this task can be claimed by a worker.
-                </p>
-              )}
-
-              <div className="space-y-2">
-                {(task.parsed_gates || []).map((gate) => (
-                  <div
-                    key={gate.id}
-                    className={`flex items-center justify-between px-3 py-2 rounded text-xs border ${
-                      gate.status === 'satisfied'
-                        ? 'bg-status-success/10 border-status-success/30'
-                        : 'bg-status-warning/10 border-status-warning/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>{gate.status === 'satisfied' ? '✓' : '⏳'}</span>
-                      <span className={gate.status === 'satisfied' ? 'text-status-success' : 'text-status-warning'}>
-                        {gate.label}
-                      </span>
-                      <span className="text-[10px] opacity-60 uppercase">{gate.type.replace('_', ' ')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {gate.status === 'satisfied' && gate.satisfied_at && (
-                        <span className="text-[10px] text-text-tertiary">
-                          {new Date(gate.satisfied_at).toLocaleDateString()}
-                        </span>
-                      )}
-                      {gate.status === 'pending' && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          className="text-[10px] px-2 py-0.5"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSatisfyingGate(gate);
-                          }}
-                        >
-                          {gate.type === 'document_required' ? 'Provide Input' : 'Approve'}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Checkpoint Recovery */}
+          <TaskCheckpointInfo
+            taskId={task.id}
+            taskStatus={task.status}
+            attempts={task.attempts}
+            visible={expanded}
+            onResumed={() => window.location.reload()}
+          />
 
           {/* Save/Delete buttons */}
           <div className="flex items-center justify-between pt-2 border-t border-border">

@@ -8,6 +8,20 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, OutcomeWithCounts } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { progressBar } from '../utils/progress.js';
+import { createSpinner } from '../utils/spinner.js';
+
+/**
+ * Renders the branded Flow header using box-drawing characters.
+ */
+function printBrandedHeader(): void {
+  const dim = (s: string): string => chalk.dim(s);
+  console.log();
+  console.log(`  ${dim('\u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e')}`);
+  console.log(`  ${dim('\u2502')}   ${chalk.bold.white('\u2726  F L O W')}            ${dim('\u2502')}`);
+  console.log(`  ${dim('\u2502')}   ${chalk.dim('AI Workforce Manager')}  ${dim('\u2502')}`);
+  console.log(`  ${dim('\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f')}`);
+}
 
 const command = new Command('status')
   .description('Show system status overview');
@@ -17,11 +31,15 @@ addOutputFlags(command);
 export const statusCommand = command
   .action(async (options: OutputOptions) => {
     try {
+      const spinner = createSpinner('Loading system status...');
+
       // Fetch supervisor status and outcomes in parallel
       const [supervisorStatus, outcomesResponse] = await Promise.all([
         api.supervisor.status(),
         api.outcomes.list({ counts: true }),
       ]);
+
+      spinner.stop();
 
       const outcomes = outcomesResponse.outcomes as OutcomeWithCounts[];
 
@@ -44,17 +62,15 @@ export const statusCommand = command
         }
       }
 
-      // Header
-      console.log();
-      console.log(chalk.bold('Stay In Flow'));
-      console.log(chalk.gray('─'.repeat(50)));
+      // Branded Header
+      printBrandedHeader();
       console.log();
 
       // Supervisor Section
       console.log(chalk.bold.cyan('Supervisor'));
       const supervisorIndicator = supervisorStatus.running
-        ? chalk.green('● Running')
-        : chalk.gray('○ Stopped');
+        ? chalk.green('\u25cf Running')
+        : chalk.gray('\u25cb Stopped');
       console.log(`  Status: ${supervisorIndicator}`);
       console.log(`  Check Interval: ${chalk.white(supervisorStatus.checkIntervalMs / 1000 + 's')}`);
       console.log();
@@ -63,7 +79,7 @@ export const statusCommand = command
       console.log(chalk.bold.cyan('Alerts'));
       const { alerts } = supervisorStatus;
       if (alerts.active === 0) {
-        console.log(`  ${chalk.green('✓')} No active alerts`);
+        console.log(`  ${chalk.green('\u2713')} No active alerts`);
       } else {
         console.log(`  Active: ${chalk.yellow(alerts.active.toString())}`);
 
@@ -109,7 +125,8 @@ export const statusCommand = command
         const convergingOutcomes = outcomes.filter(o => o.is_converging).length;
 
         console.log(`  Total: ${chalk.white(totalOutcomes.toString())} (${chalk.green(activeOutcomes.toString())} active)`);
-        console.log(`  Tasks: ${chalk.white(totalTasks.toString())} total, ${chalk.green(completedTasks.toString())} completed, ${chalk.yellow(pendingTasks.toString())} pending`);
+        console.log(`  Tasks: ${progressBar(completedTasks, totalTasks)}`);
+        console.log(`         ${chalk.yellow(pendingTasks.toString())} pending`);
         console.log(`  Workers: ${chalk.white(activeWorkers.toString())} active`);
 
         if (convergingOutcomes > 0) {
@@ -122,15 +139,16 @@ export const statusCommand = command
           console.log();
           console.log(chalk.bold.cyan('Active Outcomes'));
           for (const outcome of activeList) {
-            const taskProgress = outcome.total_tasks > 0
-              ? `${outcome.completed_tasks}/${outcome.total_tasks} tasks`
-              : 'no tasks';
             const workerIndicator = outcome.active_workers > 0
-              ? chalk.green(`⚙ ${outcome.active_workers}`)
-              : chalk.gray('○');
-            const converging = outcome.is_converging ? chalk.green(' ⟳') : '';
+              ? chalk.green(`\u2699 ${outcome.active_workers}`)
+              : chalk.gray('\u25cb');
+            const converging = outcome.is_converging ? chalk.green(' \u27f3') : '';
+            const taskBar = outcome.total_tasks > 0
+              ? progressBar(outcome.completed_tasks, outcome.total_tasks)
+              : chalk.gray('no tasks');
 
-            console.log(`  ${workerIndicator} ${chalk.white(outcome.name)} ${chalk.gray(`[${taskProgress}]`)}${converging}`);
+            console.log(`  ${workerIndicator} ${chalk.white(outcome.name)}${converging}`);
+            console.log(`    ${taskBar}`);
           }
         }
       }

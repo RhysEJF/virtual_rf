@@ -9,36 +9,9 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, TaskStatus } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
-
-/**
- * Pads a string to a specified length
- */
-function padEnd(str: string, length: number): string {
-  if (str.length >= length) {
-    return str.substring(0, length - 1) + '…';
-  }
-  return str + ' '.repeat(length - str.length);
-}
-
-/**
- * Formats task status with color
- */
-function formatTaskStatus(status: TaskStatus): string {
-  switch (status) {
-    case 'pending':
-      return chalk.yellow(padEnd(status, 12));
-    case 'claimed':
-      return chalk.blue(padEnd(status, 12));
-    case 'running':
-      return chalk.cyan(padEnd(status, 12));
-    case 'completed':
-      return chalk.green(padEnd(status, 12));
-    case 'failed':
-      return chalk.red(padEnd(status, 12));
-    default:
-      return padEnd(status, 12);
-  }
-}
+import { taskStatusLabel } from '../utils/status.js';
+import { drawTable } from '../utils/table.js';
+import { createSpinner } from '../utils/spinner.js';
 
 interface TasksOptions extends OutputOptions {
   status?: TaskStatus;
@@ -54,9 +27,13 @@ addOutputFlags(command);
 export const tasksCommand = command
   .action(async (outcomeId: string, options: TasksOptions) => {
     try {
+      const spinner = createSpinner('Loading tasks...');
+
       // Fetch tasks for the outcome
       const response = await api.outcomes.tasks(outcomeId);
       let tasks = response.tasks;
+
+      spinner.stop();
 
       // Apply status filter if provided
       if (options.status) {
@@ -87,40 +64,38 @@ export const tasksCommand = command
       if (tasks.length === 0) {
         console.log();
         if (options.status) {
-          console.log(chalk.gray(`No tasks with status "${options.status}" for outcome ${outcomeId}`));
+          console.log(chalk.gray(`  No tasks with status "${options.status}" for outcome ${outcomeId}`));
         } else {
-          console.log(chalk.gray(`No tasks found for outcome ${outcomeId}`));
+          console.log(chalk.white('  No tasks for this outcome.'));
+          console.log(chalk.gray(`  Tasks are generated from the intent, or add one: flow task add ${outcomeId} "task title"`));
         }
         console.log();
         return;
       }
 
-      // Table configuration
-      const idWidth = 18;
-      const titleWidth = 34;
-      const statusWidth = 12;
-      const priorityWidth = 10;
+      // Build table data
+      const headers = ['ID', 'TITLE', 'STATUS', 'PRIORITY'];
 
-      // Print header
-      console.log();
-      console.log(
-        chalk.bold.gray(padEnd('ID', idWidth)) +
-        chalk.bold.gray(padEnd('TITLE', titleWidth)) +
-        chalk.bold.gray(padEnd('STATUS', statusWidth)) +
-        chalk.bold.gray('PRIORITY')
-      );
-      console.log(chalk.gray('─'.repeat(idWidth + titleWidth + statusWidth + priorityWidth)));
-
-      // Print rows
-      for (const task of tasks) {
-        const id = padEnd(task.id, idWidth);
-        const title = padEnd(task.title, titleWidth);
-        const status = formatTaskStatus(task.status);
-        const priority = task.priority.toString();
-
-        console.log(`${chalk.gray(id)}${chalk.white(title)}${status}${chalk.white(priority)}`);
+      /**
+       * Truncates a string to fit within a width.
+       */
+      function truncate(str: string, length: number): string {
+        if (str.length >= length) {
+          return str.substring(0, length - 1) + '\u2026';
+        }
+        return str;
       }
 
+      const rows: string[][] = tasks.map(task => {
+        const id = chalk.gray(task.id);
+        const title = chalk.white(truncate(task.title, 32));
+        const status = taskStatusLabel(task.status);
+        const priority = chalk.white(task.priority.toString());
+        return [id, title, status, priority];
+      });
+
+      console.log();
+      drawTable(headers, rows, { columnWidths: [18, 34, 16, 10] });
       console.log();
 
       // Print summary
@@ -135,9 +110,9 @@ export const tasksCommand = command
       if (completedCount > 0) summaryParts.push(chalk.green(`${completedCount} completed`));
       if (failedCount > 0) summaryParts.push(chalk.red(`${failedCount} failed`));
 
-      console.log(chalk.gray(`${tasks.length} task${tasks.length !== 1 ? 's' : ''}`));
+      console.log(chalk.gray(`  ${tasks.length} task${tasks.length !== 1 ? 's' : ''}`));
       if (summaryParts.length > 0) {
-        console.log(summaryParts.join(', '));
+        console.log(`  ${summaryParts.join(', ')}`);
       }
       console.log();
 

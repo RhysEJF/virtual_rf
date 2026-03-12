@@ -1048,6 +1048,8 @@ export interface UpdateTaskInput {
   decomposed_from_task_id?: string | null;
   // Human-in-the-loop gates (raw JSON string)
   gates?: string | null;
+  // Verification command
+  verify_command?: string | null;
   // Evolve mode fields
   metric_command?: string | null;
   metric_baseline?: number | null;
@@ -1151,6 +1153,10 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.gates !== undefined) {
     updates.push('gates = ?');
     values.push(input.gates);
+  }
+  if (input.verify_command !== undefined) {
+    updates.push('verify_command = ?');
+    values.push(input.verify_command);
   }
   if (input.metric_command !== undefined) {
     updates.push('metric_command = ?');

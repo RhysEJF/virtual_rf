@@ -8,50 +8,19 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, OutcomeStatus, OutcomeWithCounts } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { outcomeStatusLabel } from '../utils/status.js';
+import { progressBar } from '../utils/progress.js';
+import { drawTable } from '../utils/table.js';
+import { createSpinner } from '../utils/spinner.js';
 
 /**
- * Pads a string to a specified length
+ * Truncates a string to fit within a width.
  */
-function padEnd(str: string, length: number): string {
+function truncate(str: string, length: number): string {
   if (str.length >= length) {
-    return str.substring(0, length - 1) + '…';
+    return str.substring(0, length - 1) + '\u2026';
   }
-  return str + ' '.repeat(length - str.length);
-}
-
-/**
- * Formats status with color
- */
-function formatStatus(status: OutcomeStatus): string {
-  switch (status) {
-    case 'active':
-      return chalk.green(padEnd(status, 10));
-    case 'dormant':
-      return chalk.gray(padEnd(status, 10));
-    case 'achieved':
-      return chalk.cyan(padEnd(status, 10));
-    case 'archived':
-      return chalk.gray(padEnd(status, 10));
-    default:
-      return padEnd(status, 10);
-  }
-}
-
-/**
- * Formats task counts as "completed/total (pending)"
- */
-function formatTaskCounts(outcome: OutcomeWithCounts): string {
-  const { completed_tasks, total_tasks, pending_tasks } = outcome;
-
-  if (total_tasks === 0) {
-    return chalk.gray('no tasks');
-  }
-
-  const completed = chalk.green(completed_tasks.toString());
-  const total = chalk.white(total_tasks.toString());
-  const pending = pending_tasks > 0 ? chalk.yellow(` (${pending_tasks} pending)`) : '';
-
-  return `${completed}/${total}${pending}`;
+  return str;
 }
 
 interface ListOptions extends OutputOptions {
@@ -88,9 +57,13 @@ export const listCommand = command
         params.status = options.status as OutcomeStatus;
       }
 
+      const spinner = createSpinner('Loading outcomes...');
+
       // Fetch outcomes
       const response = await api.outcomes.list(params);
       const outcomes = response.outcomes as OutcomeWithCounts[];
+
+      spinner.stop();
 
       // Filter out archived by default unless --all or --status=archived
       const filteredOutcomes = options.all || options.status === 'archived'
@@ -113,54 +86,40 @@ export const listCommand = command
       if (filteredOutcomes.length === 0) {
         console.log();
         if (options.status) {
-          console.log(chalk.gray(`No outcomes with status "${options.status}"`));
+          console.log(chalk.gray(`  No outcomes with status "${options.status}"`));
         } else {
-          console.log(chalk.gray('No outcomes found'));
+          console.log(chalk.white('  No outcomes yet.'));
+          console.log(chalk.gray('  Create one with: flow new "your goal here"'));
         }
         console.log();
         return;
       }
 
-      // Table configuration
-      const idWidth = 22;  // out_ + 16 chars = 20, plus padding
-      const nameWidth = 30;
-      const statusWidth = 10;
+      // Build table data
+      const headers = ['NAME', 'STATUS', 'TASKS', 'WORKERS'];
+      const rows: string[][] = filteredOutcomes.map(outcome => {
+        const name = truncate(outcome.name, 28);
+        const status = outcomeStatusLabel(outcome.status);
+        const tasks = outcome.total_tasks > 0
+          ? progressBar(outcome.completed_tasks, outcome.total_tasks)
+          : chalk.gray('no tasks');
+        const workers = outcome.active_workers > 0
+          ? chalk.green(`\u2699 ${outcome.active_workers}`)
+          : chalk.gray('-');
+        return [name, status, tasks, workers];
+      });
 
-      // Print header
       console.log();
-      console.log(
-        chalk.bold.gray(padEnd('ID', idWidth)) +
-        chalk.bold.gray(padEnd('NAME', nameWidth)) +
-        chalk.bold.gray(padEnd('STATUS', statusWidth)) +
-        chalk.bold.gray('TASKS')
-      );
-      console.log(chalk.gray('─'.repeat(80)));
-
-      // Print rows
-      for (const outcome of filteredOutcomes) {
-        // Don't truncate IDs - they're needed for commands
-        const id = outcome.id.padEnd(idWidth);
-        const name = padEnd(outcome.name, nameWidth);
-        const status = formatStatus(outcome.status);
-        const tasks = formatTaskCounts(outcome);
-
-        // Add worker indicator if workers are active
-        const workerIndicator = outcome.active_workers > 0
-          ? chalk.green(` ⚙ ${outcome.active_workers}`)
-          : '';
-
-        console.log(`${chalk.cyan(id)}${chalk.white(name)}${status}${tasks}${workerIndicator}`);
-      }
-
+      drawTable(headers, rows, { columnWidths: [30, 16, 30, 10] });
       console.log();
 
       // Print summary
       const activeCount = filteredOutcomes.filter(o => o.status === 'active').length;
       const totalWorkers = filteredOutcomes.reduce((sum, o) => sum + o.active_workers, 0);
 
-      console.log(chalk.gray(`${filteredOutcomes.length} outcome${filteredOutcomes.length !== 1 ? 's' : ''}`));
+      console.log(chalk.gray(`  ${filteredOutcomes.length} outcome${filteredOutcomes.length !== 1 ? 's' : ''}`));
       if (activeCount > 0) {
-        console.log(chalk.gray(`${activeCount} active, ${totalWorkers} worker${totalWorkers !== 1 ? 's' : ''} running`));
+        console.log(chalk.gray(`  ${activeCount} active, ${totalWorkers} worker${totalWorkers !== 1 ? 's' : ''} running`));
       }
       console.log();
 

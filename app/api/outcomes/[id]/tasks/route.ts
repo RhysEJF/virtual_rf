@@ -23,6 +23,7 @@ import {
   getBlockingTasks,
   parseDependsOn,
 } from '@/lib/db/dependencies';
+import { getAttemptCount } from '@/lib/db/attempts';
 
 export async function GET(
   request: NextRequest,
@@ -53,12 +54,13 @@ export async function GET(
       }
     }
 
-    // Enrich tasks with blocked_by and gate information
+    // Enrich tasks with blocked_by, gate information, and attempt counts
     const enrichedTasks = tasks.map(task => {
       const dependencyIds = parseDependsOn(task.depends_on);
       const blockedBy = getBlockingTasks(task.id);
       const parsedGates = parseGates(task.gates);
       const pendingGates = parsedGates.filter(g => g.status === 'pending');
+      const attemptCount = getAttemptCount(task.id);
       return {
         ...task,
         dependency_ids: dependencyIds,
@@ -67,6 +69,7 @@ export async function GET(
         parsed_gates: parsedGates,
         has_pending_gates: pendingGates.length > 0,
         pending_gate_count: pendingGates.length,
+        attempt_count: attemptCount,
       };
     });
 

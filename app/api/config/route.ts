@@ -6,7 +6,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllConfig, setConfig } from '@/lib/db/system-config';
+import {
+  getAllConfig,
+  setConfig,
+  getMaxPendingTasks,
+  setMaxPendingTasks,
+  getMaxSubtaskDepth,
+  setMaxSubtaskDepth,
+  getMaxChildrenPerTask,
+  setMaxChildrenPerTask,
+} from '@/lib/db/system-config';
 import type { IsolationMode } from '@/lib/db/schema';
 
 export async function GET(): Promise<NextResponse> {
@@ -16,6 +25,9 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({
       config: {
         default_isolation_mode: config.default_isolation_mode || 'workspace',
+        max_pending_tasks: getMaxPendingTasks(),
+        max_subtask_depth: getMaxSubtaskDepth(),
+        max_children_per_task: getMaxChildrenPerTask(),
       },
     });
   } catch (error) {
@@ -43,6 +55,39 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       setConfig('default_isolation_mode', mode);
     }
 
+    if (body.max_pending_tasks !== undefined) {
+      const val = Number(body.max_pending_tasks);
+      if (isNaN(val) || val < 1 || val > 1000) {
+        return NextResponse.json(
+          { error: 'max_pending_tasks must be between 1 and 1000.' },
+          { status: 400 }
+        );
+      }
+      setMaxPendingTasks(val);
+    }
+
+    if (body.max_subtask_depth !== undefined) {
+      const val = Number(body.max_subtask_depth);
+      if (isNaN(val) || val < 1 || val > 10) {
+        return NextResponse.json(
+          { error: 'max_subtask_depth must be between 1 and 10.' },
+          { status: 400 }
+        );
+      }
+      setMaxSubtaskDepth(val);
+    }
+
+    if (body.max_children_per_task !== undefined) {
+      const val = Number(body.max_children_per_task);
+      if (isNaN(val) || val < 1 || val > 100) {
+        return NextResponse.json(
+          { error: 'max_children_per_task must be between 1 and 100.' },
+          { status: 400 }
+        );
+      }
+      setMaxChildrenPerTask(val);
+    }
+
     // Return updated config
     const config = getAllConfig();
 
@@ -50,6 +95,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       success: true,
       config: {
         default_isolation_mode: config.default_isolation_mode || 'workspace',
+        max_pending_tasks: getMaxPendingTasks(),
+        max_subtask_depth: getMaxSubtaskDepth(),
+        max_children_per_task: getMaxChildrenPerTask(),
       },
     });
   } catch (error) {

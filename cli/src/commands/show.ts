@@ -13,6 +13,9 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Outcome, Task, Worker } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { outcomeStatusLabel, taskStatusLabel, workerStatusLabel } from '../utils/status.js';
+import { progressBar } from '../utils/progress.js';
+import { createSpinner } from '../utils/spinner.js';
 
 // Extended types for the show command response
 interface TaskStats {
@@ -86,69 +89,11 @@ function formatCapabilityStatus(status: number): string {
 }
 
 /**
- * Formats the outcome status with color
- */
-function formatStatus(status: string): string {
-  switch (status) {
-    case 'active':
-      return chalk.green('● Active');
-    case 'dormant':
-      return chalk.gray('○ Dormant');
-    case 'achieved':
-      return chalk.cyan('✓ Achieved');
-    case 'archived':
-      return chalk.gray('◌ Archived');
-    default:
-      return status;
-  }
-}
-
-/**
- * Formats task status with color
- */
-function formatTaskStatus(status: string): string {
-  switch (status) {
-    case 'pending':
-      return chalk.yellow(status);
-    case 'claimed':
-      return chalk.blue(status);
-    case 'running':
-      return chalk.cyan(status);
-    case 'completed':
-      return chalk.green(status);
-    case 'failed':
-      return chalk.red(status);
-    default:
-      return status;
-  }
-}
-
-/**
- * Formats worker status with color
- */
-function formatWorkerStatus(status: string): string {
-  switch (status) {
-    case 'idle':
-      return chalk.gray('○ Idle');
-    case 'running':
-      return chalk.green('● Running');
-    case 'paused':
-      return chalk.yellow('◐ Paused');
-    case 'completed':
-      return chalk.cyan('✓ Completed');
-    case 'failed':
-      return chalk.red('✗ Failed');
-    default:
-      return status;
-  }
-}
-
-/**
  * Truncates text to a max length with ellipsis
  */
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 1) + '…';
+  return text.substring(0, maxLength - 1) + '\u2026';
 }
 
 interface ShowOptions extends OutputOptions {
@@ -169,6 +114,8 @@ addOutputFlags(command);
 export const showCommand = command
   .action(async (id: string, options: ShowOptions) => {
     try {
+      const spinner = createSpinner('Loading outcome details...');
+
       // Fetch outcome details with relations
       const detailResponse = await api.get<OutcomeDetailResponse>(`/outcomes/${id}`);
       const { outcome, convergence, taskStats, parent, children, breadcrumbs } = detailResponse;
@@ -178,6 +125,8 @@ export const showCommand = command
         api.outcomes.tasks(id) as Promise<TasksResponse>,
         api.get<WorkersResponse>(`/outcomes/${id}/workers`),
       ]);
+
+      spinner.stop();
 
       const { tasks } = tasksResponse;
       const { workers } = workersResponse;
@@ -200,17 +149,17 @@ export const showCommand = command
 
       // Breadcrumbs if exists
       if (breadcrumbs.length > 1) {
-        const path = breadcrumbs.slice(0, -1).map(b => b.name).join(' → ');
-        console.log(chalk.gray(`  └─ ${path}`));
+        const path = breadcrumbs.slice(0, -1).map(b => b.name).join(' \u2192 ');
+        console.log(chalk.gray(`  \u2514\u2500 ${path}`));
       }
 
-      console.log(chalk.gray('─'.repeat(60)));
+      console.log(chalk.gray('\u2500'.repeat(60)));
       console.log();
 
       // Basic Info Section
       console.log(chalk.bold.cyan('Info'));
       console.log(`  ID:         ${chalk.gray(outcome.id)}`);
-      console.log(`  Status:     ${formatStatus(outcome.status)}`);
+      console.log(`  Status:     ${outcomeStatusLabel(outcome.status)}`);
       console.log(`  Capability: ${formatCapabilityStatus(outcome.capability_ready)}`);
       console.log(`  Created:    ${chalk.white(formatRelativeTime(outcome.created_at))}`);
       console.log(`  Updated:    ${chalk.white(formatRelativeTime(outcome.updated_at))}`);
@@ -251,7 +200,10 @@ export const showCommand = command
       if (taskStats.total === 0) {
         console.log(chalk.gray('  No tasks'));
       } else {
-        // Task summary bar
+        // Progress bar
+        console.log(`  ${progressBar(taskStats.completed, taskStats.total)}`);
+
+        // Task summary
         const segments: string[] = [];
         if (taskStats.completed > 0) segments.push(chalk.green(`${taskStats.completed} completed`));
         if (taskStats.running > 0) segments.push(chalk.cyan(`${taskStats.running} running`));
@@ -259,23 +211,23 @@ export const showCommand = command
         if (taskStats.pending > 0) segments.push(chalk.yellow(`${taskStats.pending} pending`));
         if (taskStats.failed > 0) segments.push(chalk.red(`${taskStats.failed} failed`));
 
-        console.log(`  Total: ${chalk.white(taskStats.total.toString())} — ${segments.join(', ')}`);
+        console.log(`  ${segments.join(', ')}`);
 
         if (options.tasks) {
           // Show full task list
           console.log();
           for (const task of tasks) {
-            const statusBadge = formatTaskStatus(task.status);
+            const statusBadge = taskStatusLabel(task.status);
             const priority = task.priority > 0 ? chalk.gray(` [P${task.priority}]`) : '';
-            console.log(`    ${chalk.gray('•')} ${truncate(task.title, 50)} ${statusBadge}${priority}`);
+            console.log(`    ${chalk.gray('\u2022')} ${truncate(task.title, 50)} ${statusBadge}${priority}`);
           }
         } else if (tasks.length > 0) {
           // Show first few tasks
           const recentTasks = tasks.slice(0, 3);
           console.log();
           for (const task of recentTasks) {
-            const statusBadge = formatTaskStatus(task.status);
-            console.log(`    ${chalk.gray('•')} ${truncate(task.title, 50)} ${statusBadge}`);
+            const statusBadge = taskStatusLabel(task.status);
+            console.log(`    ${chalk.gray('\u2022')} ${truncate(task.title, 50)} ${statusBadge}`);
           }
           if (tasks.length > 3) {
             console.log(chalk.gray(`    ... and ${tasks.length - 3} more (use --tasks to see all)`));
@@ -292,17 +244,17 @@ export const showCommand = command
       if (totalWorkers === 0) {
         console.log(chalk.gray('  No workers'));
       } else {
-        console.log(`  Total: ${chalk.white(totalWorkers.toString())} — ${chalk.green(activeWorkers.length.toString())} active`);
+        console.log(`  Total: ${chalk.white(totalWorkers.toString())} \u2014 ${chalk.green(activeWorkers.length.toString())} active`);
 
         if (options.workers || activeWorkers.length > 0) {
           // Show workers
           const workersToShow = options.workers ? workers : activeWorkers;
           console.log();
           for (const worker of workersToShow) {
-            const status = formatWorkerStatus(worker.status);
+            const status = workerStatusLabel(worker.status);
             const iteration = worker.iteration > 0 ? chalk.gray(` (iter ${worker.iteration})`) : '';
-            const task = worker.current_task_id ? chalk.gray(` → ${worker.current_task_id}`) : '';
-            console.log(`    ${chalk.gray('•')} ${chalk.white(worker.name)} ${status}${iteration}${task}`);
+            const task = worker.current_task_id ? chalk.gray(` \u2192 ${worker.current_task_id}`) : '';
+            console.log(`    ${chalk.gray('\u2022')} ${chalk.white(worker.name)} ${status}${iteration}${task}`);
             if (worker.progress_summary) {
               console.log(`      ${chalk.gray(truncate(worker.progress_summary, 55))}`);
             }
@@ -318,9 +270,9 @@ export const showCommand = command
       if (convergence && convergence.consecutive_clean !== undefined) {
         console.log(chalk.bold.cyan('Convergence'));
         if (convergence.is_converging) {
-          console.log(`  ${chalk.green('✓')} Converging — ${chalk.white(convergence.consecutive_clean.toString())}/${convergence.threshold} clean reviews`);
+          console.log(`  ${chalk.green('\u2713')} Converging \u2014 ${chalk.white(convergence.consecutive_clean.toString())}/${convergence.threshold} clean reviews`);
         } else {
-          console.log(`  ${chalk.gray('○')} Not converging — ${chalk.white(convergence.consecutive_clean.toString())}/${convergence.threshold} clean reviews`);
+          console.log(`  ${chalk.gray('\u25cb')} Not converging \u2014 ${chalk.white(convergence.consecutive_clean.toString())}/${convergence.threshold} clean reviews`);
         }
         if (convergence.total_cycles > 0) {
           console.log(`  Review cycles: ${chalk.white(convergence.total_cycles.toString())}`);

@@ -7,38 +7,11 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { api, ApiError, NetworkError, WorkerStatus } from '../api.js';
+import { api, ApiError, NetworkError } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
-
-/**
- * Pads a string to a specified length
- */
-function padEnd(str: string, length: number): string {
-  if (str.length >= length) {
-    return str.substring(0, length - 1) + '…';
-  }
-  return str + ' '.repeat(length - str.length);
-}
-
-/**
- * Formats worker status with color
- */
-function formatWorkerStatus(status: WorkerStatus): string {
-  switch (status) {
-    case 'idle':
-      return chalk.gray(padEnd(status, 12));
-    case 'running':
-      return chalk.cyan(padEnd(status, 12));
-    case 'paused':
-      return chalk.yellow(padEnd(status, 12));
-    case 'completed':
-      return chalk.green(padEnd(status, 12));
-    case 'failed':
-      return chalk.red(padEnd(status, 12));
-    default:
-      return padEnd(status, 12);
-  }
-}
+import { workerStatusLabel } from '../utils/status.js';
+import { drawTable } from '../utils/table.js';
+import { createSpinner } from '../utils/spinner.js';
 
 interface WorkersOptions extends OutputOptions {
   outcome?: string;
@@ -53,11 +26,15 @@ addOutputFlags(command);
 export const workersCommand = command
   .action(async (options: WorkersOptions) => {
     try {
+      const spinner = createSpinner('Loading workers...');
+
       // Fetch workers
       const response = await api.workers.list(
         options.outcome ? { outcome: options.outcome } : undefined
       );
       const workers = response.workers;
+
+      spinner.stop();
 
       // Handle JSON output
       if (options.json) {
@@ -77,45 +54,30 @@ export const workersCommand = command
       if (workers.length === 0) {
         console.log();
         if (options.outcome) {
-          console.log(chalk.gray(`No workers found for outcome ${options.outcome}`));
+          console.log(chalk.gray(`  No workers found for outcome ${options.outcome}`));
         } else {
-          console.log(chalk.gray('No workers found'));
+          console.log(chalk.white('  No workers running.'));
+          console.log(chalk.gray('  Start one with: flow start <outcome-id>'));
         }
         console.log();
         return;
       }
 
-      // Table configuration
-      const idWidth = 16;
-      const outcomeWidth = 16;
-      const statusWidth = 12;
-      const taskWidth = 18;
-      const iterationWidth = 10;
+      // Build table data
+      const headers = ['ID', 'OUTCOME', 'STATUS', 'TASK', 'ITERATION'];
+      const rows: string[][] = workers.map(worker => {
+        const id = chalk.gray(worker.id);
+        const outcomeId = chalk.gray(worker.outcome_id);
+        const status = workerStatusLabel(worker.status);
+        const taskId = worker.current_task_id ? chalk.gray(worker.current_task_id) : chalk.gray('-');
+        const iteration = chalk.white(worker.iteration.toString());
+        return [id, outcomeId, status, taskId, iteration];
+      });
 
-      // Print header
       console.log();
-      console.log(chalk.bold(`Workers (${workers.length})`));
+      console.log(chalk.bold(`  Workers (${workers.length})`));
       console.log();
-      console.log(
-        chalk.bold.gray(padEnd('ID', idWidth)) +
-        chalk.bold.gray(padEnd('OUTCOME', outcomeWidth)) +
-        chalk.bold.gray(padEnd('STATUS', statusWidth)) +
-        chalk.bold.gray(padEnd('TASK', taskWidth)) +
-        chalk.bold.gray('ITERATION')
-      );
-      console.log(chalk.gray('─'.repeat(idWidth + outcomeWidth + statusWidth + taskWidth + iterationWidth)));
-
-      // Print rows
-      for (const worker of workers) {
-        const id = padEnd(worker.id, idWidth);
-        const outcomeId = padEnd(worker.outcome_id, outcomeWidth);
-        const status = formatWorkerStatus(worker.status);
-        const taskId = padEnd(worker.current_task_id || '-', taskWidth);
-        const iteration = worker.iteration.toString();
-
-        console.log(`${chalk.gray(id)}${chalk.gray(outcomeId)}${status}${chalk.gray(taskId)}${chalk.white(iteration)}`);
-      }
-
+      drawTable(headers, rows, { columnWidths: [16, 16, 16, 18, 12] });
       console.log();
 
       // Print summary
@@ -133,7 +95,7 @@ export const workersCommand = command
       if (failedCount > 0) summaryParts.push(chalk.red(`${failedCount} failed`));
 
       if (summaryParts.length > 0) {
-        console.log(summaryParts.join(', '));
+        console.log(`  ${summaryParts.join(', ')}`);
         console.log();
       }
 

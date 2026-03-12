@@ -114,6 +114,10 @@ export async function PATCH(
       task_approach: body.task_approach,
       depends_on: body.depends_on,
       gates: body.gates,
+      verify_command: body.verify_command,
+      metric_command: body.metric_command,
+      metric_baseline: body.metric_baseline,
+      optimization_budget: body.optimization_budget,
     });
 
     if (!task) {

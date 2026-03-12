@@ -55,6 +55,9 @@ function SettingsContent(): JSX.Element {
 
   // System config state
   const [defaultIsolationMode, setDefaultIsolationMode] = useState<IsolationMode>('workspace');
+  const [maxPendingTasks, setMaxPendingTasks] = useState(100);
+  const [maxSubtaskDepth, setMaxSubtaskDepth] = useState(3);
+  const [maxChildrenPerTask, setMaxChildrenPerTask] = useState(15);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -121,6 +124,9 @@ function SettingsContent(): JSX.Element {
       const response = await fetch('/api/config');
       const data = await response.json();
       setDefaultIsolationMode(data.config?.default_isolation_mode || 'workspace');
+      setMaxPendingTasks(data.config?.max_pending_tasks ?? 100);
+      setMaxSubtaskDepth(data.config?.max_subtask_depth ?? 3);
+      setMaxChildrenPerTask(data.config?.max_children_per_task ?? 15);
     } catch (error) {
       console.error('Failed to fetch system config:', error);
     } finally {
@@ -146,6 +152,31 @@ function SettingsContent(): JSX.Element {
     } catch (error) {
       console.error('Failed to update isolation mode:', error);
       toast({ type: 'error', message: 'Failed to update config' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const updateGuardSetting = async (key: string, value: number) => {
+    setSavingConfig(true);
+    try {
+      const response = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setMaxPendingTasks(data.config.max_pending_tasks);
+        setMaxSubtaskDepth(data.config.max_subtask_depth);
+        setMaxChildrenPerTask(data.config.max_children_per_task);
+        toast({ type: 'success', message: 'Guard setting updated' });
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to update setting' });
+      }
+    } catch (error) {
+      console.error('Failed to update guard setting:', error);
+      toast({ type: 'error', message: 'Failed to update setting' });
     } finally {
       setSavingConfig(false);
     }
@@ -683,6 +714,101 @@ function SettingsContent(): JSX.Element {
               {savingConfig && (
                 <p className="text-xs text-text-tertiary">Saving...</p>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Task Proliferation Guards */}
+      <Card padding="md" className="mb-6">
+        <CardHeader>
+          <div>
+            <CardTitle>Task Proliferation Guards</CardTitle>
+            <p className="text-text-tertiary text-sm mt-1">
+              Limits to prevent runaway task decomposition
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingConfig ? (
+            <p className="text-text-tertiary text-sm">Loading...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-text-primary">Max Pending Tasks</p>
+                  <p className="text-xs text-text-tertiary">Maximum pending tasks per outcome (1-1000)</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={maxPendingTasks}
+                    onChange={(e) => setMaxPendingTasks(Number(e.target.value))}
+                    className="w-20 p-1.5 text-sm text-right bg-bg-primary border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => updateGuardSetting('max_pending_tasks', maxPendingTasks)}
+                    disabled={savingConfig}
+                    className="text-xs"
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-text-primary">Max Subtask Depth</p>
+                  <p className="text-xs text-text-tertiary">Maximum decomposition depth (1-10)</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={maxSubtaskDepth}
+                    onChange={(e) => setMaxSubtaskDepth(Number(e.target.value))}
+                    className="w-20 p-1.5 text-sm text-right bg-bg-primary border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => updateGuardSetting('max_subtask_depth', maxSubtaskDepth)}
+                    disabled={savingConfig}
+                    className="text-xs"
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-text-primary">Max Children per Task</p>
+                  <p className="text-xs text-text-tertiary">Maximum subtasks per parent (1-100)</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={maxChildrenPerTask}
+                    onChange={(e) => setMaxChildrenPerTask(Number(e.target.value))}
+                    className="w-20 p-1.5 text-sm text-right bg-bg-primary border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => updateGuardSetting('max_children_per_task', maxChildrenPerTask)}
+                    disabled={savingConfig}
+                    className="text-xs"
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

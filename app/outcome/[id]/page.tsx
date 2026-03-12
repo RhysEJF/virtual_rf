@@ -24,6 +24,9 @@ import { OutcomeChat } from '@/app/components/OutcomeChat';
 import { CommitSettingsSection } from '@/app/components/CommitSettingsSection';
 import { HomrDashboard } from '@/app/components/HomrDashboard';
 import { CapabilitySuggestionBanner } from '@/app/components/CapabilitySuggestionBanner';
+import { EventStreamPanel } from '@/app/components/EventStreamPanel';
+import { DiscoveryStatusPanel } from '@/app/components/DiscoveryStatusPanel';
+import { PlanViewer } from '@/app/components/PlanViewer';
 import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget, IsolationMode } from '@/lib/db/schema';
 import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 import { IsolationModeSection } from '@/app/components/IsolationModeSection';
@@ -1346,6 +1349,16 @@ export default function OutcomeDetailPage(): JSX.Element {
 
         {/* Right Panel (60%) - Control Tower */}
         <div className="w-3/5 space-y-4">
+          {/* Discovery Status */}
+          {!isParent && (
+            <DiscoveryStatusPanel outcomeId={outcomeId} />
+          )}
+
+          {/* Plan Viewer (shown after discovery) */}
+          {!isParent && (
+            <PlanViewer outcomeId={outcomeId} />
+          )}
+
           {/* Progress Section - First */}
           {(!isParent || outcome.tasks.length > 0) && (
             <Card padding="md">
@@ -1502,6 +1515,13 @@ export default function OutcomeDetailPage(): JSX.Element {
                                 </div>
                                 <div className="text-xs text-text-tertiary">
                                   Iteration {worker.iteration} • ${worker.cost.toFixed(4)}
+                                  {worker.status === 'paused' && worker.progress_summary && (
+                                    <span className="ml-1 text-status-warning">
+                                      • {worker.progress_summary.includes('circuit') ? 'Circuit breaker' :
+                                         worker.progress_summary.includes('rate') ? 'Rate limited' :
+                                         worker.progress_summary.includes('gate') ? 'Gate blocked' : 'Paused'}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -1535,6 +1555,17 @@ export default function OutcomeDetailPage(): JSX.Element {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {/* Event Stream */}
+          {!isParent && (
+            <CollapsibleSection
+              id={`outcome-${outcomeId}-events`}
+              title="Event Stream"
+              defaultExpanded={false}
+            >
+              <EventStreamPanel outcomeId={outcomeId} />
+            </CollapsibleSection>
           )}
 
           {/* Outputs Section */}

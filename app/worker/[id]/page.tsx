@@ -8,6 +8,7 @@ import { Button } from '@/app/components/ui/Button';
 import { Progress } from '@/app/components/ui/Progress';
 import { InterventionForm } from '@/app/components/InterventionForm';
 import { useToast } from '@/app/hooks/useToast';
+import { useEventStream } from '@/lib/events/hooks';
 import type { WorkerStatus, TaskStatus, Task, Worker, ProgressEntry } from '@/lib/db/schema';
 
 // Status configurations
@@ -28,6 +29,7 @@ interface WorkerWithLiveStatus extends Worker {
     totalTasks: number;
     iteration: number;
     error?: string;
+    exitReason?: string;
   };
 }
 
@@ -86,16 +88,30 @@ export default function WorkerDetailPage(): JSX.Element {
     }
   }, [workerId, autoScroll]);
 
+  // SSE event stream for real-time updates
+  const outcomeId = worker?.outcome_id ?? null;
+  const { connected: sseConnected, lastEvent } = useEventStream(outcomeId);
+
+  // Refetch on SSE events matching this worker
+  useEffect(() => {
+    if (lastEvent && (lastEvent.workerId === workerId || !lastEvent.workerId)) {
+      fetchWorker();
+      fetchLogs();
+    }
+  }, [lastEvent, workerId, fetchWorker, fetchLogs]);
+
   useEffect(() => {
     fetchWorker();
     fetchLogs();
-    const workerInterval = setInterval(fetchWorker, 3000);
-    const logsInterval = setInterval(fetchLogs, 3000);
+    // Fallback polling (10s when SSE connected, 3s when not)
+    const pollInterval = sseConnected ? 10000 : 3000;
+    const workerInterval = setInterval(fetchWorker, pollInterval);
+    const logsInterval = setInterval(fetchLogs, pollInterval);
     return () => {
       clearInterval(workerInterval);
       clearInterval(logsInterval);
     };
-  }, [fetchWorker, fetchLogs]);
+  }, [fetchWorker, fetchLogs, sseConnected]);
 
   // Actions
   const handleStopWorker = async () => {
@@ -208,6 +224,18 @@ export default function WorkerDetailPage(): JSX.Element {
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-status-success"></span>
                 </span>
               )}
+              {/* Pause reason */}
+              {worker.status === 'paused' && liveStatus?.exitReason && (
+                <Badge variant="warning" className="text-xs">
+                  {liveStatus.exitReason}
+                </Badge>
+              )}
+              {/* Connection mode badge */}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                sseConnected ? 'bg-status-success/10 text-status-success' : 'bg-bg-tertiary text-text-tertiary'
+              }`}>
+                {sseConnected ? 'Live' : 'Polling'}
+              </span>
             </div>
             <p className="text-text-secondary text-sm">
               Iteration {worker.iteration} • Running for {durationText} • Cost: ${worker.cost.toFixed(4)}

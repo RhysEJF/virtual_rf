@@ -29,6 +29,12 @@ const activityConfig: Record<ActivityType, { icon: string; color: string }> = {
   improvement_created: { icon: '↑', color: 'text-accent' },
   worker_restarted: { icon: '↻', color: 'text-status-warning' },
   task_refinement_started: { icon: '◈', color: 'text-status-info' },
+  discovery_started: { icon: '◌', color: 'text-status-info' },
+  discovery_clarity: { icon: '◎', color: 'text-status-info' },
+  discovery_research: { icon: '◎', color: 'text-status-info' },
+  discovery_plan: { icon: '◇', color: 'text-text-secondary' },
+  discovery_completed: { icon: '◉', color: 'text-status-success' },
+  discovery_failed: { icon: '⊘', color: 'text-status-error' },
 };
 
 function formatTimeAgo(timestamp: number): string {

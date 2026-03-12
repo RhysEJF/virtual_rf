@@ -8,11 +8,14 @@
 import { Command } from 'commander';
 import { input, editor, confirm, select } from '@inquirer/prompts';
 import chalk from 'chalk';
+import fs from 'fs';
 import { api, ApiError, NetworkError, DispatchResponse, MatchedOutcome, IsolationMode } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 
 interface NewCommandOptions extends OutputOptions {
   quick?: boolean;
+  deep?: boolean;
+  fromPlan?: string;
   skipMatching?: boolean;
   interactive?: boolean;
   isolated?: boolean;
@@ -224,7 +227,9 @@ const command = new Command('new')
   .option('-s, --skip-matching', 'Skip matching against existing outcomes')
   .option('-i, --interactive', 'Force interactive mode to enter description')
   .option('--isolated', 'Create outcome in isolated workspace (default)')
-  .option('--allow-codebase', 'Allow outcome to modify main codebase');
+  .option('--allow-codebase', 'Allow outcome to modify main codebase')
+  .option('-d, --deep', 'Request deep planning mode (full research + detailed plan)')
+  .option('--from-plan <path>', 'Create outcome from an existing plan document');
 
 addOutputFlags(command);
 
@@ -272,6 +277,20 @@ export const newCommand = command
         process.exit(1);
       }
 
+      // Handle --from-plan: prepend plan content to the description
+      if (options.fromPlan) {
+        const planPath = options.fromPlan;
+        if (!fs.existsSync(planPath)) {
+          console.error(chalk.red('Error:'), `Plan file not found: ${planPath}`);
+          process.exit(1);
+        }
+        const planContent = fs.readFileSync(planPath, 'utf-8').trim();
+        if (!options.json && !options.quiet) {
+          console.log(chalk.gray(`Loading plan from: ${planPath}`));
+        }
+        description = `${description}\n\n## Plan Document\n\n${planContent}`;
+      }
+
       // Determine isolation mode from flags
       let isolationMode: IsolationMode | undefined;
       if (options.isolated) {
@@ -281,6 +300,14 @@ export const newCommand = command
       }
       // If neither flag specified, the server will use the default
 
+      // Determine mode hint: --quick, --deep, or smart (default)
+      let modeHint: 'quick' | 'long' | 'smart' = 'smart';
+      if (options.quick) {
+        modeHint = 'quick';
+      } else if (options.deep || options.fromPlan) {
+        modeHint = 'long'; // 'long' maps to 'deep' on the server
+      }
+
       // Send to dispatch API
       if (!options.json && !options.quiet) {
         console.log();
@@ -289,10 +316,16 @@ export const newCommand = command
           const modeLabel = isolationMode === 'workspace' ? 'isolated workspace' : 'codebase access';
           console.log(chalk.gray(`Mode: ${modeLabel}`));
         }
+        if (options.deep) {
+          console.log(chalk.gray('Planning: deep mode'));
+        }
+        if (options.fromPlan) {
+          console.log(chalk.gray('Planning: from plan document'));
+        }
       }
 
       const response = await api.dispatch.send(description, {
-        modeHint: options.quick ? 'quick' : 'smart',
+        modeHint,
         skipMatching: options.skipMatching,
         isolationMode,
       });

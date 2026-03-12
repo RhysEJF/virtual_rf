@@ -68,6 +68,12 @@ import {
   logWorkerRestarted,
 } from '../db/activity';
 import { paths } from '../config/paths';
+import { getEventBus } from '../events/bus';
+import { recordAttempt, getAttemptCount } from '../db/attempts';
+import { saveCheckpoint, getLatestCheckpoint as _getLatestCheckpoint } from '../db/checkpoints';
+import { runVerification } from './verification';
+import { buildTeachingContext } from './teaching-errors';
+import { getDiscoveriesForTask } from '../db/homr';
 
 // ============================================================================
 // Types
@@ -283,6 +289,22 @@ function shouldTripCircuitBreaker(outcomeId: string, threshold: number): {
 } {
   const state = getCircuitBreakerState(outcomeId);
   const failures = state.consecutiveFailures;
+
+  // Check for HOMR blocker discoveries first — stop immediately if found
+  try {
+    const discoveries = getDiscoveriesForTask(outcomeId, '*');
+    const hasBlocker = discoveries.some(d => d.type === 'blocker');
+    if (hasBlocker) {
+      return {
+        shouldTrip: true,
+        reason: 'HOMR blocker discovery detected — stopping to prevent wasted work',
+        pattern: 'homr_blocker',
+        failureCount: failures.length,
+      };
+    }
+  } catch {
+    // HOMR not available, fall through to count-based check
+  }
 
   if (failures.length < threshold) {
     return { shouldTrip: false, reason: '', pattern: '', failureCount: failures.length };
@@ -814,6 +836,9 @@ Your current working directory is a **task-specific** subdirectory. Other tasks 
 `;
   }
 
+  // Build teaching context from previous attempts and checkpoints
+  const teachingContext = buildTeachingContext(task.id);
+
   return `# Current Task
 
 ## Outcome: ${outcomeName}
@@ -821,7 +846,7 @@ ${intentSummary}
 
 ---
 ${isolationInstructions}${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
-${designDocSection ? `${designDocSection}\n---\n` : ''}## Your Current Task
+${designDocSection ? `${designDocSection}\n---\n` : ''}${teachingContext ? `${teachingContext}\n---\n` : ''}## Your Current Task
 
 **ID:** ${task.id}
 **Title:** ${task.title}
@@ -868,7 +893,7 @@ ERROR: [if you hit a blocker, describe it]
 ${gitConfig?.workBranch ? `- Commit to branch \`${gitConfig.workBranch}\` when making significant progress` : '- Commit your work when making significant progress'}
 - If you hit a blocker you can't resolve, write ERROR: [reason]
 - When complete, write DONE and stop
-
+${task.verify_command ? `\n## Verification\nAfter completing your work, verify it passes: \`${task.verify_command}\`` : ''}
 Start by understanding the task, then implement it.
 `;
 }
@@ -1229,6 +1254,7 @@ export async function startRalphWorker(
 
   // Log worker started activity
   logWorkerStarted(outcomeId, outcome.name, workerName, workerId);
+  getEventBus().emit({ type: 'worker.started', outcomeId, workerId, timestamp: new Date().toISOString() });
 
   // Get initial task stats
   const stats = getTaskStats(outcomeId);
@@ -1421,6 +1447,7 @@ export async function startRalphWorker(
           const task = claimResult.task;
           appendLog(`Claimed task: ${task.title} (${task.id})`);
           logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
+          getEventBus().emit({ type: 'task.claimed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
           // Pre-claim complexity check
           if (enableComplexityCheck) {
@@ -1482,11 +1509,140 @@ export async function startRalphWorker(
 
           // Mark task as running
           startTask(task.id);
+          const taskStartTime = Date.now();
 
           // Create task workspace
           const taskWorkspace = join(outcomeWorkspace, task.id);
           if (!existsSync(taskWorkspace)) {
             mkdirSync(taskWorkspace, { recursive: true });
+          }
+
+          // Evolve mode: if task has metric_command, use hill-climbing optimization loop
+          if (task.metric_command) {
+            appendLog(`[Evolve] Task has metric_command — entering evolve mode`);
+            try {
+              const { runEvolveLoop } = await import('./evolve-loop');
+              const evolveResult = await runEvolveLoop(
+                {
+                  id: task.id,
+                  outcome_id: String(task.outcome_id),
+                  title: task.title,
+                  description: task.description || '',
+                  metric_command: task.metric_command,
+                  metric_baseline: task.metric_baseline,
+                  optimization_budget: task.optimization_budget || 5,
+                },
+                outcomeWorkspace,
+                async (evolveTask, iter, previousExperiments, wsPath) => {
+                  // Write evolve CLAUDE.md with iteration context
+                  const evolveClaudeMd = join(taskWorkspace, 'CLAUDE.md');
+                  const evolveInstructions = generateTaskInstructions(
+                    outcome.name,
+                    intent,
+                    task,
+                    outcomeSkillContext || undefined,
+                    outcomeId,
+                    gitConfig,
+                    outcome.isolation_mode || 'workspace',
+                    wsPath
+                  ) + `
+## Evolve Mode — Iteration ${iter} of ${evolveTask.optimization_budget}
+
+**Metric command:** \`${evolveTask.metric_command}\`
+**Optimization goal:** Lower the metric value (smaller is better)
+
+${previousExperiments ? `### Previous Experiments\n${previousExperiments}\n` : ''}
+
+## Evolve Instructions
+
+1. Analyze the metric command to understand what you are optimizing
+2. Make ONE focused, targeted change that you hypothesize will reduce the metric value
+3. Do NOT make sweeping changes — one hypothesis per iteration
+4. Do NOT repeat approaches that have already been tried and reverted
+5. After making your change, write a ONE-LINE summary of what you changed and why to progress.txt
+6. Then write DONE to progress.txt
+
+The system will automatically measure the metric and keep or revert your change.
+`;
+                  writeFileSync(evolveClaudeMd, evolveInstructions);
+
+                  const evolveProgressPath = join(taskWorkspace, 'progress.txt');
+                  writeFileSync(evolveProgressPath, `STATUS: Evolve iteration ${iter} — analyzing metric and planning change\n`);
+
+                  const evolvePrompt = `You are optimizing a metric through targeted, minimal changes. Read CLAUDE.md for full context and instructions. Make ONE focused change, then write a one-line summary to progress.txt and write DONE.`;
+
+                  const evolveArgs = [
+                    '-p', evolvePrompt,
+                    '--dangerously-skip-permissions',
+                    '--output-format', 'json',
+                    '--max-turns', String(Math.max(maxTurns, 20)),
+                  ];
+
+                  const iterGuardContext: TaskGuardContext = {
+                    workerId,
+                    outcomeId,
+                    taskId: task.id,
+                    workspacePath: wsPath,
+                  };
+
+                  const iterResult = await executeTask(
+                    taskWorkspace,
+                    evolveArgs,
+                    evolveProgressPath,
+                    workerId,
+                    task,
+                    appendLog,
+                    iterGuardContext
+                  );
+
+                  if (!iterResult.success) {
+                    appendLog(`[Evolve] Iteration ${iter} failed: ${iterResult.error}`);
+                    return null;
+                  }
+
+                  // Extract change summary from progress.txt (first STATUS: line)
+                  try {
+                    const progressContent = readFileSync(evolveProgressPath, 'utf-8');
+                    const statusMatch = progressContent.match(/^STATUS:\s*(.+)$/m);
+                    return statusMatch ? statusMatch[1].trim() : 'change made';
+                  } catch {
+                    return 'change made';
+                  }
+                }
+              );
+
+              appendLog(`[Evolve] Completed: ${evolveResult.iterations} iterations, improvement=${evolveResult.improvement}, stopped=${evolveResult.stopped}`);
+
+              completeTask(task.id);
+              progress.completedTasks++;
+              logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
+              getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
+              recordSuccess(outcomeId);
+
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Evolve mode completed: ${task.title} — ${evolveResult.iterations} iterations, improvement=${evolveResult.improvement} (${evolveResult.stopped})`,
+                task_id: task.id,
+              });
+
+              // Update stats and continue
+              const evolveStats = getTaskStats(outcomeId);
+              progress.totalTasks = evolveStats.total;
+              progress.completedTasks = evolveStats.completed;
+              progress.lastUpdate = Date.now();
+              if (evolveStats.pending === 0 && evolveStats.claimed === 0 && evolveStats.running === 0) {
+                exitReason = 'all_tasks_complete';
+                break;
+              }
+              continue;
+            } catch (evolveError) {
+              appendLog(`[Evolve] Evolve loop error: ${evolveError instanceof Error ? evolveError.message : 'unknown'}`);
+              failTask(task.id);
+              recordFailure(outcomeId, task.id, `Evolve mode error: ${evolveError instanceof Error ? evolveError.message : 'unknown'}`);
+              continue;
+            }
           }
 
           // Write CLAUDE.md and progress.txt
@@ -1565,6 +1721,19 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           if (taskResult.turnExhausted) {
             appendLog(`[Turn Exhaustion] Max turns reached on "${task.title}". Releasing back to pending (no attempt burned).`);
             releaseTask(task.id);
+
+            // Save checkpoint so the next attempt can resume from known progress
+            try {
+              saveCheckpoint({
+                taskId: task.id,
+                workerId: String(workerId),
+                progressSummary: 'Turn limit reached — partial progress saved',
+                remainingWork: 'Task released to pending for retry with more turns',
+              });
+            } catch (checkpointErr) {
+              appendLog(`[Checkpoint] Failed to save checkpoint: ${checkpointErr instanceof Error ? checkpointErr.message : 'unknown'}`);
+            }
+
             createProgressEntry({
               outcome_id: outcomeId,
               worker_id: workerId,
@@ -1577,10 +1746,74 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           }
 
           if (taskResult.success) {
+            // Run verification if task has a verify_command
+            if (task.verify_command) {
+              appendLog(`[Verification] Running verify command: ${task.verify_command}`);
+              const verifyResult = runVerification(task.id, task.verify_command, outcomeWorkspace);
+              appendLog(`[Verification] ${verifyResult.passed ? 'PASSED' : 'FAILED'} (${verifyResult.durationMs}ms)`);
+
+              if (!verifyResult.passed) {
+                // Treat verification failure as task failure — record attempt and retry
+                appendLog(`[Verification] Task will be retried: ${verifyResult.output.slice(0, 200)}`);
+                failTask(task.id);
+                logTaskFailed(outcomeId, outcome.name, task.title, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
+                getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: 'Verification failed' }, timestamp: new Date().toISOString() });
+
+                // Record attempt with verification failure details
+                try {
+                  recordAttempt({
+                    taskId: task.id,
+                    attemptNumber: getAttemptCount(task.id) + 1,
+                    workerId: String(workerId),
+                    approachSummary: 'Task completed but verification failed',
+                    failureReason: `Verification command failed: ${task.verify_command}`,
+                    errorOutput: verifyResult.output,
+                    durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+                  });
+                } catch (attemptErr) {
+                  appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
+                }
+
+                recordFailure(outcomeId, task.id, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
+                createProgressEntry({
+                  outcome_id: outcomeId,
+                  worker_id: workerId,
+                  iteration,
+                  content: `Verification failed: ${task.title} — ${verifyResult.output.slice(0, 200)}`,
+                  full_output: taskResult.fullOutput,
+                  task_id: task.id,
+                });
+
+                const circuitBreakerCheck = shouldTripCircuitBreaker(outcomeId, circuitBreakerThreshold);
+                if (circuitBreakerCheck.shouldTrip) {
+                  appendLog(`[Circuit Breaker] TRIPPED after verification failure: ${circuitBreakerCheck.reason}`);
+                  markCircuitBreakerTripped(outcomeId);
+                  workerState.running = false;
+                  exitReason = 'circuit_breaker';
+                  break;
+                }
+                continue;
+              }
+            }
+
             completeTask(task.id);
             progress.completedTasks++;
             appendLog(`Task completed: ${task.title}`);
             logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
+            getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
+
+            // Record successful attempt
+            try {
+              recordAttempt({
+                taskId: task.id,
+                attemptNumber: getAttemptCount(task.id) + 1,
+                workerId: String(workerId),
+                approachSummary: 'Task completed successfully',
+                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+              });
+            } catch (attemptErr) {
+              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
+            }
 
             // Circuit breaker: Record success (resets consecutive failures)
             recordSuccess(outcomeId);
@@ -1635,6 +1868,22 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             failTask(task.id);
             appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
             logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
+            getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: taskResult.error }, timestamp: new Date().toISOString() });
+
+            // Record failed attempt for teaching-errors context on next retry
+            try {
+              const attemptNum = getAttemptCount(task.id) + 1;
+              recordAttempt({
+                taskId: task.id,
+                attemptNumber: attemptNum,
+                workerId: String(workerId),
+                failureReason: taskResult.error,
+                errorOutput: taskResult.fullOutput ? taskResult.fullOutput.slice(-2000) : undefined,
+                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+              });
+            } catch (attemptErr) {
+              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
+            }
 
             // Circuit breaker: Record failure for pattern analysis
             recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
@@ -1800,6 +2049,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         progress.status = 'failed';
         progress.error = errorMessage;
         logWorkerFailed(outcomeId, outcome.name, workerName, errorMessage);
+        getEventBus().emit({ type: 'worker.stopped', outcomeId, workerId, data: { reason: errorMessage }, timestamp: new Date().toISOString() });
       } else if (wasPaused) {
         updateWorker(workerId, { status: 'paused' });
         progress.status = 'stopped';
@@ -1807,6 +2057,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         completeWorker(workerId);
         progress.status = 'completed';
         logWorkerCompleted(outcomeId, outcome.name, workerName, progress.completedTasks);
+        getEventBus().emit({ type: 'worker.completed', outcomeId, workerId, data: { tasksCompleted: progress.completedTasks }, timestamp: new Date().toISOString() });
       }
 
       if (restartCount > 0) {
@@ -2451,6 +2702,7 @@ export async function runWorkerLoop(
     const task = claimResult.task;
     appendLog(`Claimed task: ${task.title} (${task.id})`);
     logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
+    getEventBus().emit({ type: 'task.claimed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
     // Pre-claim complexity check
     if (enableComplexityCheck) {
@@ -2579,6 +2831,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
       completeTask(task.id);
       appendLog(`Task completed: ${task.title}`);
       logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
+      getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
       // Record progress with full output for auditing
       createProgressEntry({
@@ -2623,6 +2876,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
       failTask(task.id);
       appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
       logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
+      getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: taskResult.error }, timestamp: new Date().toISOString() });
 
       // Record failure with full output for debugging
       createProgressEntry({

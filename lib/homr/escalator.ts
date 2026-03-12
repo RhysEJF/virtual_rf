@@ -26,6 +26,7 @@ import type { Task, Intent, Approach, HomrAmbiguitySignal, HomrQuestionOption, H
 import type { EscalationAnswer, EscalationResolution, EscalationActionType, EscalationActionResult } from './types';
 import { buildEscalationQuestionPrompt, parseEscalationQuestionResponse } from './prompts';
 import { decomposeTask, DecompositionContext } from '../agents/task-decomposer';
+import { getEventBus } from '../events/bus';
 
 /**
  * Safely parse JSON with a fallback value
@@ -202,6 +203,8 @@ export async function createEscalation(
     question_options: options,
     affected_tasks: affectedTasks,
   });
+
+  getEventBus().emit({ type: 'homr.escalation', outcomeId, data: { questionText, triggerType: ambiguity.type }, timestamp: new Date().toISOString() });
 
   // Pause affected tasks
   for (const taskId of affectedTasks) {

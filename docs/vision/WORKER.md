@@ -46,6 +46,12 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Atomic decomposition lock (prevents duplicate subtasks) | Complete |
 | Task refinement via worker (pre-execution enrichment) | Complete |
 | Shared file path guidance (absolute paths for cross-task files) | Complete |
+| Attempt tracking and teaching errors | Complete |
+| Checkpointing on turn exhaustion | Complete |
+| Deterministic verification (verify_command) | Complete |
+| Evolve mode (hill-climbing optimization) | Complete |
+| Content-aware circuit breaker (HOMR blocker detection) | Complete |
+| Event bus integration | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -158,6 +164,55 @@ Workers can automatically recover from transient infrastructure failures (Claude
 4. **State Preservation** — Between restarts, the current task is released back to pending. The worker record stays `running`. On restart, the worker re-enters the normal claim-execute loop.
 
 5. **Clean Exit** — If a semantic exit occurs inside the restart loop, the loop terminates normally (no more restarts).
+
+### Attempt Tracking and Teaching Errors
+
+Workers now learn from past failures before attempting a task again:
+
+1. **task_attempts table** — Every task attempt is recorded with timestamp, exit reason, error category, and truncated output.
+2. **Teaching context** — When a worker claims a task that has prior failed attempts, the failure history is injected into the worker's CLAUDE.md as a "Previous Attempts" section. This gives the new worker explicit context on what was tried and why it failed.
+3. **Error categorization** — Failures are categorized (timeout, permission, syntax, runtime, turn_limit_exhausted) to help the teaching context be actionable.
+
+This converts every failure into a learning signal for the next attempt, reducing repeated mistakes on retried tasks.
+
+### Task Checkpoints
+
+Workers can save progress mid-task, enabling partial recovery on turn exhaustion:
+
+1. **task_checkpoints table** — Stores JSON snapshots of work-in-progress keyed by task ID and turn number.
+2. **Checkpoint on turn exhaustion** — When `detectTurnExhaustion()` fires, the worker saves a checkpoint before releasing the task back to pending. This captures what was accomplished so far.
+3. **Checkpoint injection** — When the task is next claimed, any saved checkpoint is injected into the worker's CLAUDE.md, letting the new worker resume from the saved state rather than starting over.
+
+### Deterministic Verification
+
+Tasks can declare a shell command that objectively measures success:
+
+1. **verify_command column** — A shell command (e.g., `npm test`, `python verify.py`) stored on the task.
+2. **Post-execution check** — After the worker signals DONE, the worker runs `verify_command` in the task workspace.
+3. **Pass/fail signal** — Non-zero exit code means the task failed verification and is re-queued with an error note. Zero exit means verified success.
+4. **Determinism** — Unlike subjective review, verification commands produce the same result every time, making quality gates machine-enforceable.
+
+### Evolve Mode (Hill-Climbing Optimization)
+
+Tasks can enter an optimization loop that iteratively improves a measurable metric:
+
+1. **metric_command** — A shell command that outputs a numeric score (e.g., Lighthouse score, test pass rate, benchmark throughput).
+2. **metric_baseline** — Starting score; improvements must beat this to be kept.
+3. **optimization_budget** — Maximum number of improvement attempts.
+4. **experiments table** — Each attempt is recorded as an experiment with before/after scores, the change attempted, and outcome (improvement/regression/plateau).
+5. **Auto git init** — The workspace is git-initialized at evolve start so each attempt can be committed and reverted cleanly.
+6. **Git revert on regression** — If a change makes the metric worse, the commit is reverted automatically.
+7. **Plateau detection** — After 3 consecutive non-improvements, the loop exits even if budget remains.
+
+Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle.
+
+### Content-Aware Circuit Breaker
+
+The circuit breaker now analyzes failure content to distinguish recoverable errors from HOMR blockers:
+
+1. **HOMR blocker detection** — Failure output is scanned for patterns indicating the task is waiting on HOMR (e.g., escalation phrases, "waiting for human", gate-related language).
+2. **Separate handling** — HOMR-blocked tasks do not increment the consecutive-failure counter. The circuit breaker trips only on genuine errors, not intentional pauses.
+3. **Escalation-aware** — This prevents false circuit-breaker trips when HOMR is correctly escalating an ambiguous task to a human.
 
 ### Atomic Decomposition Lock
 

@@ -1,17 +1,18 @@
 # Orchestration
 
-> Manages two-phase execution: build capabilities first, then execute tasks.
+> Manages three-phase execution: discover context first, build capabilities second, then execute tasks.
 
 ---
 
 ## Purpose
 
-Complex outcomes need preparation before execution. The Orchestrator ensures workers have the right skills and tools before starting actual work. It manages:
+Complex outcomes need preparation before execution. The Orchestrator ensures workers have the right context and capabilities before starting actual work. It manages:
 
-1. **Capability Phase** - Build skills, tools, and capabilities
-2. **Execution Phase** - Run tasks using the built capabilities
-3. **Phase transitions** - Know when capabilities are ready
-4. **Worker spawning** - Start the right number of workers per phase
+1. **Discovery Phase** - Research the domain before planning
+2. **Capability Phase** - Build skills, tools, and capabilities
+3. **Execution Phase** - Run tasks using the built capabilities
+4. **Phase transitions** - Know when each phase is ready
+5. **Worker spawning** - Start the right number of workers per phase
 
 ---
 
@@ -27,6 +28,7 @@ Complex outcomes need preparation before execution. The Orchestrator ensures wor
 | Dynamic capability planning | Complete |
 | Capability suggestion UI banner | Complete |
 | Manual capability replanning | Complete |
+| Discovery phase (QUICK/STANDARD/DEEP tiers) | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -34,12 +36,19 @@ Complex outcomes need preparation before execution. The Orchestrator ensures wor
 
 ## Key Concepts
 
-### Two-Phase Model
+### Three-Phase Model
 
 ```
 Outcome Created
       │
       ▼
+┌─────────────────┐
+│   DISCOVERY     │ ← Research domain before planning
+│     PHASE       │   (QUICK/STANDARD/DEEP tiers)
+│                 │   Discovery agent orchestrates skills
+└────────┬────────┘
+         │ discovery complete
+         ▼
 ┌─────────────────┐
 │   CAPABILITY    │ ← Build what workers will need
 │     PHASE       │   (skills, tools, capabilities)
@@ -72,6 +81,26 @@ Tasks are tagged with their phase:
 
 Workers only claim tasks matching their current phase.
 
+### Discovery Phase
+
+Before capability planning begins, the orchestrator runs a discovery pass to research the domain and gather context that improves all subsequent phases:
+
+**Tier selection** — Three depth levels based on outcome complexity:
+
+| Tier | When Used | What It Does |
+|------|-----------|-------------|
+| `QUICK` | Simple, well-understood tasks | Light web research + existing skills scan |
+| `STANDARD` | Moderate complexity | Domain research + competitive analysis + technology assessment |
+| `DEEP` | Novel or high-stakes outcomes | Full research sweep across multiple discovery skills |
+
+**Discovery skills** — Specialized skills in `~/flow-data/skills/discovery/` are used by the discovery agent (`lib/agents/discovery-agent.ts`). Skills in this directory are auto-discovered and composed based on the selected tier.
+
+**CLI flags:**
+- `--deep` — Force DEEP tier regardless of complexity estimate
+- `--from-plan` — Skip discovery, use an existing plan as-is
+
+Discovery output is stored as context and injected into the capability phase so the capability planner has richer domain knowledge before deciding what to build.
+
 ### Dynamic Capability Planning
 
 Unlike static "build all upfront" planning, Dynamic Capability Planning allows:
@@ -87,14 +116,15 @@ Tasks can specify `required_capabilities` (e.g., `['skill:market-research', 'too
 
 ## Behaviors
 
-1. **Approach analysis** - Reads the design doc to detect what skills/tools are needed
-2. **Capability task creation** - Creates tasks to build missing capabilities
-3. **Parallel building** - Runs up to 3 workers simultaneously for capability phase
-4. **Automatic transition** - Moves to execution when all capability tasks complete
-5. **Approach change detection** - Resets capabilities when approach significantly changes
-6. **Dynamic capability detection** - Detects new capabilities when approach is updated
-7. **Capability dependency blocking** - Execution tasks wait for required capabilities
-8. **Auto-creation at claim time** - Missing capability tasks created when execution blocked
+1. **Domain discovery** - Runs QUICK/STANDARD/DEEP research before capability planning
+2. **Approach analysis** - Reads the design doc to detect what skills/tools are needed
+3. **Capability task creation** - Creates tasks to build missing capabilities
+4. **Parallel building** - Runs up to 3 workers simultaneously for capability phase
+5. **Automatic transition** - Moves to execution when all capability tasks complete
+6. **Approach change detection** - Resets capabilities when approach significantly changes
+7. **Dynamic capability detection** - Detects new capabilities when approach is updated
+8. **Capability dependency blocking** - Execution tasks wait for required capabilities
+9. **Auto-creation at claim time** - Missing capability tasks created when execution blocked
 
 ---
 

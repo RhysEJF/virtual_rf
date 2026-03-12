@@ -31,8 +31,13 @@ All state in Digital Twin is persisted to SQLite. The database:
 | Workspace isolation mode (isolation_mode) | Complete |
 | System configuration (system_config) | Complete |
 | Task gates (human-in-the-loop) | Complete |
+| Event persistence (events table) | Complete |
+| Task attempts tracking (task_attempts) | Complete |
+| Task checkpoints (task_checkpoints) | Complete |
+| Experiments tracking (experiments) | Complete |
+| Task proliferation guards | Complete |
 
-**Overall:** Complete and production-ready (20+ tables)
+**Overall:** Complete and production-ready (25+ tables)
 
 ---
 
@@ -102,6 +107,55 @@ The system prevents:
 - Invalid task references
 
 Workers automatically skip blocked tasks when claiming work.
+
+### Event Persistence
+
+System events are persisted to SQLite via a write-behind batching strategy:
+
+| Concept | Description |
+|---------|-------------|
+| **events table** | Persisted record of all system events |
+| **write-behind batching** | Events are buffered in memory and flushed to SQLite in batches to reduce write pressure |
+| **7-day retention** | Events older than 7 days are pruned automatically |
+| **SSE endpoint** | `/api/outcomes/[id]/stream` streams live events to the UI via Server-Sent Events |
+| **React hooks** | `useEventStream()` and `useOutcomeState()` consume the SSE stream for real-time UI updates |
+
+Event namespaces: `worker.*`, `task.*`, `homr.*`, `gate.*`, `outcome.*`, `experiment.*`
+
+### Task Attempts and Checkpoints
+
+Two tables track retry history and partial progress for resilient task execution:
+
+| Table | Purpose |
+|-------|---------|
+| **task_attempts** | Records every attempt at a task: timestamp, exit reason, error category, truncated output. Used to build teaching context for the next worker. |
+| **task_checkpoints** | JSON snapshots of work-in-progress saved when a task is interrupted (e.g., turn exhaustion). Injected into the next worker's context so it can resume rather than restart. |
+
+### Experiments
+
+The `experiments` table records hill-climbing optimization attempts for tasks running in Evolve mode:
+
+| Column | Purpose |
+|--------|---------|
+| **task_id** | The task being optimized |
+| **attempt_number** | Sequential attempt index |
+| **metric_before** | Score before this attempt |
+| **metric_after** | Score after this attempt |
+| **change_description** | What the worker changed |
+| **outcome** | `improvement`, `regression`, or `plateau` |
+| **git_commit** | Commit SHA for this attempt (reverted if regression) |
+
+### Task Proliferation Guards
+
+Configurable limits in `system_config` prevent runaway task creation:
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `max_pending_tasks` | 100 | Maximum pending tasks per outcome before creation is blocked |
+| `max_subtask_depth` | 3 | Maximum decomposition depth (prevents deep nesting) |
+| `max_children_per_task` | 15 | Maximum subtasks a single task can be decomposed into |
+
+The central `canCreateTask()` validation function is called from `createTask()` and from the task decomposer. This single enforcement point ensures all task creation paths (API, CLI, decomposer, HOMR steerer) respect the limits.
 
 ### Task Gates (Human-in-the-Loop)
 

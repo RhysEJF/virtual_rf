@@ -69,9 +69,21 @@ mkdir -p ~/flow-data/{data,workspaces,skills}
 │   ├── config/
 │   │   └── paths.ts       # Centralized path resolution (data vs app)
 │   ├── agents/            # AI agent implementations
+│   │   └── discovery-agent.ts  # Discovery pipeline (QUICK/STANDARD/DEEP)
 │   ├── ralph/             # Ralph worker system
+│   │   ├── evolve-loop.ts     # Hill-climbing optimization
+│   │   ├── verification.ts    # Deterministic task verification
+│   │   └── teaching-errors.ts # Retry context builder
+│   ├── events/            # Event backbone
+│   │   ├── bus.ts             # In-memory pub/sub + persistence
+│   │   ├── types.ts           # Event type definitions
+│   │   ├── persistence.ts     # SQLite event log
+│   │   └── hooks.ts           # React SSE hooks
 │   ├── homr/              # HOMR Protocol
 │   ├── db/                # Database layer (SQLite)
+│   │   ├── attempts.ts        # Task attempt tracking
+│   │   ├── checkpoints.ts     # Task checkpoint CRUD
+│   │   └── experiments.ts     # Evolve experiment CRUD
 │   ├── claude/            # Claude CLI client
 │   ├── workspace/         # Workspace utilities
 │   └── utils/             # Utilities
@@ -259,7 +271,11 @@ Users can request changes after completion via the Iterate section:
 - `outcome_items` - Tracked files with sync status (skills, tools, outputs)
 - `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
 - `guard_blocks` - Blocked dangerous commands with context
-- `system_config` - Key-value store for global settings (e.g., default_isolation_mode)
+- `system_config` - Key-value store for global settings (e.g., default_isolation_mode, max_pending_tasks, max_subtask_depth, max_children_per_task)
+- `events` - Event bus persistence (type, outcome/worker/task IDs, data JSON, 7-day retention)
+- `task_attempts` - Attempt tracking per task (approach, failure reason, error output, duration)
+- `task_checkpoints` - Progress checkpoints on turn exhaustion (summary, remaining work, git SHA)
+- `experiments` - Evolve mode iterations (metric values, baseline, kept/reverted, git SHA)
 
 ## Requirements
 
@@ -486,11 +502,12 @@ kill -9 <PID>
 ### Working Flow
 1. User submits request via CommandBar
 2. Dispatcher classifies it → creates Outcome with intent
-3. System generates tasks from intent
+3. **Discovery Phase**: Clarity check → interview → research → plan → task generation
 4. **Capability Phase**: Build skills/tools needed for the work
-5. **Execution Phase**: Ralph Workers claim and complete tasks
+5. **Execution Phase**: Ralph Workers claim and complete tasks (with verification + attempt tracking)
 6. **Review Phase**: Reviewer checks work, creates fix tasks if needed
 7. **Iterate**: User can request changes even after completion
+8. **Evolve** (optional): Tasks with `metric_command` run hill-climbing optimization
 
 ### Telegram Integration (Complete)
 - [x] Telegram bot via `claude-code-telegram` (`~/claude-code-telegram/`)
@@ -524,11 +541,66 @@ kill -9 <PID>
 - [x] Activity logging (`task_refinement_started`)
 - [x] Idempotency check (prevents duplicate refinement tasks)
 
+### Task Proliferation Guards (Complete)
+- [x] Configurable limits: `max_pending_tasks` (100), `max_subtask_depth` (3), `max_children_per_task` (15)
+- [x] System config getters/setters (`lib/db/system-config.ts`)
+- [x] `getTaskDepth()` — walks `decomposed_from_task_id` chain
+- [x] `canCreateTask()` — checks pending count, depth, and children limits
+- [x] Central guard in `createTask()` — single enforcement point, `skipGuards` opt-out
+- [x] Guard in `decomposeTask()` and `createSubtasks()` — prevents runaway decomposition
+
+### Event Backbone (Complete)
+- [x] In-memory event bus with EventEmitter (`lib/events/bus.ts`)
+- [x] Event type hierarchy: worker.*, task.*, homr.*, gate.*, outcome.*, experiment.* (`lib/events/types.ts`)
+- [x] Wildcard and prefix-pattern subscriptions (`worker.*`, `*`)
+- [x] SQLite event persistence with write-behind batching (`lib/events/persistence.ts`)
+- [x] SSE endpoint for real-time streaming (`/api/outcomes/[id]/stream`)
+- [x] React hooks: `useEventStream()`, `useOutcomeState()` with SSE-first, polling fallback (`lib/events/hooks.ts`)
+- [x] Event emissions from Ralph worker (started, claimed, completed, failed, stopped)
+- [x] Event emissions from HOMЯ (observation, escalation, discovery)
+- [x] 7-day event retention with pruning
+
+### Resilient Worker (Complete)
+- [x] Attempt tracking table (`task_attempts`) with approach, failure reason, error output
+- [x] Checkpoint table (`task_checkpoints`) with progress summary, remaining work, git SHA
+- [x] `verify_command` column on tasks — deterministic verification before LLM review
+- [x] `runVerification()` — executes verify command in workspace with 60s timeout (`lib/ralph/verification.ts`)
+- [x] `buildTeachingContext()` — formats past failures as retry guidance (`lib/ralph/teaching-errors.ts`)
+- [x] Teaching context injected into worker CLAUDE.md between Design Doc and Current Task
+- [x] Checkpoint saved on turn exhaustion (instead of just releasing)
+- [x] Attempt recorded on success and failure with duration tracking
+- [x] Content-aware circuit breaker — checks HOMЯ blocker discoveries before count-based check
+- [x] Blocker event detection in between-task loop via event bus
+
+### Discovery Engine (Complete)
+- [x] Tier-based planning pipeline: QUICK / STANDARD / DEEP (`lib/agents/discovery-agent.ts`)
+- [x] Clarity check skill — scores specificity, ambiguity, scope, technical depth (`~/flow-data/skills/discovery/clarity-check.md`)
+- [x] Interview skill — 3-5 targeted questions with YAGNI principle (`~/flow-data/skills/discovery/interview.md`)
+- [x] Local research skill — codebase + memory system context gathering (`~/flow-data/skills/discovery/local-research.md`)
+- [x] Plan writer skill — generates plan documents with verify_commands (`~/flow-data/skills/discovery/plan-writer.md`)
+- [x] Task generator skill — converts plans to Flow tasks (`~/flow-data/skills/discovery/task-generator.md`)
+- [x] Discovery API: POST/GET `/api/outcomes/[id]/discover` with tier override
+- [x] Orchestrator integration — discovery phase before capability analysis
+- [x] CLI flags: `--deep` and `--from-plan <path>` on `flow new`
+- [x] PLAN.md generated in workspace for STANDARD/DEEP tiers
+- [x] Tasks auto-created with verify_commands, complexity scores, dependencies
+
+### Evolve Mode (Complete)
+- [x] Hill-climbing optimization loop (`lib/ralph/evolve-loop.ts`)
+- [x] `metric_command`, `metric_baseline`, `optimization_budget` columns on tasks
+- [x] Experiments table tracking iterations, metric values, kept/reverted status
+- [x] Auto git init in workspace for rollback capability
+- [x] Git revert on regression, keep on improvement
+- [x] Plateau detection — stops after 3 consecutive non-improvements
+- [x] Previous experiment context injected into each iteration
+- [x] Worker auto-detects evolve mode when `metric_command` is set
+- [x] Optimize-task skill with GEPA methodology (`~/flow-data/skills/evolve/optimize-task.md`)
+- [x] Skill evolution skill (`~/flow-data/skills/evolve/skill-evolution.md`)
+- [x] Experiments API: GET `/api/outcomes/[id]/experiments`
+
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
 - [ ] Agent messaging system (workers that talk to each other)
-- [ ] SSE for live progress updates (currently polls every 5s)
-- [x] Cross-outcome learning (HOMЯ discoveries promoted to memories, retrieved by workers globally)
 - [ ] Always-on deployment (Mac Mini + Cloudflare Tunnel)
 
 ### Key Files to Understand
@@ -553,6 +625,15 @@ kill -9 <PID>
 - `lib/sync/repository-sync.ts` - Core sync logic (copy, git add/commit/push)
 - `app/outcome/[id]/page.tsx` - Main outcome management UI
 - `app/api/outcomes/[id]/iterate/route.ts` - Post-completion feedback
+- `lib/events/bus.ts` - Event bus singleton (emit, subscribe, getLatest)
+- `lib/events/hooks.ts` - React hooks for SSE event streaming
+- `lib/agents/discovery-agent.ts` - Discovery pipeline orchestrator (QUICK/STANDARD/DEEP)
+- `lib/ralph/evolve-loop.ts` - Hill-climbing optimization loop
+- `lib/ralph/verification.ts` - Deterministic task verification
+- `lib/ralph/teaching-errors.ts` - Retry context from previous attempts
+- `lib/db/attempts.ts` - Task attempt tracking CRUD
+- `lib/db/checkpoints.ts` - Task checkpoint CRUD
+- `lib/db/experiments.ts` - Evolve mode experiment CRUD
 
 ## Agent Notes
 

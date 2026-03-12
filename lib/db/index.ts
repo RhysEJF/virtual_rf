@@ -586,6 +586,81 @@ function runMigrations(database: Database.Database): void {
     database.exec(`CREATE INDEX IF NOT EXISTS idx_progress_task ON progress_entries(task_id)`);
     console.log(`[DB Migration] Added task_id column to progress_entries`);
   }
+
+  // Add verify_command column to tasks for deterministic post-task verification
+  const tasksColsVerify = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const hasVerifyCommand = tasksColsVerify.some(c => c.name === 'verify_command');
+  if (!hasVerifyCommand) {
+    database.exec(`ALTER TABLE tasks ADD COLUMN verify_command TEXT`);
+    console.log(`[DB Migration] Added verify_command column to tasks`);
+  }
+
+  // Create task_attempts table for attempt tracking (resilient worker)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      attempt_number INTEGER NOT NULL DEFAULT 1,
+      worker_id INTEGER,
+      approach_summary TEXT,
+      failure_reason TEXT,
+      files_modified TEXT,
+      error_output TEXT,
+      duration_seconds INTEGER,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_task_attempts_task ON task_attempts(task_id)`);
+
+  // Create task_checkpoints table for resumable task state (resilient worker)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS task_checkpoints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      worker_id INTEGER,
+      progress_summary TEXT,
+      remaining_work TEXT,
+      files_modified TEXT,
+      git_sha TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_task_checkpoints_task ON task_checkpoints(task_id)`);
+
+  // Create experiments table for evolve mode hill-climbing execution
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS experiments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      outcome_id INTEGER NOT NULL,
+      iteration INTEGER NOT NULL DEFAULT 1,
+      metric_value REAL,
+      metric_command TEXT NOT NULL,
+      baseline_value REAL,
+      change_summary TEXT,
+      git_sha TEXT,
+      kept INTEGER NOT NULL DEFAULT 0,
+      duration_seconds INTEGER,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_task ON experiments(task_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_outcome ON experiments(outcome_id)`);
+
+  // Add evolve mode columns to tasks table (check existence before adding)
+  const tasksColsEvolve = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  const evolveColumns = [
+    { name: 'metric_command', sql: 'ALTER TABLE tasks ADD COLUMN metric_command TEXT' },
+    { name: 'metric_baseline', sql: 'ALTER TABLE tasks ADD COLUMN metric_baseline REAL' },
+    { name: 'optimization_budget', sql: 'ALTER TABLE tasks ADD COLUMN optimization_budget INTEGER' },
+  ];
+  for (const col of evolveColumns) {
+    const exists = tasksColsEvolve.some(c => c.name === col.name);
+    if (!exists) {
+      database.exec(col.sql);
+      console.log(`[DB Migration] Added ${col.name} column to tasks (evolve mode)`);
+    }
+  }
 }
 
 /**

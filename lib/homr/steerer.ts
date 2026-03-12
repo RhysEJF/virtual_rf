@@ -44,6 +44,7 @@ import type {
 } from './types';
 import { buildTaskContextSection, buildMemoryContextSection } from './prompts';
 import { memoryService, type SearchResponse } from '../memory';
+import { getEventBus } from '../events/bus';
 
 // ============================================================================
 // Context Building
@@ -373,6 +374,7 @@ export async function steer(observation: ObservationResult): Promise<SteeringRes
       const action = createDiscoveryInjectionAction(outcomeId, discovery);
       actions.push(action);
     }
+    getEventBus().emit({ type: 'homr.discovery', outcomeId, data: { summary: discovery.content, scope: discovery.relevantTasks.includes('*') ? 'global' : 'local', type: discovery.type }, timestamp: new Date().toISOString() });
   }
 
   // Execute all actions

@@ -13,6 +13,7 @@ import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type { Task, TaskStatus, TaskPhase, CapabilityType, TaskGate, GateType } from './schema';
 import { touchOutcome, updateOutcome } from './outcomes';
+import { getMaxPendingTasks, getMaxSubtaskDepth, getMaxChildrenPerTask } from './system-config';
 
 // ============================================================================
 // Create
@@ -44,6 +45,14 @@ export interface CreateTaskInput {
   decomposed_from_task_id?: string;
   // Human-in-the-loop gates
   gates?: Array<{ type: GateType; label: string; description?: string }>;
+  // Task proliferation guard bypass (use with caution - for internal/system tasks only)
+  skipGuards?: boolean;
+  // Deterministic post-task verification command (run in workspace dir)
+  verify_command?: string;
+  // Evolve mode: hill-climbing optimization fields
+  metric_command?: string;
+  metric_baseline?: number;
+  optimization_budget?: number;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -77,6 +86,17 @@ export function createTask(input: CreateTaskInput): Task {
     gatesJson = JSON.stringify(gates);
   }
 
+  // Task proliferation guard: enforce limits unless explicitly bypassed
+  if (!input.skipGuards) {
+    const guard = canCreateTask(input.outcome_id, {
+      parentTaskId: input.decomposed_from_task_id,
+    });
+    if (!guard.allowed) {
+      console.warn(`[TaskGuard] Blocked task creation: ${guard.reason}`);
+      throw new Error(`Task creation blocked: ${guard.reason}`);
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO tasks (
       id, outcome_id, title, description, prd_context, design_context,
@@ -84,9 +104,10 @@ export function createTask(input: CreateTaskInput): Task {
       from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, depends_on, required_capabilities,
       complexity_score, estimated_turns, decomposed_from_task_id,
-      gates, created_at, updated_at
+      gates, verify_command, metric_command, metric_baseline, optimization_budget,
+      created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -110,6 +131,10 @@ export function createTask(input: CreateTaskInput): Task {
     input.estimated_turns ?? null,
     input.decomposed_from_task_id || null,
     gatesJson,
+    input.verify_command || null,
+    input.metric_command || null,
+    input.metric_baseline ?? null,
+    input.optimization_budget ?? null,
     timestamp,
     timestamp
   );
@@ -1023,6 +1048,10 @@ export interface UpdateTaskInput {
   decomposed_from_task_id?: string | null;
   // Human-in-the-loop gates (raw JSON string)
   gates?: string | null;
+  // Evolve mode fields
+  metric_command?: string | null;
+  metric_baseline?: number | null;
+  optimization_budget?: number | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -1122,6 +1151,18 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.gates !== undefined) {
     updates.push('gates = ?');
     values.push(input.gates);
+  }
+  if (input.metric_command !== undefined) {
+    updates.push('metric_command = ?');
+    values.push(input.metric_command);
+  }
+  if (input.metric_baseline !== undefined) {
+    updates.push('metric_baseline = ?');
+    values.push(input.metric_baseline);
+  }
+  if (input.optimization_budget !== undefined) {
+    updates.push('optimization_budget = ?');
+    values.push(input.optimization_budget);
   }
 
   values.push(id);
@@ -1484,6 +1525,114 @@ export function getSubtasksByParentTaskId(parentTaskId: string): Task[] {
     ...row,
     from_review: Boolean(row.from_review),
   }));
+}
+
+// ============================================================================
+// Task Proliferation Guards
+// ============================================================================
+
+/**
+ * Walk the decomposed_from_task_id chain to determine how deep a task is.
+ * Root tasks (no parent) return 0. Direct subtasks of a root return 1, etc.
+ *
+ * @param taskId - The task ID to measure depth for
+ * @returns The depth (number of hops from root), or 0 for root tasks
+ */
+export function getTaskDepth(taskId: string): number {
+  const db = getDb();
+  let currentId: string = taskId;
+  let depth = 0;
+  const visited = new Set<string>();
+
+  while (true) {
+    if (visited.has(currentId)) {
+      // Cycle detected — stop to avoid infinite loop
+      break;
+    }
+    visited.add(currentId);
+
+    const row = db.prepare(
+      'SELECT decomposed_from_task_id FROM tasks WHERE id = ?'
+    ).get(currentId) as { decomposed_from_task_id: string | null } | undefined;
+
+    if (!row || !row.decomposed_from_task_id) {
+      break;
+    }
+
+    currentId = row.decomposed_from_task_id;
+    depth++;
+  }
+
+  return depth;
+}
+
+export interface CanCreateTaskResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+/**
+ * Check whether a new task is allowed to be created, based on configured proliferation guards.
+ *
+ * Checks:
+ * 1. Pending task count for the outcome vs getMaxPendingTasks()
+ * 2. (If parentTaskId) depth of the parent vs getMaxSubtaskDepth()
+ * 3. (If parentTaskId) existing children of the parent vs getMaxChildrenPerTask()
+ *
+ * @param outcomeId - The outcome the task would belong to
+ * @param opts.skipGuards - If true, always allow (bypass all checks)
+ * @param opts.parentTaskId - If provided, check depth and children limits
+ */
+export function canCreateTask(
+  outcomeId: string,
+  opts?: { skipGuards?: boolean; parentTaskId?: string }
+): CanCreateTaskResult {
+  if (opts?.skipGuards) {
+    return { allowed: true };
+  }
+
+  const db = getDb();
+
+  // 1. Check pending task count for the outcome
+  const maxPending = getMaxPendingTasks();
+  const pendingCountRow = db.prepare(
+    "SELECT COUNT(*) as count FROM tasks WHERE outcome_id = ? AND status = 'pending'"
+  ).get(outcomeId) as { count: number };
+
+  if (pendingCountRow.count >= maxPending) {
+    return {
+      allowed: false,
+      reason: `Outcome has ${pendingCountRow.count} pending tasks, which meets or exceeds the limit of ${maxPending}`,
+    };
+  }
+
+  // 2 & 3. Parent-scoped checks (only when creating a subtask)
+  if (opts?.parentTaskId) {
+    // Check subtask depth
+    const parentDepth = getTaskDepth(opts.parentTaskId);
+    const maxDepth = getMaxSubtaskDepth();
+    if (parentDepth >= maxDepth) {
+      return {
+        allowed: false,
+        reason: `Parent task is at depth ${parentDepth}, which meets or exceeds the max subtask depth of ${maxDepth}`,
+      };
+    }
+
+    // Check children count for the parent
+    const maxChildren = getMaxChildrenPerTask();
+    const childrenCountRow = db.prepare(
+      'SELECT COUNT(*) as count FROM tasks WHERE decomposed_from_task_id = ?'
+    ).get(opts.parentTaskId) as { count: number };
+
+    if (childrenCountRow.count >= maxChildren) {
+      return {
+        allowed: false,
+        reason: `Parent task already has ${childrenCountRow.count} subtasks, which meets or exceeds the limit of ${maxChildren} per task`,
+      };
+    }
+  }
+
+  return { allowed: true };
 }
 
 /**

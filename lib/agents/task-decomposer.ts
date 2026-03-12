@@ -9,11 +9,12 @@
  */
 
 import { claudeComplete } from '../claude/client';
-import { createTask, updateTask, getTaskById, getSubtasksByParentTaskId, claimDecompositionLock, CreateTaskInput } from '../db/tasks';
+import { createTask, updateTask, getTaskById, getSubtasksByParentTaskId, claimDecompositionLock, canCreateTask, CreateTaskInput } from '../db/tasks';
 import { detectCircularDependencies, validateDependencies } from '../db/dependencies';
 import type { Task, Intent, Approach, DecompositionStatus } from '../db/schema';
 import { ComplexityEstimate, ComplexityThresholds, estimateTaskComplexity } from './task-complexity-estimator';
 import { detectBulkDataTask, BulkDetectionResult, DecompositionSuggestion } from './bulk-detector';
+import { getMaxChildrenPerTask } from '../db/system-config';
 
 // ============================================================================
 // Types
@@ -188,6 +189,21 @@ export async function decomposeTask(
         createdTaskIds: [],
         reasoning: parseResult.reasoning || 'Failed to parse decomposition response',
         error: parseResult.error,
+      };
+    }
+
+    // Guard check: verify we're allowed to create subtasks before proceeding
+    const subtaskGuard = canCreateTask(task.outcome_id, { parentTaskId: task.id });
+    if (!subtaskGuard.allowed) {
+      console.warn(`[TaskDecomposer] Guard blocked subtask creation for task ${task.id}: ${subtaskGuard.reason}`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+      return {
+        success: false,
+        originalTaskId: task.id,
+        subtasks: [],
+        createdTaskIds: [],
+        reasoning: `Subtask creation blocked by proliferation guard: ${subtaskGuard.reason}`,
+        error: subtaskGuard.reason,
       };
     }
 
@@ -471,14 +487,32 @@ function validateSubtaskDependencies(subtasks: Subtask[]): { valid: boolean; err
 async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<string[]> {
   const createdIds: string[] = [];
 
+  // Guard check before first pass: confirm we can still create subtasks
+  const depthGuard = canCreateTask(originalTask.outcome_id, { parentTaskId: originalTask.id });
+  if (!depthGuard.allowed) {
+    console.warn(`[TaskDecomposer] Blocked subtask creation: ${depthGuard.reason}`);
+    // Mark task as pending so a worker can attempt it without decomposition
+    updateTask(originalTask.id, { status: 'pending' });
+    return [];
+  }
+
+  // Enforce max children limit on the subtask slice to prevent over-creation
+  const maxChildren = getMaxChildrenPerTask();
+  const allowedSubtasks = subtasks.slice(0, maxChildren);
+  if (allowedSubtasks.length < subtasks.length) {
+    console.warn(
+      `[TaskDecomposer] Clamped subtask count from ${subtasks.length} to ${allowedSubtasks.length} (max children per task: ${maxChildren})`
+    );
+  }
+
   // First pass: create all subtasks without dependencies (but with decomposed_from_task_id)
-  for (let i = 0; i < subtasks.length; i++) {
-    const subtask = subtasks[i];
+  for (let i = 0; i < allowedSubtasks.length; i++) {
+    const subtask = allowedSubtasks[i];
 
     const taskInput: CreateTaskInput = {
       outcome_id: originalTask.outcome_id,
-      title: `[${i + 1}/${subtasks.length}] ${subtask.title}`,
-      description: buildSubtaskDescription(subtask, originalTask, i, subtasks.length),
+      title: `[${i + 1}/${allowedSubtasks.length}] ${subtask.title}`,
+      description: buildSubtaskDescription(subtask, originalTask, i, allowedSubtasks.length),
       prd_context: originalTask.prd_context || undefined,
       design_context: originalTask.design_context || undefined,
       priority: (originalTask.priority || 100) + i, // Slightly lower priority for later subtasks
@@ -487,6 +521,8 @@ async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<
       estimated_turns: subtask.estimatedTurns,
       // Link this subtask to its parent task for idempotency tracking
       decomposed_from_task_id: originalTask.id,
+      // Skip guards for subtasks — the guard check was already done above
+      skipGuards: true,
       // Dependencies will be set in second pass
     };
 
@@ -495,8 +531,8 @@ async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<
   }
 
   // Second pass: set dependencies using actual task IDs
-  for (let i = 0; i < subtasks.length; i++) {
-    const subtask = subtasks[i];
+  for (let i = 0; i < allowedSubtasks.length; i++) {
+    const subtask = allowedSubtasks[i];
     if (subtask.dependsOnIndices.length > 0) {
       // Map indices to actual task IDs
       const dependencyIds = subtask.dependsOnIndices
@@ -527,15 +563,17 @@ async function createSubtasks(originalTask: Task, subtasks: Subtask[]): Promise<
   const verificationTask = createTask({
     outcome_id: originalTask.outcome_id,
     title: `Verify: ${originalTask.title}`,
-    description: buildVerificationTaskDescription(originalTask, createdIds, subtasks.length),
+    description: buildVerificationTaskDescription(originalTask, createdIds, allowedSubtasks.length),
     prd_context: originalTask.prd_context || undefined,
     design_context: originalTask.design_context || undefined,
-    priority: (originalTask.priority || 100) + subtasks.length + 1, // Lowest priority (runs last)
+    priority: (originalTask.priority || 100) + allowedSubtasks.length + 1, // Lowest priority (runs last)
     phase: originalTask.phase,
     complexity_score: 2, // Verification is typically simple
     estimated_turns: 4,
     decomposed_from_task_id: originalTask.id,
     depends_on: createdIds, // Depends on ALL subtasks completing
+    // Skip guards for the verification task — it's part of the decomposition set
+    skipGuards: true,
   });
 
   console.log(`[TaskDecomposer] Created verification task ${verificationTask.id} for decomposed task ${originalTask.id}`);

@@ -201,6 +201,12 @@ export interface Task {
   decomposed_from_task_id: string | null;            // FK to parent task if this is a subtask
   // Human-in-the-loop gates
   gates: string | null;                              // JSON array of TaskGate objects
+  // Deterministic post-task verification command (run in workspace dir after completion)
+  verify_command: string | null;
+  // Evolve mode: hill-climbing optimization fields
+  metric_command: string | null;      // Shell command that outputs a numeric metric (lower = better)
+  metric_baseline: number | null;     // Baseline metric value before optimization begins
+  optimization_budget: number | null; // Max optimization iterations (default 5)
 }
 
 export interface Worker {
@@ -371,7 +377,13 @@ export type ActivityType =
   | 'analysis_failed'
   | 'improvement_created'
   | 'worker_restarted'
-  | 'task_refinement_started';
+  | 'task_refinement_started'
+  | 'discovery_started'
+  | 'discovery_clarity'
+  | 'discovery_research'
+  | 'discovery_plan'
+  | 'discovery_completed'
+  | 'discovery_failed';
 
 export interface Activity {
   id: number;

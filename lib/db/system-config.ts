@@ -97,3 +97,69 @@ export function getDefaultIsolationMode(): IsolationMode {
 export function setDefaultIsolationMode(mode: IsolationMode): void {
   setConfig('default_isolation_mode', mode);
 }
+
+/**
+ * Get the maximum number of pending tasks allowed per outcome.
+ * Returns 100 if not configured.
+ */
+export function getMaxPendingTasks(): number {
+  const value = getConfig('max_pending_tasks');
+  if (value !== null) {
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 100; // Default
+}
+
+/**
+ * Set the maximum number of pending tasks allowed per outcome.
+ */
+export function setMaxPendingTasks(value: number): void {
+  setConfig('max_pending_tasks', String(value));
+}
+
+/**
+ * Get the maximum subtask depth allowed (hops from root via decomposed_from_task_id chain).
+ * Returns 3 if not configured.
+ */
+export function getMaxSubtaskDepth(): number {
+  const value = getConfig('max_subtask_depth');
+  if (value !== null) {
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 3; // Default
+}
+
+/**
+ * Set the maximum subtask depth allowed.
+ */
+export function setMaxSubtaskDepth(value: number): void {
+  setConfig('max_subtask_depth', String(value));
+}
+
+/**
+ * Get the maximum number of children (subtasks) allowed per parent task.
+ * Returns 15 if not configured.
+ */
+export function getMaxChildrenPerTask(): number {
+  const value = getConfig('max_children_per_task');
+  if (value !== null) {
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 15; // Default
+}
+
+/**
+ * Set the maximum number of children (subtasks) allowed per parent task.
+ */
+export function setMaxChildrenPerTask(value: number): void {
+  setConfig('max_children_per_task', String(value));
+}

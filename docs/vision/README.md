@@ -48,7 +48,7 @@ As noted in compound engineering research: "The PRD shows WHAT the app will do, 
 | **Conversational** | [CONVERSATIONAL-API.md](./CONVERSATIONAL-API.md) | - | Telegram/chat interface |
 | **Deployment** | [DEPLOYMENT.md](./DEPLOYMENT.md) | [Design](../design/DEPLOYMENT.md) | Always-on hosting and chat interfaces |
 | **Dispatcher** | [DISPATCHER.md](./DISPATCHER.md) | [Design](../design/DISPATCHER.md) | Request routing and classification |
-| **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Design](../design/ORCHESTRATION.md) | Two-phase execution management |
+| **Orchestration** | [ORCHESTRATION.md](./ORCHESTRATION.md) | [Design](../design/ORCHESTRATION.md) | Three-phase execution management (Discovery → Capability → Execution) |
 | **Worker** | [WORKER.md](./WORKER.md) | [Design](../design/WORKER.md) | Task execution engine (Ralph) |
 | **HOMЯ** | [HOMЯ](../homr/VISION.md) | [Design](../homr/DESIGN.md) | Intelligent orchestration layer |
 | **Learnings** | [Learnings](../learnings/VISION.md) | [Design](../learnings/DESIGN.md) | Cross-outcome memory system |
@@ -74,26 +74,32 @@ User Input
        │
        ▼
 ┌─────────────────┐
-│ ORCHESTRATION   │ ← Manages two-phase execution
+│ ORCHESTRATION   │ ← Manages three-phase execution
 └────────┬────────┘
          │
-    ┌────┴────┐
-    ▼         ▼
-┌───────┐ ┌───────┐
-│SKILLS │ │WORKER │ ← Capability phase builds skills
-└───────┘ └───┬───┘   Execution phase runs tasks
-              │
-              ├────────────────────┐
-              ▼                    ▼
-       ┌────────────┐      ┌────────────┐
-       │   HOMЯ     │ ←──→ │  REVIEW    │ ← HOMЯ observes tasks, steers work
-       └──────┬─────┘      └──────┬─────┘   Review checks quality at intervals
-              │                   │
-              └─────────┬─────────┘
-                        ▼
-                 ┌────────────┐
-                 │ SUPERVISOR │ ← Monitors for stuck/failed states
-                 └────────────┘
+    ┌────┴──────────────┐
+    ▼                   ▼
+┌──────────┐     ┌───────┐
+│DISCOVERY │     │SKILLS │ ← Discovery researches domain
+└──────────┘     └───────┘   Capability phase builds skills
+         │           │
+         └─────┬─────┘
+               ▼
+           ┌───────┐
+           │WORKER │ ← Execution phase runs tasks
+           └───┬───┘
+               │
+               ├────────────────────┐
+               ▼                    ▼
+        ┌────────────┐      ┌────────────┐
+        │   HOMЯ     │ ←──→ │  REVIEW    │ ← HOMЯ observes tasks, steers work
+        └──────┬─────┘      └──────┬─────┘   Review checks quality at intervals
+               │                   │
+               └─────────┬─────────┘
+                         ▼
+                  ┌────────────┐
+                  │ SUPERVISOR │ ← Monitors for stuck/failed states
+                  └────────────┘
 ```
 
 **Supporting Systems:**

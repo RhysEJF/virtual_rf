@@ -13,6 +13,7 @@ import {
   getHomrContext,
   logHomrActivity,
 } from '../db/homr';
+import { getEventBus } from '../events/bus';
 import { getOutcomeById } from '../db/outcomes';
 import { getLatestDesignDoc } from '../db/design-docs';
 import { memoryService } from '../memory';
@@ -127,6 +128,7 @@ export async function observeTask(input: ObserveTaskInput): Promise<ObservationR
     ambiguity_data: result.ambiguity || undefined,
     summary: result.summary,
   });
+  getEventBus().emit({ type: 'homr.observation', outcomeId, taskId: task.id, data: { onTrack: result.onTrack, alignmentScore: result.alignmentScore, quality: result.quality }, timestamp: new Date().toISOString() });
 
   // Add discoveries to context store
   for (const discovery of result.discoveries) {

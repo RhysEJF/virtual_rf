@@ -2,12 +2,12 @@
  * Discovery Agent
  *
  * Orchestrates the discovery pipeline for outcomes before task execution.
- * Runs clarity check → research → planning → task generation.
+ * Runs clarity check → interview → research → planning → task generation.
  *
  * Phases:
  * - QUICK tier: clarity check → task generation directly
  * - STANDARD tier: clarity check → research → plan (MORE detail) → task generation
- * - DEEP tier: clarity check → research → plan (A LOT detail) → task generation
+ * - DEEP tier: clarity check → interview → research → plan (A LOT detail) → task generation
  */
 
 import { claudeComplete } from '../claude/client';
@@ -73,7 +73,7 @@ export async function runDiscovery(
     const intentText = intent?.items
       ?.map((i: { title: string; description: string }) => `- ${i.title}: ${i.description}`)
       .join('\n') || '';
-    const fullDescription = `${description}\n\n${intentText}`.trim();
+    let fullDescription = `${description}\n\n${intentText}`.trim();
 
     // Phase 1: Clarity Check (unless tier overridden by caller)
     if (!tierOverride) {
@@ -114,6 +114,24 @@ export async function runDiscovery(
       });
 
       return session;
+    }
+
+    // Phase 2.5: Self-directed Interview (DEEP tier only)
+    if (session.tier === 'DEEP') {
+      session.phase = 'interview';
+      activeSessions.set(outcomeId, session);
+
+      const interviewResult = await runSelfDirectedInterview(outcomeId, fullDescription);
+      // Enrich description with interview findings
+      fullDescription = `${fullDescription}\n\n## Interview Findings\n${interviewResult}`;
+
+      createActivity({
+        outcome_id: outcomeId,
+        outcome_name: outcome.name,
+        type: 'discovery_interview',
+        title: 'Self-directed interview completed',
+        description: interviewResult.slice(0, 200),
+      });
     }
 
     // Phase 3: Local Research (STANDARD and DEEP)
@@ -233,6 +251,87 @@ Respond with ONLY valid JSON (no markdown fences):
     };
   } catch {
     return { tier: 'STANDARD', reasoning: 'Failed to parse clarity check — defaulting to STANDARD' };
+  }
+}
+
+/**
+ * Self-directed interview for DEEP tier.
+ * The agent identifies top unknowns, makes best-guess answers based on
+ * codebase context, and flags low-confidence items as risks.
+ * This enriches the plan quality without requiring interactive user input.
+ */
+async function runSelfDirectedInterview(
+  outcomeId: string,
+  description: string
+): Promise<string> {
+  const prompt = `You are conducting a self-directed interview to clarify an outcome before planning.
+
+OUTCOME DESCRIPTION:
+${description}
+
+The project is at ~/flow/ (Next.js 14, TypeScript, SQLite).
+
+Follow this process:
+1. Identify the 3-5 most important unknowns or ambiguities in this outcome
+2. For each unknown, use your knowledge of the codebase and common patterns to provide a best-guess answer
+3. Rate your confidence in each answer (high/medium/low)
+4. Flag low-confidence answers as risks that should be validated during implementation
+
+Respond with ONLY valid JSON (no markdown fences):
+{
+  "clarifications": [
+    {
+      "question": "The key unknown",
+      "answer": "Your best-guess answer based on codebase context",
+      "confidence": "high|medium|low",
+      "impact": "How this affects the implementation plan"
+    }
+  ],
+  "scope_summary": "Concise scope statement incorporating your answers",
+  "constraints": ["Any constraints discovered from codebase analysis"],
+  "out_of_scope": ["Things that should be explicitly excluded"],
+  "risks": ["Low-confidence assumptions that need validation"]
+}`;
+
+  const result = await claudeComplete({
+    prompt,
+    outcomeId,
+    maxTurns: 3,
+    description: 'Discovery self-directed interview',
+  });
+
+  try {
+    const text = result.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return result.text;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Format interview results as readable context for downstream phases
+    const lines: string[] = [];
+    if (parsed.scope_summary) {
+      lines.push(`**Scope:** ${parsed.scope_summary}`);
+    }
+    if (parsed.clarifications?.length) {
+      lines.push('\n**Key Decisions:**');
+      for (const c of parsed.clarifications) {
+        const confidence = c.confidence === 'low' ? ' [LOW CONFIDENCE — validate]' : '';
+        lines.push(`- ${c.question} → ${c.answer}${confidence}`);
+      }
+    }
+    if (parsed.constraints?.length) {
+      lines.push(`\n**Constraints:** ${parsed.constraints.join('; ')}`);
+    }
+    if (parsed.out_of_scope?.length) {
+      lines.push(`\n**Out of Scope:** ${parsed.out_of_scope.join('; ')}`);
+    }
+    if (parsed.risks?.length) {
+      lines.push(`\n**Risks:** ${parsed.risks.join('; ')}`);
+    }
+    return lines.join('\n');
+  } catch {
+    // If parsing fails, return raw text — still useful context
+    return result.text;
   }
 }
 

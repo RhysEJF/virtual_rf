@@ -16,6 +16,7 @@ import { isClaudeAvailable, claudeComplete } from '@/lib/claude/client';
 import { createTask } from '@/lib/db/tasks';
 import { createOutcome, getActiveOutcomes } from '@/lib/db/outcomes';
 import { logOutcomeCreated } from '@/lib/db/activity';
+import { runDiscovery } from '@/lib/agents/discovery-agent';
 import type { IsolationMode } from '@/lib/db/schema';
 
 type ModeHint = 'smart' | 'quick' | 'long';
@@ -233,7 +234,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
       }
 
       case 'deep': {
-        // Generate brief using Claude
+        // Generate brief for outcome metadata (title/objective) only
         const brief = await generateBrief(input);
 
         if (!brief) {
@@ -243,23 +244,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
           });
         }
 
-        // Create an Outcome (not a legacy Project)
+        // Create outcome WITHOUT tasks — discovery pipeline will generate them
         const outcome = createOutcome({
           name: brief.title,
           brief: input,
           intent: JSON.stringify({
             summary: brief.objective,
-            items: brief.prd.map(item => ({
-              id: item.id,
-              title: item.title,
-              description: item.description,
-              acceptance_criteria: [],
-              priority: item.priority <= 3 ? 'high' : item.priority <= 6 ? 'medium' : 'low',
-              status: 'pending',
-            })),
+            items: [], // Discovery will populate items via task generation
             success_criteria: brief.deliverables,
           }),
-          isolation_mode: isolationMode, // Pass through isolation mode (undefined = use default)
+          isolation_mode: isolationMode,
         });
 
         const outcomeId = outcome.id;
@@ -267,18 +261,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
         // Log activity
         logOutcomeCreated(outcomeId, brief.title);
 
-        // Create tasks from PRD items for the worker to claim
-        for (const item of brief.prd) {
-          createTask({
-            outcome_id: outcomeId,
-            title: item.title,
-            description: item.description,
-            prd_context: JSON.stringify(item),
-            priority: item.priority * 10, // Convert 1-10 scale to 10-100 range
-          });
-        }
+        // Trigger discovery pipeline asynchronously with DEEP tier forced
+        runDiscovery(outcomeId, 'DEEP').catch(err => {
+          console.error(`[Dispatch] Discovery pipeline failed for ${outcomeId}:`, err);
+        });
 
-        // Don't auto-start - let user review and start when ready
         return NextResponse.json({
           type: 'outcome',
           outcomeId: outcomeId,
@@ -287,9 +274,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<DispatchR
 
 **Objective:** ${brief.objective}
 
-**Tasks:** ${brief.prd.length} tasks created
+**Discovery running (DEEP tier):** Clarity check → Interview → Research → Plan → Task generation
 
-Review the outcome and start a worker when ready.`,
+Review progress on the outcome page. Tasks will appear as discovery completes.`,
         });
       }
 

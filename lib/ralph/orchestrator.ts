@@ -87,24 +87,47 @@ export async function runOrchestrated(
   // Discovery phase — run before capability analysis if no tasks exist
   let existingTasks = getTasksByOutcome(outcomeId);
   if (existingTasks.length === 0) {
-    console.log('[Orchestrator] No tasks found — triggering discovery pipeline');
-    try {
-      const { runDiscovery } = await import('../agents/discovery-agent');
-      const session = await runDiscovery(outcomeId);
-      if (session.status === 'failed') {
+    // Guard: check if discovery is already running (e.g., triggered by dispatch)
+    const { runDiscovery, getDiscoverySession } = await import('../agents/discovery-agent');
+    const existingSession = getDiscoverySession(outcomeId);
+
+    if (existingSession && existingSession.status === 'running') {
+      console.log('[Orchestrator] Discovery already running — waiting for it to complete');
+      // Poll until discovery completes (check every 2s, timeout after 5 min)
+      const maxWait = 300_000;
+      const start = Date.now();
+      while (Date.now() - start < maxWait) {
+        await new Promise(r => setTimeout(r, 2000));
+        const session = getDiscoverySession(outcomeId);
+        if (!session || session.status !== 'running') break;
+      }
+      const finalSession = getDiscoverySession(outcomeId);
+      if (finalSession?.status === 'failed') {
         return {
           success: false,
           phase: 'capability',
-          message: `Discovery pipeline failed: ${session.error || 'unknown error'}`,
+          message: `Discovery pipeline failed: ${finalSession.error || 'unknown error'}`,
         };
       }
-    } catch (error) {
-      console.error('[Orchestrator] Discovery failed:', error);
-      return {
-        success: false,
-        phase: 'capability',
-        message: `Discovery pipeline failed: ${error instanceof Error ? error.message : 'unknown error'}`,
-      };
+    } else {
+      console.log('[Orchestrator] No tasks found — triggering discovery pipeline');
+      try {
+        const session = await runDiscovery(outcomeId);
+        if (session.status === 'failed') {
+          return {
+            success: false,
+            phase: 'capability',
+            message: `Discovery pipeline failed: ${session.error || 'unknown error'}`,
+          };
+        }
+      } catch (error) {
+        console.error('[Orchestrator] Discovery failed:', error);
+        return {
+          success: false,
+          phase: 'capability',
+          message: `Discovery pipeline failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        };
+      }
     }
 
     // Re-check tasks after discovery — continue to capability/execution phases

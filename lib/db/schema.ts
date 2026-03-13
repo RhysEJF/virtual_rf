@@ -380,6 +380,7 @@ export type ActivityType =
   | 'task_refinement_started'
   | 'discovery_started'
   | 'discovery_clarity'
+  | 'discovery_interview'
   | 'discovery_research'
   | 'discovery_plan'
   | 'discovery_completed'

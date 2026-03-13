@@ -265,16 +265,20 @@ async function runSelfDirectedInterview(
   outcomeId: string,
   description: string
 ): Promise<string> {
+  const workspacePath = getWorkspacePath(outcomeId);
+  ensureWorkspaceExists(outcomeId);
+
   const prompt = `You are conducting a self-directed interview to clarify an outcome before planning.
 
 OUTCOME DESCRIPTION:
 ${description}
 
-The project is at ~/flow/ (Next.js 14, TypeScript, SQLite).
+The outcome workspace is at: ${workspacePath}
+If there are documents in this directory, read them to inform your answers.
 
 Follow this process:
 1. Identify the 3-5 most important unknowns or ambiguities in this outcome
-2. For each unknown, use your knowledge of the codebase and common patterns to provide a best-guess answer
+2. For each unknown, use the workspace documents and context to provide a best-guess answer
 3. Rate your confidence in each answer (high/medium/low)
 4. Flag low-confidence answers as risks that should be validated during implementation
 
@@ -344,21 +348,25 @@ Respond with ONLY valid JSON (no markdown fences):
 }
 
 async function runLocalResearch(outcomeId: string, description: string): Promise<string> {
-  const prompt = `You are researching the Flow project codebase to gather context for planning.
+  const workspacePath = getWorkspacePath(outcomeId);
+  ensureWorkspaceExists(outcomeId);
+
+  const prompt = `You are researching all available context for an outcome before creating a plan.
 
 Outcome description:
 ${description}
 
-The project is at ~/flow/ (Next.js 14, TypeScript, SQLite).
-Key directories: lib/ (business logic), app/ (Next.js routes), cli/ (CLI tool).
+The outcome workspace is at: ${workspacePath}
+Read the files in this directory (especially docs/, any .txt, .csv, .md files) to understand the full context.
 
-Analyze what exists in the codebase that's relevant to this outcome. Focus on:
-1. Existing files and patterns that relate to this work
-2. Integration points (APIs, database tables, shared utilities)
-3. Conventions to follow (naming, error handling, imports)
-4. Potential risks or complications
+Your job:
+1. Read every document in the workspace — these are the primary source material
+2. Summarize key findings, themes, and actionable insights from the documents
+3. Identify patterns, contradictions, or gaps across documents
+4. Note any constraints, stakeholders, or decisions mentioned
+5. Flag anything ambiguous or missing that would affect planning
 
-Provide a concise research summary as plain text — no code implementations, only findings about what currently exists.`;
+Provide a thorough research summary as plain text. This summary will be used to write the implementation plan, so be specific and include concrete details from the documents.`;
 
   const result = await claudeComplete({
     prompt,
@@ -396,13 +404,13 @@ Write a plan in clean markdown following this structure:
 
 ### Approach
 - High-level strategy and why this approach over alternatives
-- Simplicity criterion: is this the simplest approach that works?
+- Key assumptions and constraints from the research
 
 ### Tasks
 List tasks in execution order. For each task include:
 - **Title**: Action-oriented name
-- **Description**: What to change and why, with acceptance criteria
-- **verify_command**: A shell command (e.g., \`npm run typecheck\`, \`node -e "require('./lib/x')"\`) that returns exit code 0 on success
+- **Description**: What to do, why, and what "done" looks like (acceptance criteria)
+- **verify_command**: A shell command that returns exit code 0 on success. For code tasks use tests/linters. For document/analysis tasks use \`test -f path/to/expected/output.md\` or similar file-existence checks.
 - **complexity_score**: 1-10
 - **estimated_turns**: Number of Claude turns expected
 - **depends_on**: Title of any task this depends on (or "none")
@@ -412,11 +420,11 @@ List tasks in execution order. For each task include:
 - Mitigation strategies
 
 IMPORTANT RULES:
-- NEVER include code implementations — plans only
+- NEVER include actual implementations — plans only
 - Keep tasks focused (each should need fewer than 10 Claude turns)
 - Every task MUST have a verify_command
 - Prefer the simplest approach that works
-- Include a final verification/integration task`;
+- Include a final review/synthesis task`;
 
   const result = await claudeComplete({
     prompt,

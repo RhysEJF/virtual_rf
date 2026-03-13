@@ -544,6 +544,49 @@ Add a lightweight signal layer to outcome workspaces:
 
 ---
 
+### 17. Task Phases for Parallel Worker Deployment
+
+| Field | Value |
+|-------|-------|
+| **Status** | `needs to spec out` |
+| **Added** | 2026-03-13 |
+| **Source** | Strategic Positioning Audit outcome — 31 tasks across 8 phases, only 1 worker |
+| **Category** | Orchestration improvement |
+
+**Problem:**
+Flow's Ralph worker operates sequentially — one worker per outcome, claiming and completing tasks one at a time. Dependencies correctly enforce ordering (task B won't start until task A completes), but there's no mechanism to say "these 5 tasks are independent and should all run simultaneously."
+
+This became painfully visible during the Strategic Positioning Audit outcome setup: Phase 2 has 5 specialist research tasks that are fully independent (each reads the same source documents through a different specialist lens). Phase 3 has 5 independent Minto-writing tasks. Phase 4 has 5 independent cross-review tasks. In each phase, all 5 could run in parallel, but the worker will execute them sequentially — turning what could be a 1x wall-clock phase into a 5x phase. Over 8 phases with significant parallelizable work, total execution time balloons from ~3 hours (parallel) to ~12+ hours (sequential).
+
+The book projects hit the same pattern at larger scale: the Dad Guide had 55 parallel research tasks and the Swarm Intelligence project had 6-domain research batches. Both would have completed dramatically faster with parallel workers.
+
+**Why this matters beyond speed:**
+- **Specialist isolation**: When 5 specialists should independently review the same material, sequential execution means later specialists run in a context where earlier specialists' outputs already exist in the workspace. This creates subtle contamination — the 5th specialist might unconsciously align with outputs it can see from specialists 1-4, undermining the "independent perspective" design.
+- **Human gate efficiency**: The founder interview gate (Phase 6) blocks all downstream work. If Phases 2-5 run sequentially (20 tasks), the founder waits hours before they can act. Parallel execution gets the founder involved faster.
+- **Overnight reliability**: Long sequential runs are more likely to hit rate limits, timeouts, or infrastructure issues. Shorter parallel bursts are more resilient.
+
+**Proposed Solution (needs spec):**
+Add a `phase` concept to tasks — a string/number tag that groups tasks for concurrent execution.
+
+Possible approaches (not yet decided):
+1. **Phase tag on tasks** — `phase: "research"` groups tasks. When all dependencies for a phase are met, spawn N workers (one per task in the phase). Workers die after completing their single task. Simple but needs multi-worker infrastructure.
+2. **Worker pool per outcome** — `max_concurrent_workers: 5` on outcomes. Multiple Ralph workers claim tasks independently. Dependencies still enforce ordering. Simpler — no phase concept needed, just parallel workers. But loses the "these tasks are specifically designed to run together" semantics.
+3. **Phase gates** — Extend the existing gate system with a `phase_gate` type. All tasks in a phase share a gate that opens when predecessor phases complete. Combined with multi-worker, this gives explicit phase boundaries.
+
+**Open questions:**
+- Does multi-worker create race conditions in the workspace filesystem? (Workers writing to different directories should be fine, but shared files like PLAN.md could conflict)
+- How does HOMR observation work with parallel task completions? (Currently sequential: task completes → observe → claim next)
+- Should parallel workers share a single Claude Max subscription, or does rate limiting make true parallelism impossible with one subscription?
+- Is the phase concept worth the complexity, or is "just allow N workers per outcome" sufficient?
+
+**Dependencies:** May benefit from Event Backbone (#6) for coordinating parallel worker lifecycle. Related to Dynamic Task Scoring (#1) which also only matters with concurrent workers.
+
+**Effort:** Medium-High (multi-worker infrastructure is the hard part; phase tagging is easy)
+
+**References:** Strategic Positioning Audit outcome (`out_wEerKgAE7fAi`) — 31 tasks, 8 phases, 15+ parallelizable tasks. Dad Guide outcome (`out_IVZ0PiBvw7Ac`) — 152 tasks, 55+ parallel research tasks. Swarm Intelligence outcome (`out_ONHRhEIDJuMv`) — 93 tasks, 6 parallel domain batches.
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

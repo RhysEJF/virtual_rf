@@ -298,8 +298,15 @@ Respond with ONLY valid JSON (no markdown fences):
     prompt,
     outcomeId,
     maxTurns: 3,
+    timeout: 300000, // 5 minutes — interview needs time for codebase analysis
     description: 'Discovery self-directed interview',
   });
+
+  console.log(`[Discovery:Interview] success=${result.success}, textLen=${result.text?.length ?? 0}, error=${result.error || 'none'}`);
+  if (!result.text) {
+    console.warn(`[Discovery:Interview] Empty response from Claude CLI`);
+    return 'Interview could not be completed — Claude returned empty response.';
+  }
 
   try {
     const text = result.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -357,9 +364,11 @@ Provide a concise research summary as plain text — no code implementations, on
     prompt,
     outcomeId,
     maxTurns: 3,
+    timeout: 300000, // 5 minutes — research reads codebase files
     description: 'Discovery local research',
   });
 
+  console.log(`[Discovery:Research] success=${result.success}, textLen=${result.text?.length ?? 0}, error=${result.error || 'none'}`);
   return result.text || 'No research context gathered.';
 }
 
@@ -414,9 +423,14 @@ IMPORTANT RULES:
     outcomeId,
     maxTurns: 3,
     disableNativeTools: true,
+    timeout: 300000, // 5 minutes for plan writing
     description: 'Discovery plan writing',
   });
 
+  console.log(`[Discovery:Plan] success=${result.success}, textLen=${result.text?.length ?? 0}, error=${result.error || 'none'}`);
+  if (result.text) {
+    console.log(`[Discovery:Plan] First 200 chars: ${result.text.slice(0, 200)}`);
+  }
   const planContent = result.text || '# Plan\n\nNo plan generated.';
   const planFile = path.join(workspacePath, 'PLAN.md');
   fs.writeFileSync(planFile, planContent, 'utf-8');

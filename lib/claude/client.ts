@@ -122,6 +122,14 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
     claude.on('close', (code) => {
       clearTimeout(timeoutId);
 
+      // Log raw response for debugging
+      if (description) {
+        console.log(`[ClaudeCLI:${description}] exit=${code}, stdoutLen=${stdout.length}, stderrLen=${stderr.length}`);
+        if (stderr) {
+          console.log(`[ClaudeCLI:${description}] stderr: ${stderr.slice(0, 300)}`);
+        }
+      }
+
       if (code === 0) {
         try {
           // The CLI may output multiple JSON lines (streaming), find the result message

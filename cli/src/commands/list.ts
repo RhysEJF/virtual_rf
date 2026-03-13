@@ -96,8 +96,9 @@ export const listCommand = command
       }
 
       // Build table data
-      const headers = ['NAME', 'STATUS', 'TASKS', 'WORKERS'];
+      const headers = ['ID', 'NAME', 'STATUS', 'TASKS', 'WORKERS'];
       const rows: string[][] = filteredOutcomes.map(outcome => {
+        const id = chalk.gray(outcome.id.replace('out_', ''));
         const name = truncate(outcome.name, 28);
         const status = outcomeStatusLabel(outcome.status);
         const tasks = outcome.total_tasks > 0
@@ -106,11 +107,11 @@ export const listCommand = command
         const workers = outcome.active_workers > 0
           ? chalk.green(`\u2699 ${outcome.active_workers}`)
           : chalk.gray('-');
-        return [name, status, tasks, workers];
+        return [id, name, status, tasks, workers];
       });
 
       console.log();
-      drawTable(headers, rows, { columnWidths: [30, 16, 30, 10] });
+      drawTable(headers, rows, { columnWidths: [18, 30, 16, 30, 10] });
       console.log();
 
       // Print summary

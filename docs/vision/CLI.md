@@ -90,6 +90,8 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Telegram bot management (`flow telegram start/stop/status`) | Complete |
 | Task refinement (`flow refine`) | Complete |
 | Task optimization (`flow task optimize`) | Complete |
+| Skill-injected optimization (`--skill` flag) | Complete |
+| ID column in `flow list` | Complete |
 | Interactive chat mode | **Not started** |
 
 **Current:** 40 commands implemented (full coverage)
@@ -182,7 +184,7 @@ flow stop <id>        # alias for: flow worker stop <id>
 flow outcome list [--status=<s>] [--parent=<id>]        # Partially done via flow list
 flow outcome show <id> [--tasks] [--workers] [--intent] # Partially done via flow show
 flow outcome create --name="..." [--brief="..."]        # Done via flow new
-flow outcome update <id> [--status=<s>] [--name="..."]  # Not started
+flow outcome update <id> [--status=<s>] [--name="..."] [--optimize-intent] [--optimize-approach] [--skill <name>]  # Done via flow update
 flow outcome delete <id>                                # Not started
 flow outcome iterate <id> --feedback="..."              # Not started
 ```
@@ -192,8 +194,8 @@ flow outcome iterate <id> --feedback="..."              # Not started
 flow task list <outcome-id> [--status=<s>] [--phase=<p>]
 flow task show <id>
 flow task add <outcome-id> --title="..." [--description="..."] [--priority=<n>]
-flow task update <id> [--status=<s>] [--title="..."]
-flow task optimize <id> [--field <field>] [--create]         # AI-optimize + detect capabilities
+flow task update <id> [--status=<s>] [--title="..."] [--optimize-description] [--skill <name>]
+flow task optimize <id> [--field <field>] [--skill <name>] [--create]  # AI-optimize + detect capabilities
 flow task delete <id>
 flow refine <outcome-id>                                    # Enrich pending tasks (intent, approach, complexity, deps)
 ```
@@ -386,9 +388,9 @@ This mode:
 ```
 $ flow list
 
-ID              NAME                    STATUS     TASKS
-out_abc123      Landing Page           active     2/5 (3 pending)
-out_def456      API Integration        dormant    0/0
+ID                NAME                         STATUS          TASKS                          WORKERS
+wEerKgAE7fAi      Strategic Positioning Aud…    ● active        ██░░░░░░ 6% (2/31)             ⚙ 1
+abc123def456      Landing Page                 ○ dormant       ████████ 100% (5/5)            -
 ```
 
 ### JSON (For scripting)

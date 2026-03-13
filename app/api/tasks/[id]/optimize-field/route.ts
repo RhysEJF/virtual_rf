@@ -11,6 +11,8 @@ import { getTaskById, updateTask } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { complete } from '@/lib/claude/client';
 import { detectCapabilitiesWithClaude } from '@/lib/capabilities/detection';
+import { getSkillByName } from '@/lib/db/skills';
+import { getSkillContent } from '@/lib/agents/skill-manager';
 
 const OPTIMIZE_INTENT_PROMPT = `You are helping structure the "WHAT" (intent) for a task.
 
@@ -47,7 +49,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { field, content } = body;
+    const { field, content, skill: skillName } = body;
 
     if (!field || !['intent', 'approach'].includes(field)) {
       return NextResponse.json(
@@ -83,10 +85,21 @@ export async function POST(
       ? OPTIMIZE_INTENT_PROMPT
       : OPTIMIZE_APPROACH_PROMPT;
 
-    const prompt = promptTemplate
+    let prompt = promptTemplate
       .replace('{title}', task.title)
       .replace('{outcomeContext}', outcomeContext)
       .replace('{content}', content);
+
+    // Inject skill content if specified
+    if (skillName) {
+      const skill = getSkillByName(skillName);
+      if (skill) {
+        const skillContent = getSkillContent(skill.id);
+        if (skillContent) {
+          prompt = `${prompt}\n\n---\n\n## Reference Skill: ${skill.name}\n\nUse the following skill as methodology guidance for optimizing this ${field}:\n\n${skillContent}`;
+        }
+      }
+    }
 
     // Run Claude to optimize text
     const result = await complete({

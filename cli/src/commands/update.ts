@@ -17,6 +17,7 @@ interface UpdateCommandOptions extends OutputOptions {
   optimize?: boolean;
   optimizeIntent?: boolean;
   optimizeApproach?: boolean;
+  skill?: string;
 }
 
 interface OutcomeResponse {
@@ -43,7 +44,8 @@ const command = new Command('update')
   .option('--approach <text>', 'Set approach (raw text)')
   .option('--optimize', 'Optimize intent/approach via Claude (use with --intent or --approach)')
   .option('--optimize-intent', 'Re-optimize existing intent via Claude')
-  .option('--optimize-approach', 'Re-optimize existing approach via Claude');
+  .option('--optimize-approach', 'Re-optimize existing approach via Claude')
+  .option('--skill <name>', 'Inject a skill as methodology guidance for optimization');
 
 addOutputFlags(command);
 
@@ -83,7 +85,8 @@ export const updateCommand = command
       // Optimize intent (new text or re-optimize existing)
       if (hasOptimizeIntent) {
         if (!options.json && !options.quiet) {
-          console.log(chalk.gray('Optimizing intent via Claude...'));
+          const skillLabel = options.skill ? ` with skill "${options.skill}"` : '';
+          console.log(chalk.gray(`Optimizing intent via Claude${skillLabel}...`));
         }
 
         let rambleText = options.intent;
@@ -98,9 +101,14 @@ export const updateCommand = command
           }
         }
 
+        const intentPayload: Record<string, string> = { ramble: rambleText as string };
+        if (options.skill) {
+          intentPayload.skill = options.skill;
+        }
+
         const optimizeResponse = await api.post<OptimizeIntentResponse>(
           `/outcomes/${id}/optimize-intent`,
-          { ramble: rambleText }
+          intentPayload
         );
 
         if (!optimizeResponse.success) {
@@ -114,7 +122,8 @@ export const updateCommand = command
       // Optimize approach (new text or re-optimize existing)
       if (hasOptimizeApproach) {
         if (!options.json && !options.quiet) {
-          console.log(chalk.gray('Optimizing approach via Claude...'));
+          const skillLabel = options.skill ? ` with skill "${options.skill}"` : '';
+          console.log(chalk.gray(`Optimizing approach via Claude${skillLabel}...`));
         }
 
         let rambleText = options.approach;
@@ -134,9 +143,14 @@ export const updateCommand = command
           rambleText = outcome.brief;
         }
 
+        const approachPayload: Record<string, string> = { ramble: rambleText as string };
+        if (options.skill) {
+          approachPayload.skill = options.skill;
+        }
+
         const optimizeResponse = await api.post<OptimizeApproachResponse>(
           `/outcomes/${id}/optimize-approach`,
-          { ramble: rambleText }
+          approachPayload
         );
 
         if (!optimizeResponse.success) {

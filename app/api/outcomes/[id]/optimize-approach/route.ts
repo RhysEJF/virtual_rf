@@ -13,9 +13,12 @@ import { claudeComplete } from '@/lib/claude/client';
 import { logDesignUpdated } from '@/lib/db/activity';
 import { detectNewCapabilityNeeds, type CapabilityNeed, type ExistingCapability } from '@/lib/agents/capability-planner';
 import { getTasksByPhase } from '@/lib/db/tasks';
+import { getSkillByName } from '@/lib/db/skills';
+import { getSkillContent } from '@/lib/agents/skill-manager';
 
 interface OptimizeApproachRequest {
   ramble: string;
+  skill?: string;
 }
 
 export async function POST(
@@ -25,7 +28,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = (await request.json()) as OptimizeApproachRequest;
-    const { ramble } = body;
+    const { ramble, skill: skillName } = body;
 
     if (!ramble || typeof ramble !== 'string') {
       return NextResponse.json(
@@ -47,7 +50,7 @@ export async function POST(
     const existingDoc = getLatestDesignDoc(id);
 
     // Build prompt for Claude
-    const prompt = `You are helping create or update a design document (approach) for an outcome.
+    let prompt = `You are helping create or update a design document (approach) for an outcome.
 
 OUTCOME: ${outcome.name}
 BRIEF: ${outcome.brief || 'None'}
@@ -82,6 +85,17 @@ Rules:
 - Merge with existing approach if present
 - Focus on practical, actionable decisions
 - Consider the intent/PRD when suggesting technologies`;
+
+    // Inject skill content if specified
+    if (skillName) {
+      const skill = getSkillByName(skillName);
+      if (skill) {
+        const skillContent = getSkillContent(skill.id);
+        if (skillContent) {
+          prompt += `\n\n---\n\n## Reference Skill: ${skill.name}\n\nUse the following skill as methodology guidance for structuring this approach:\n\n${skillContent}`;
+        }
+      }
+    }
 
     // Call Claude
     const result = await claudeComplete({

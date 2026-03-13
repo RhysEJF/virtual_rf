@@ -300,6 +300,7 @@ interface UpdateOptions extends OutputOptions {
   dependsOn?: string;
   optimize?: boolean;
   optimizeDescription?: boolean;
+  skill?: string;
 }
 
 interface DetectedCapability {
@@ -326,7 +327,8 @@ const updateSubcommand = new Command('update')
   .option('--priority <n>', 'Set priority (1-100, lower runs first)')
   .option('--depends-on <task-ids>', 'Set dependencies (comma-separated task IDs, or "" to clear)')
   .option('--optimize', 'Optimize description via Claude (use with --description)')
-  .option('--optimize-description', 'Re-optimize existing description via Claude');
+  .option('--optimize-description', 'Re-optimize existing description via Claude')
+  .option('--skill <name>', 'Inject a skill as methodology guidance for optimization');
 
 addOutputFlags(updateSubcommand);
 
@@ -406,9 +408,14 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
         }
       }
 
+      const optimizePayload: Record<string, string> = { field: 'intent', content: descriptionText as string };
+      if (options.skill) {
+        optimizePayload.skill = options.skill;
+      }
+
       const optimizeResponse = await api.post<OptimizeFieldResponse>(
         `/tasks/${taskId}/optimize-field`,
-        { field: 'intent', content: descriptionText }
+        optimizePayload
       );
 
       if (!optimizeResponse.success) {
@@ -509,12 +516,14 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
 interface OptimizeOptions extends OutputOptions {
   field?: string;
   create?: boolean;
+  skill?: string;
 }
 
 const optimizeSubcommand = new Command('optimize')
   .description('AI-optimize task fields and detect needed capabilities')
   .argument('<task-id>', 'Task ID to optimize')
   .option('--field <field>', 'Field to optimize (intent or approach)', 'approach')
+  .option('--skill <name>', 'Inject a skill as methodology guidance (e.g., task-refiner)')
   .option('--create', 'Auto-create detected capability tasks');
 
 addOutputFlags(optimizeSubcommand);
@@ -540,12 +549,18 @@ optimizeSubcommand.action(async (taskId: string, options: OptimizeOptions) => {
     }
 
     if (!options.json && !options.quiet) {
-      console.log(chalk.gray(`Optimizing ${field} via Claude...`));
+      const skillLabel = options.skill ? ` with skill "${options.skill}"` : '';
+      console.log(chalk.gray(`Optimizing ${field} via Claude${skillLabel}...`));
+    }
+
+    const optimizePayload: Record<string, string> = { field, content };
+    if (options.skill) {
+      optimizePayload.skill = options.skill;
     }
 
     const optimizeResponse = await api.post<OptimizeFieldResponse>(
       `/tasks/${taskId}/optimize-field`,
-      { field, content }
+      optimizePayload
     );
 
     if (!optimizeResponse.success) {

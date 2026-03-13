@@ -9,9 +9,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOutcomeById, updateOutcome } from '@/lib/db/outcomes';
 import { claudeComplete } from '@/lib/claude/client';
 import { logIntentUpdated } from '@/lib/db/activity';
+import { getSkillByName } from '@/lib/db/skills';
+import { getSkillContent } from '@/lib/agents/skill-manager';
 
 interface OptimizeIntentRequest {
   ramble: string;
+  skill?: string;
 }
 
 export async function POST(
@@ -21,7 +24,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = (await request.json()) as OptimizeIntentRequest;
-    const { ramble } = body;
+    const { ramble, skill: skillName } = body;
 
     if (!ramble || typeof ramble !== 'string') {
       return NextResponse.json(
@@ -50,7 +53,7 @@ export async function POST(
     }
 
     // Build prompt for Claude
-    const prompt = `You are helping optimize a user's rambled thoughts into a structured PRD (Product Requirements Document) for an outcome.
+    let prompt = `You are helping optimize a user's rambled thoughts into a structured PRD (Product Requirements Document) for an outcome.
 
 OUTCOME: ${outcome.name}
 ORIGINAL BRIEF: ${outcome.brief || 'None'}
@@ -87,6 +90,17 @@ Rules:
 - Generate 3-7 items typically
 - Success criteria should be measurable when possible
 - Preserve existing items that are still relevant, update if user mentioned changes`;
+
+    // Inject skill content if specified
+    if (skillName) {
+      const skill = getSkillByName(skillName);
+      if (skill) {
+        const skillContent = getSkillContent(skill.id);
+        if (skillContent) {
+          prompt += `\n\n---\n\n## Reference Skill: ${skill.name}\n\nUse the following skill as methodology guidance for structuring this intent:\n\n${skillContent}`;
+        }
+      }
+    }
 
     // Call Claude
     const result = await claudeComplete({

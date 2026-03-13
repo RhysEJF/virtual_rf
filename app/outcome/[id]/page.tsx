@@ -366,13 +366,17 @@ export default function OutcomeDetailPage(): JSX.Element {
   };
 
   // Actions
-  const handleStartWorker = async () => {
+  const handleStartWorker = async (parallel = false) => {
     setActionLoading(true);
     try {
-      const response = await fetch(`/api/outcomes/${outcomeId}/workers`, { method: 'POST' });
+      const response = await fetch(`/api/outcomes/${outcomeId}/workers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parallel }),
+      });
       const data = await response.json();
       if (data.success) {
-        toast({ type: 'success', message: 'Worker started!' });
+        toast({ type: 'success', message: parallel ? 'Parallel worker started!' : 'Worker started!' });
       } else {
         toast({ type: 'error', message: data.error || 'Failed to start worker' });
       }
@@ -767,6 +771,7 @@ export default function OutcomeDetailPage(): JSX.Element {
   const hasEverHadWorker = outcome.workers.length > 0;
   const isDraft = !hasEverHadWorker && outcome.status === 'active';
   const canStartWorker = hasPendingTasks && !hasRunningWorker && outcome.status === 'active';
+  const canStartParallel = hasPendingTasks && hasRunningWorker && outcome.status === 'active';
 
   const needsCapabilities = outcome.capability_ready === 0;
   const capabilityInProgress = outcome.capability_ready === 1;
@@ -1473,10 +1478,20 @@ export default function OutcomeDetailPage(): JSX.Element {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={handleStartWorker}
+                    onClick={() => handleStartWorker(false)}
                     disabled={actionLoading}
                   >
                     Start Worker
+                  </Button>
+                )}
+                {canStartParallel && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleStartWorker(true)}
+                    disabled={actionLoading}
+                  >
+                    + Add Worker
                   </Button>
                 )}
               </CardHeader>

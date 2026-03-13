@@ -104,7 +104,7 @@ export const tasksCommand = command
       });
 
       console.log();
-      drawTable(headers, rows, { columnWidths: [18, 34, 16, 10] });
+      drawTable(headers, rows, { columnWidths: [22, 30, 16, 10] });
       console.log();
 
       // Print summary

@@ -26,7 +26,6 @@ import { HomrDashboard } from '@/app/components/HomrDashboard';
 import { CapabilitySuggestionBanner } from '@/app/components/CapabilitySuggestionBanner';
 import { EventStreamPanel } from '@/app/components/EventStreamPanel';
 import { DiscoveryStatusPanel } from '@/app/components/DiscoveryStatusPanel';
-import { PlanViewer } from '@/app/components/PlanViewer';
 import type { OutcomeStatus, WorkerStatus, Task, Worker, GitMode, SaveTarget, IsolationMode } from '@/lib/db/schema';
 import type { CapabilityNeed } from '@/lib/agents/capability-planner';
 import { IsolationModeSection } from '@/app/components/IsolationModeSection';
@@ -1354,10 +1353,7 @@ export default function OutcomeDetailPage(): JSX.Element {
             <DiscoveryStatusPanel outcomeId={outcomeId} />
           )}
 
-          {/* Plan Viewer (shown after discovery) */}
-          {!isParent && (
-            <PlanViewer outcomeId={outcomeId} />
-          )}
+          {/* Plan is now nested inside DiscoveryStatusPanel */}
 
           {/* Progress Section - First */}
           {(!isParent || outcome.tasks.length > 0) && (

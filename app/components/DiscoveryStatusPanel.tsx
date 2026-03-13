@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/app/components/ui/Button';
 import { Badge } from '@/app/components/ui/Badge';
+import { PlanViewer } from './PlanViewer';
 
 interface DiscoverySession {
   tier: 'QUICK' | 'STANDARD' | 'DEEP';
@@ -15,7 +16,7 @@ interface DiscoveryStatusPanelProps {
   outcomeId: string;
 }
 
-const PHASES = ['clarity-check', 'research', 'planning', 'task-generation', 'done'];
+const PHASES = ['clarity-check', 'interview', 'research', 'planning', 'task-generation', 'done'];
 
 const PHASE_LABELS: Record<string, string> = {
   'clarity-check': 'Clarity',
@@ -29,6 +30,16 @@ const PHASE_LABELS: Record<string, string> = {
 function getPhaseIndex(phase: string): number {
   const idx = PHASES.indexOf(phase);
   return idx >= 0 ? idx : -1;
+}
+
+/**
+ * Get the phases to display based on tier.
+ * DEEP tier shows all phases including interview.
+ * STANDARD/QUICK skip interview.
+ */
+function getPhasesForTier(tier?: string): string[] {
+  if (tier === 'DEEP') return PHASES;
+  return PHASES.filter(p => p !== 'interview');
 }
 
 export function DiscoveryStatusPanel({ outcomeId }: DiscoveryStatusPanelProps): JSX.Element {
@@ -63,7 +74,7 @@ export function DiscoveryStatusPanel({ outcomeId }: DiscoveryStatusPanelProps): 
     return () => clearInterval(interval);
   }, [sessionStatus, fetchSession]);
 
-  const handleStart = async () => {
+  const handleStart = async (): Promise<void> => {
     setStarting(true);
     try {
       const res = await fetch(`/api/outcomes/${outcomeId}/discover`, {
@@ -112,7 +123,8 @@ export function DiscoveryStatusPanel({ outcomeId }: DiscoveryStatusPanelProps): 
     );
   }
 
-  const currentPhaseIndex = getPhaseIndex(session.phase);
+  const displayPhases = getPhasesForTier(session.tier);
+  const currentPhaseIndex = displayPhases.indexOf(session.phase);
   const isRunning = session.status === 'running';
   const isCompleted = session.status === 'completed' || session.phase === 'done';
   const isFailed = session.status === 'failed';
@@ -137,7 +149,7 @@ export function DiscoveryStatusPanel({ outcomeId }: DiscoveryStatusPanelProps): 
 
       {/* Phase stepper */}
       <div className="flex items-center gap-1">
-        {PHASES.map((phase, idx) => {
+        {displayPhases.map((phase, idx) => {
           const isActive = phase === session.phase && isRunning;
           const isDone = idx < currentPhaseIndex || isCompleted;
           const isCurrent = idx === currentPhaseIndex;
@@ -168,6 +180,11 @@ export function DiscoveryStatusPanel({ outcomeId }: DiscoveryStatusPanelProps): 
           );
         })}
       </div>
+
+      {/* Plan viewer — nested inside discovery when plan exists */}
+      {(isCompleted || session.planPath) && (
+        <PlanViewer outcomeId={outcomeId} />
+      )}
     </div>
   );
 }

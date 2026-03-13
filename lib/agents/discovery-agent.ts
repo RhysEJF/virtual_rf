@@ -360,18 +360,20 @@ The outcome workspace is at: ${workspacePath}
 Read the files in this directory (especially docs/, any .txt, .csv, .md files) to understand the full context.
 
 Your job:
-1. Read every document in the workspace — these are the primary source material
-2. Summarize key findings, themes, and actionable insights from the documents
-3. Identify patterns, contradictions, or gaps across documents
-4. Note any constraints, stakeholders, or decisions mentioned
-5. Flag anything ambiguous or missing that would affect planning
+1. List the files in the workspace first to see what's available
+2. Read each document — these are the primary source material
+3. SKIP files larger than 500KB (e.g., large CSVs) — note them but don't try to read them fully
+4. Summarize key findings, themes, and actionable insights from the documents
+5. Identify patterns, contradictions, or gaps across documents
+6. Note any constraints, stakeholders, or decisions mentioned
+7. Flag anything ambiguous or missing that would affect planning
 
 Provide a thorough research summary as plain text. This summary will be used to write the implementation plan, so be specific and include concrete details from the documents.`;
 
   const result = await claudeComplete({
     prompt,
     outcomeId,
-    maxTurns: 3,
+    maxTurns: 15, // Needs enough turns to read all workspace documents
     timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery local research',
   });

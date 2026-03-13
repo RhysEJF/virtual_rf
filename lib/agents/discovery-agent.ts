@@ -239,7 +239,7 @@ Respond with ONLY valid JSON (no markdown fences):
   const result = await claudeComplete({
     prompt,
     maxTurns: 1,
-    disableNativeTools: true,
+    timeout: 60000, // 1 min — simple text generation
     description: 'Discovery clarity check',
   });
 
@@ -466,7 +466,6 @@ IMPORTANT RULES:
     prompt,
     outcomeId,
     maxTurns: 3,
-    disableNativeTools: true,
     timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery plan writing',
   });
@@ -513,7 +512,7 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation):
     prompt,
     outcomeId,
     maxTurns: 3,
-    disableNativeTools: true,
+    timeout: 300000, // 5 min
     description: 'Discovery task generation from description',
   });
 
@@ -551,7 +550,7 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation).`;
     prompt,
     outcomeId,
     maxTurns: 3,
-    disableNativeTools: true,
+    timeout: 300000, // 5 min
     description: 'Discovery task generation from plan',
   });
 

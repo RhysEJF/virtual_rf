@@ -347,9 +347,43 @@ Respond with ONLY valid JSON (no markdown fences):
   }
 }
 
+/**
+ * Count readable files in workspace (recursively, skipping node_modules etc.)
+ */
+function countWorkspaceFiles(workspacePath: string): number {
+  let count = 0;
+  try {
+    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(workspacePath, entry.name);
+      if (entry.isDirectory()) {
+        count += countWorkspaceFiles(fullPath);
+      } else {
+        // Only count readable files (skip huge ones >500KB)
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.size < 512000) count++;
+        } catch {
+          // Skip inaccessible files
+        }
+      }
+    }
+  } catch {
+    // Directory doesn't exist or isn't readable
+  }
+  return count;
+}
+
 async function runLocalResearch(outcomeId: string, description: string): Promise<string> {
   const workspacePath = getWorkspacePath(outcomeId);
   ensureWorkspaceExists(outcomeId);
+
+  // Count readable files to scale turns — each file needs ~1 turn to read + 1 for listing + 2 for synthesis
+  const fileCount = countWorkspaceFiles(workspacePath);
+  const maxTurns = Math.max(5, fileCount + 3);
+
+  console.log(`[Discovery:Research] ${fileCount} files in workspace, using maxTurns=${maxTurns}`);
 
   const prompt = `You are researching all available context for an outcome before creating a plan.
 
@@ -373,7 +407,7 @@ Provide a thorough research summary as plain text. This summary will be used to 
   const result = await claudeComplete({
     prompt,
     outcomeId,
-    maxTurns: 15, // Needs enough turns to read all workspace documents
+    maxTurns,
     timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery local research',
   });

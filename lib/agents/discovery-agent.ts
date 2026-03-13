@@ -298,7 +298,7 @@ Respond with ONLY valid JSON (no markdown fences):
     prompt,
     outcomeId,
     maxTurns: 3,
-    timeout: 120000, // 2 min idle timeout (resets on activity)
+    timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery self-directed interview',
   });
 
@@ -364,7 +364,7 @@ Provide a concise research summary as plain text — no code implementations, on
     prompt,
     outcomeId,
     maxTurns: 3,
-    timeout: 120000, // 2 min idle timeout (resets on activity)
+    timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery local research',
   });
 
@@ -423,7 +423,7 @@ IMPORTANT RULES:
     outcomeId,
     maxTurns: 3,
     disableNativeTools: true,
-    timeout: 120000, // 2 min idle timeout (resets on activity)
+    timeout: 600000, // 10 min — JSON mode has no intermediate output to reset idle timer
     description: 'Discovery plan writing',
   });
 

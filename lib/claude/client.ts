@@ -23,7 +23,10 @@ export interface ClaudeOptions {
   systemPrompt?: string;
   maxTurns?: number;
   allowedTools?: string[];
-  timeout?: number; // milliseconds
+  /** Idle timeout in ms — process is killed if no stdout/stderr for this long.
+   *  Defaults to 120000 (2 min). The timer resets on every chunk of output,
+   *  so long-running work that's actively producing output will never be killed. */
+  timeout?: number;
   /** If true, Claude won't have access to native tools (file read, bash, etc.) */
   disableNativeTools?: boolean;
   // Cost tracking context
@@ -100,27 +103,50 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
 
     let stdout = '';
     let stderr = '';
+    let resolved = false;
+
+    // Activity-based idle timeout: resets every time we receive output.
+    // Process is only killed if it goes completely silent for `timeout` ms.
+    const resetIdleTimeout = (): void => {
+      clearTimeout(idleTimeoutId);
+      idleTimeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          claude.kill('SIGTERM');
+          resolve({
+            text: '',
+            success: false,
+            error: `Claude CLI idle timeout — no output for ${timeout / 1000}s`,
+          });
+        }
+      }, timeout);
+    };
+    let idleTimeoutId = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        claude.kill('SIGTERM');
+        resolve({
+          text: '',
+          success: false,
+          error: `Claude CLI idle timeout — no output for ${timeout / 1000}s`,
+        });
+      }
+    }, timeout);
 
     claude.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      resetIdleTimeout();
     });
 
     claude.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
+      resetIdleTimeout();
     });
 
-    // Timeout handling
-    const timeoutId = setTimeout(() => {
-      claude.kill('SIGTERM');
-      resolve({
-        text: '',
-        success: false,
-        error: `Claude CLI timed out after ${timeout / 1000}s`,
-      });
-    }, timeout);
-
     claude.on('close', (code) => {
-      clearTimeout(timeoutId);
+      clearTimeout(idleTimeoutId);
+      if (resolved) return; // Already resolved by timeout
+      resolved = true;
 
       // Log raw response for debugging
       if (description) {
@@ -216,7 +242,9 @@ export async function claudeComplete(options: ClaudeOptions): Promise<ClaudeResp
     });
 
     claude.on('error', (err) => {
-      clearTimeout(timeoutId);
+      clearTimeout(idleTimeoutId);
+      if (resolved) return;
+      resolved = true;
       resolve({
         text: '',
         success: false,

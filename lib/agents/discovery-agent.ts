@@ -298,7 +298,7 @@ Respond with ONLY valid JSON (no markdown fences):
     prompt,
     outcomeId,
     maxTurns: 3,
-    timeout: 300000, // 5 minutes — interview needs time for codebase analysis
+    timeout: 120000, // 2 min idle timeout (resets on activity)
     description: 'Discovery self-directed interview',
   });
 
@@ -364,7 +364,7 @@ Provide a concise research summary as plain text — no code implementations, on
     prompt,
     outcomeId,
     maxTurns: 3,
-    timeout: 300000, // 5 minutes — research reads codebase files
+    timeout: 120000, // 2 min idle timeout (resets on activity)
     description: 'Discovery local research',
   });
 
@@ -423,7 +423,7 @@ IMPORTANT RULES:
     outcomeId,
     maxTurns: 3,
     disableNativeTools: true,
-    timeout: 300000, // 5 minutes for plan writing
+    timeout: 120000, // 2 min idle timeout (resets on activity)
     description: 'Discovery plan writing',
   });
 

@@ -9,6 +9,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Outcome } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
 interface UpdateCommandOptions extends OutputOptions {
   name?: string;
@@ -49,8 +50,17 @@ const command = new Command('update')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow update out_abc123 --name "New Name"                  Rename outcome
+  $ flow update abc123 --optimize-intent                      Re-optimize intent via Claude
+  $ flow update out_abc123 --optimize-approach --skill my-skill   Optimize approach using a skill
+  $ flow update out_abc123 --intent "new thoughts" --optimize     Set + optimize intent
+`);
+
 export const updateCommand = command
-  .action(async (id: string, options: UpdateCommandOptions) => {
+  .action(async (rawId: string, options: UpdateCommandOptions) => {
+    const id = resolveOutcomeId(rawId);
     try {
       const hasBasicUpdate = options.name || (options.intent && !options.optimize) || (options.approach && !options.optimize);
       const hasOptimizeIntent = (options.intent && options.optimize) || options.optimizeIntent;

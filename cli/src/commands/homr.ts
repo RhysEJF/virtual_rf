@@ -14,6 +14,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, HomrEscalation, Task, Worker } from '../api.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 import { addOutputFlags, OutputOptions } from '../utils/flags.js';
 
 // Track previous state for detecting changes
@@ -309,8 +310,16 @@ const command = new Command('homr')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow homr out_abc123                 Show HOMЯ status
+  $ flow homr abc123 --supervise         Live watch mode (polls every 5s)
+  $ flow homr out_abc123 --yolo          Auto-resolve escalations autonomously
+`);
+
 export const homrCommand = command
-  .action(async (outcomeId: string, options: HomrOptions) => {
+  .action(async (rawOutcomeId: string, options: HomrOptions) => {
+    const outcomeId = resolveOutcomeId(rawOutcomeId);
     try {
       // YOLO implies supervise
       if (options.yolo) {

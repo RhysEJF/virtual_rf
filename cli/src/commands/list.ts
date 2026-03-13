@@ -35,6 +35,18 @@ const command = new Command('list')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow list                    List all non-archived outcomes
+  $ flow list --status active    Only active outcomes
+  $ flow list --all              Include archived outcomes
+  $ flow list --json             Output as JSON (for scripting)
+  $ flow list --quiet            Just output IDs (one per line)
+
+Tip: The ID column shows bare IDs. Use them directly — the out_ prefix is added automatically:
+  $ flow show wEerKgAE7fAi       Works! (same as flow show out_wEerKgAE7fAi)
+`);
+
 export const listCommand = command
   .action(async (options: ListOptions) => {
     try {

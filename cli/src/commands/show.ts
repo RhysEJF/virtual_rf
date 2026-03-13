@@ -16,6 +16,7 @@ import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 import { outcomeStatusLabel, taskStatusLabel, workerStatusLabel } from '../utils/status.js';
 import { progressBar } from '../utils/progress.js';
 import { createSpinner } from '../utils/spinner.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
 // Extended types for the show command response
 interface TaskStats {
@@ -111,8 +112,18 @@ const command = new Command('show')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow show out_wEerKgAE7fAi          Show outcome details
+  $ flow show wEerKgAE7fAi              Also works (out_ prefix is optional)
+  $ flow show out_abc123 --tasks        Include full task list
+  $ flow show out_abc123 --intent       Show full intent/PRD text
+  $ flow show out_abc123 --json         Output as JSON
+`);
+
 export const showCommand = command
-  .action(async (id: string, options: ShowOptions) => {
+  .action(async (rawId: string, options: ShowOptions) => {
+    const id = resolveOutcomeId(rawId);
     try {
       const spinner = createSpinner('Loading outcome details...');
 
@@ -306,6 +317,7 @@ export const showCommand = command
       if (error instanceof ApiError) {
         if (error.status === 404) {
           console.error(chalk.red('Error:'), `Outcome not found: ${id}`);
+          console.error(chalk.gray('Tip: Copy the full ID from `flow list`, e.g. flow show out_wEerKgAE7fAi'));
         } else {
           console.error(chalk.red('API Error:'), error.message);
         }

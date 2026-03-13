@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
 // Response type for starting a worker
 interface StartWorkerResponse {
@@ -38,8 +39,17 @@ const command = new Command('start')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow start out_wEerKgAE7fAi         Start a worker
+  $ flow start wEerKgAE7fAi             Also works (out_ prefix is optional)
+  $ flow start out_abc123 --parallel     Start alongside existing workers
+  $ flow start out_abc123 --worktree     Isolate worker in git worktree
+`);
+
 export const startCommand = command
-  .action(async (outcomeId: string, options: StartOptions) => {
+  .action(async (rawOutcomeId: string, options: StartOptions) => {
+    const outcomeId = resolveOutcomeId(rawOutcomeId);
     try {
       if (!options.json && !options.quiet) {
         console.log();

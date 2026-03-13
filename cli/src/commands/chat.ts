@@ -8,15 +8,25 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError } from '../api.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
-export const chatCommand = new Command('chat')
+const chatCmd = new Command('chat')
   .description('Send feedback or message to an outcome')
   .argument('<outcome-id>', 'Outcome ID (e.g., out_abc123)')
   .argument('<message>', 'The feedback message (use quotes for multi-word messages)')
   .option('--json', 'Output as JSON')
   .option('--quiet', 'Suppress output except errors')
-  .option('--start', 'Automatically start a worker after creating tasks')
-  .action(async (outcomeId: string, message: string, options: { json?: boolean; quiet?: boolean; start?: boolean }) => {
+  .option('--start', 'Automatically start a worker after creating tasks');
+
+chatCmd.addHelpText('after', `
+Examples:
+  $ flow chat out_abc123 "Add dark mode support"              Send feedback
+  $ flow chat abc123 "Fix the header" --start                 Send feedback + start worker
+`);
+
+export const chatCommand = chatCmd
+  .action(async (rawOutcomeId: string, message: string, options: { json?: boolean; quiet?: boolean; start?: boolean }) => {
+    const outcomeId = resolveOutcomeId(rawOutcomeId);
     try {
       // Get outcome info first for display purposes
       const { outcome } = await api.outcomes.get(outcomeId);

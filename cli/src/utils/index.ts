@@ -11,3 +11,6 @@ export { statusDot, outcomeStatusLabel, taskStatusLabel, workerStatusLabel } fro
 export { progressBar } from './progress.js';
 export { drawTable } from './table.js';
 export { createSpinner } from './spinner.js';
+
+// ID resolution
+export { resolveOutcomeId, resolveTaskId, resolveWorkerId } from './ids.js';

@@ -233,6 +233,14 @@ const command = new Command('new')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow new "Build an invoice tracker"                    Simple outcome
+  $ flow new --isolated "Research AI tutoring market"      Isolated workspace
+  $ flow new --deep "Design plugin architecture"           Deep planning mode
+  $ flow new --from-plan ~/PLAN.md "Build invoice tool"    From existing plan
+`);
+
 export const newCommand = command
   .action(async (descriptionParts: string[], options: NewCommandOptions) => {
     try {

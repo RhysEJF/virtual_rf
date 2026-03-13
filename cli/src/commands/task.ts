@@ -11,6 +11,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { api, ApiError, NetworkError, Task, TaskWithDependencies } from '../api.js';
 import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
 /**
  * Formats task status with color
@@ -201,7 +202,8 @@ const addSubcommand = new Command('add')
 
 addOutputFlags(addSubcommand);
 
-addSubcommand.action(async (outcomeId: string, title: string, options: AddOptions) => {
+addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOptions) => {
+  const outcomeId = resolveOutcomeId(rawOutcomeId);
   try {
     // Prepare task data
     const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }> } = {
@@ -659,6 +661,29 @@ optimizeSubcommand.action(async (taskId: string, options: OptimizeOptions) => {
     throw error;
   }
 });
+
+// Add examples
+optimizeSubcommand.addHelpText('after', `
+Examples:
+  $ flow task optimize tsk_abc123                         Optimize approach field
+  $ flow task optimize tsk_abc123 --field intent          Optimize intent field
+  $ flow task optimize tsk_abc123 --skill task-refiner    Use a skill as guidance
+  $ flow task optimize tsk_abc123 --create                Auto-create detected capabilities
+`);
+
+addSubcommand.addHelpText('after', `
+Examples:
+  $ flow task add out_abc123 "Build the API"                         Simple task
+  $ flow task add abc123 "Deploy" --gate "human_approval:Approve"    Task with gate
+  $ flow task add out_abc123 "Fix bug" --priority 1                  High priority
+`);
+
+updateSubcommand.addHelpText('after', `
+Examples:
+  $ flow task update tsk_abc123 --status completed                   Mark done
+  $ flow task update tsk_abc123 --description "new desc" --optimize  Set + optimize
+  $ flow task update tsk_abc123 --optimize-description --skill task-refiner
+`);
 
 // Register subcommands
 taskCommand.addCommand(showSubcommand);

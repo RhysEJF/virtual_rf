@@ -12,6 +12,7 @@ import { addOutputFlags, handleOutput, OutputOptions } from '../utils/flags.js';
 import { taskStatusLabel } from '../utils/status.js';
 import { drawTable } from '../utils/table.js';
 import { createSpinner } from '../utils/spinner.js';
+import { resolveOutcomeId } from '../utils/ids.js';
 
 interface TasksOptions extends OutputOptions {
   status?: TaskStatus;
@@ -24,8 +25,16 @@ const command = new Command('tasks')
 
 addOutputFlags(command);
 
+command.addHelpText('after', `
+Examples:
+  $ flow tasks out_abc123                List all tasks
+  $ flow tasks abc123                    Also works (out_ prefix is optional)
+  $ flow tasks out_abc123 --status pending   Only show pending tasks
+`);
+
 export const tasksCommand = command
-  .action(async (outcomeId: string, options: TasksOptions) => {
+  .action(async (rawOutcomeId: string, options: TasksOptions) => {
+    const outcomeId = resolveOutcomeId(rawOutcomeId);
     try {
       const spinner = createSpinner('Loading tasks...');
 

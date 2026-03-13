@@ -15,6 +15,7 @@ import { getOutcomeById } from '../db/outcomes';
 import { createTask, getTasksByOutcome } from '../db/tasks';
 import { createActivity } from '../db/activity';
 import { paths } from '../config/paths';
+import { getWorkspacePath, ensureWorkspaceExists } from '../workspace/detector';
 import path from 'path';
 import fs from 'fs';
 
@@ -369,11 +370,8 @@ async function writePlan(
   researchContext: string,
   detailLevel: string
 ): Promise<string> {
-  const workspacePath = path.join(paths.workspaces, `out_${outcomeId}`);
-
-  if (!fs.existsSync(workspacePath)) {
-    fs.mkdirSync(workspacePath, { recursive: true });
-  }
+  const workspacePath = getWorkspacePath(outcomeId);
+  ensureWorkspaceExists(outcomeId);
 
   const prompt = `Write an implementation plan document for this outcome.
 

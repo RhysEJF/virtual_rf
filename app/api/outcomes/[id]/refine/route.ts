@@ -16,6 +16,8 @@ export async function POST(
 ): Promise<NextResponse> {
   try {
     const { id: outcomeId } = await params;
+    const body = await request.json().catch(() => ({}));
+    const skillName = (body.skill as string) || 'task-refiner';
 
     // Verify outcome exists
     const outcome = getOutcomeById(outcomeId);
@@ -38,7 +40,8 @@ export async function POST(
     // Check for existing refinement task (pending or running)
     const allTasks = getTasksByOutcome(outcomeId);
     const existingRefinement = allTasks.find(
-      t => t.title === 'Refine pending tasks' && (t.status === 'pending' || t.status === 'running')
+      t => (t.title === 'Refine pending tasks' || t.title.startsWith('Refine with '))
+        && (t.status === 'pending' || t.status === 'running')
     );
     if (existingRefinement) {
       return NextResponse.json(
@@ -78,18 +81,18 @@ export async function POST(
       `5. If any task has complexity ≥ 6 or estimated turns > 30, decompose it into subtasks`,
       `6. Run \`flow tasks\` at the end to verify all tasks are enriched`,
       ``,
-      `Use the task-refiner skill methodology for assessment criteria and quality standards.`,
+      `Use the ${skillName} skill methodology for assessment criteria and quality standards.`,
     ].filter(Boolean).join('\n');
 
     // Create the refinement task with highest priority
     const refinementTask = createTask({
       outcome_id: outcomeId,
-      title: 'Refine pending tasks',
+      title: skillName === 'task-refiner' ? 'Refine pending tasks' : `Refine with ${skillName}`,
       description,
       priority: 0,
       phase: 'execution',
       task_intent: `Audit and enrich ${pendingTasks.length} pending tasks with intent, approach, complexity scores, turn estimates, and dependencies so execution workers can succeed on first attempt.`,
-      task_approach: 'Use flow CLI tools to inspect each task, assess complexity, enrich structured fields, set dependencies, and decompose oversized tasks. Follow the task-refiner skill methodology.',
+      task_approach: `Use flow CLI tools to inspect each task, assess complexity, enrich structured fields, set dependencies, and decompose oversized tasks. Follow the ${skillName} skill methodology.`,
       complexity_score: 4,
       estimated_turns: Math.min(40, pendingTasks.length * 3 + 10),
     });

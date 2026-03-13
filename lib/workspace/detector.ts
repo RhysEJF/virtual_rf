@@ -85,6 +85,116 @@ export function ensureWorkspaceExists(outcomeId: string): string {
 // Detection Logic
 // ============================================================================
 
+/** Directories and files to skip during recursive scan */
+const IGNORED_NAMES = new Set([
+  'node_modules', '.git', '.next', 'dist', '.cache',
+]);
+const IGNORED_FILES = new Set([
+  'claude.md', 'readme.md', 'package.json', 'package-lock.json',
+  'tsconfig.json', '.gitignore', '.eslintrc.json',
+]);
+
+/** Map file extension to output type */
+function classifyFile(ext: string, relativePath: string): { type: OutputType; description: string } {
+  const dir = relativePath.split('/')[0]?.toLowerCase() ?? '';
+
+  if (['.md', '.txt', '.mdx'].includes(ext)) {
+    if (dir === 'research') return { type: 'research', description: 'Research document' };
+    return { type: 'document', description: 'Document' };
+  }
+  if (['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'].includes(ext)) {
+    return { type: 'data', description: 'Data file' };
+  }
+  if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'].includes(ext)) {
+    return { type: 'asset', description: 'Image' };
+  }
+  if (['.pdf'].includes(ext)) {
+    return { type: 'document', description: 'PDF document' };
+  }
+  if (['.html', '.htm'].includes(ext)) {
+    return { type: 'document', description: 'HTML document' };
+  }
+  return { type: 'unknown', description: 'File' };
+}
+
+/**
+ * Recursively walk workspace and collect all output files
+ */
+function walkWorkspace(
+  dir: string,
+  workspacePath: string,
+  outcomeId: string,
+  outputs: DetectedOutput[],
+): void {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (IGNORED_NAMES.has(entry)) continue;
+
+    const fullPath = path.join(dir, entry);
+    let stats: fs.Stats;
+    try {
+      stats = fs.statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    if (stats.isDirectory()) {
+      // Skip skills directory — shown separately in UI
+      if (entry === 'skills' && dir === workspacePath) continue;
+      // Skip tools directory — shown separately in UI
+      if (entry === 'tools' && dir === workspacePath) continue;
+      walkWorkspace(fullPath, workspacePath, outcomeId, outputs);
+      continue;
+    }
+
+    if (!stats.isFile()) continue;
+
+    const lowerEntry = entry.toLowerCase();
+    if (IGNORED_FILES.has(lowerEntry)) continue;
+    // Skip worker logs and progress files
+    if (lowerEntry === 'progress.txt') continue;
+    if (lowerEntry.endsWith('.log')) continue;
+
+    const ext = path.extname(entry).toLowerCase();
+    const relativePath = path.relative(workspacePath, fullPath);
+    const { type, description } = classifyFile(ext, relativePath);
+
+    const name = entry
+      .replace(/\.[^/.]+$/, '')
+      .replace(/-/g, ' ')
+      .replace(/_/g, ' ');
+
+    outputs.push({
+      id: `file-${relativePath.replace(/[/\\]/g, '-')}`,
+      type,
+      name: capitalizeWords(name),
+      path: relativePath,
+      absolutePath: fullPath,
+      description: `${description} (${formatFileSize(stats.size)})`,
+      actions: [
+        {
+          id: 'view',
+          label: 'View',
+          type: 'view',
+          endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(relativePath)}`,
+        },
+      ],
+      metadata: {
+        size: stats.size,
+        modified: stats.mtime.toISOString(),
+        directory: path.dirname(relativePath) === '.' ? '' : path.dirname(relativePath),
+        extension: ext,
+      },
+    });
+  }
+}
+
 /**
  * Scan a workspace and detect all outputs
  */
@@ -110,34 +220,8 @@ export function detectOutputs(outcomeId: string): WorkspaceInfo {
     if (appOutput) outputs.push(appOutput);
   }
 
-  // Check for research folder
-  const researchPath = path.join(workspacePath, 'research');
-  if (fs.existsSync(researchPath) && fs.statSync(researchPath).isDirectory()) {
-    const researchOutputs = detectResearchFolder(researchPath, outcomeId);
-    outputs.push(...researchOutputs);
-  }
-
-  // Check for docs folder
-  const docsPath = path.join(workspacePath, 'docs');
-  if (fs.existsSync(docsPath) && fs.statSync(docsPath).isDirectory()) {
-    const docOutputs = detectDocsFolder(docsPath, outcomeId);
-    outputs.push(...docOutputs);
-  }
-
-  // Check for standalone markdown files at root
-  const rootMarkdown = detectRootMarkdown(workspacePath, outcomeId);
-  outputs.push(...rootMarkdown);
-
-  // Check for output folder (common pattern)
-  const outputPath = path.join(workspacePath, 'output');
-  if (fs.existsSync(outputPath) && fs.statSync(outputPath).isDirectory()) {
-    const outputFiles = detectOutputFolder(outputPath, outcomeId);
-    outputs.push(...outputFiles);
-  }
-
-  // Check for task_* directories (Ralph worker outputs)
-  const taskOutputs = detectTaskDirectories(workspacePath, outcomeId);
-  outputs.push(...taskOutputs);
+  // Recursively walk the entire workspace
+  walkWorkspace(workspacePath, workspacePath, outcomeId, outputs);
 
   // Calculate summary
   const summary = {
@@ -224,272 +308,6 @@ function detectNodeApp(workspacePath: string, outcomeId: string): DetectedOutput
   }
 }
 
-function detectResearchFolder(folderPath: string, outcomeId: string): DetectedOutput[] {
-  const outputs: DetectedOutput[] = [];
-  const relativePath = 'research';
-
-  try {
-    const files = fs.readdirSync(folderPath);
-    const mdFiles = files.filter(f => f.endsWith('.md'));
-
-    for (const file of mdFiles) {
-      const filePath = path.join(folderPath, file);
-      const stats = fs.statSync(filePath);
-      const name = file.replace('.md', '').replace(/-/g, ' ').replace(/_/g, ' ');
-
-      outputs.push({
-        id: `research-${file}`,
-        type: 'research',
-        name: capitalizeWords(name),
-        path: `${relativePath}/${file}`,
-        absolutePath: filePath,
-        description: `Research document (${formatFileSize(stats.size)})`,
-        actions: [
-          {
-            id: 'view',
-            label: 'View',
-            type: 'view',
-            endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(`${relativePath}/${file}`)}`,
-          },
-          {
-            id: 'download',
-            label: 'Download',
-            type: 'download',
-          },
-        ],
-        metadata: {
-          size: stats.size,
-          modified: stats.mtime.toISOString(),
-        },
-      });
-    }
-  } catch {
-    // Folder read error
-  }
-
-  return outputs;
-}
-
-function detectDocsFolder(folderPath: string, outcomeId: string): DetectedOutput[] {
-  const outputs: DetectedOutput[] = [];
-  const relativePath = 'docs';
-
-  try {
-    const files = fs.readdirSync(folderPath);
-    const mdFiles = files.filter(f => f.endsWith('.md'));
-
-    for (const file of mdFiles) {
-      const filePath = path.join(folderPath, file);
-      const stats = fs.statSync(filePath);
-      const name = file.replace('.md', '').replace(/-/g, ' ').replace(/_/g, ' ');
-
-      outputs.push({
-        id: `doc-${file}`,
-        type: 'document',
-        name: capitalizeWords(name),
-        path: `${relativePath}/${file}`,
-        absolutePath: filePath,
-        description: `Documentation (${formatFileSize(stats.size)})`,
-        actions: [
-          {
-            id: 'view',
-            label: 'View',
-            type: 'view',
-            endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(`${relativePath}/${file}`)}`,
-          },
-        ],
-        metadata: {
-          size: stats.size,
-          modified: stats.mtime.toISOString(),
-        },
-      });
-    }
-  } catch {
-    // Folder read error
-  }
-
-  return outputs;
-}
-
-function detectRootMarkdown(workspacePath: string, outcomeId: string): DetectedOutput[] {
-  const outputs: DetectedOutput[] = [];
-
-  try {
-    const files = fs.readdirSync(workspacePath);
-    const mdFiles = files.filter(f =>
-      f.endsWith('.md') &&
-      f.toLowerCase() !== 'readme.md' &&
-      f.toLowerCase() !== 'claude.md'
-    );
-
-    for (const file of mdFiles) {
-      const filePath = path.join(workspacePath, file);
-      const stats = fs.statSync(filePath);
-
-      if (!stats.isFile()) continue;
-
-      const name = file.replace('.md', '').replace(/-/g, ' ').replace(/_/g, ' ');
-
-      outputs.push({
-        id: `doc-root-${file}`,
-        type: 'document',
-        name: capitalizeWords(name),
-        path: file,
-        absolutePath: filePath,
-        description: `Document (${formatFileSize(stats.size)})`,
-        actions: [
-          {
-            id: 'view',
-            label: 'View',
-            type: 'view',
-            endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(file)}`,
-          },
-        ],
-        metadata: {
-          size: stats.size,
-          modified: stats.mtime.toISOString(),
-        },
-      });
-    }
-  } catch {
-    // Folder read error
-  }
-
-  return outputs;
-}
-
-function detectOutputFolder(folderPath: string, outcomeId: string): DetectedOutput[] {
-  const outputs: DetectedOutput[] = [];
-  const relativePath = 'output';
-
-  try {
-    const files = fs.readdirSync(folderPath);
-
-    for (const file of files) {
-      const filePath = path.join(folderPath, file);
-      const stats = fs.statSync(filePath);
-
-      if (!stats.isFile()) continue;
-
-      const ext = path.extname(file).toLowerCase();
-      let type: OutputType = 'unknown';
-      let description = 'Output file';
-
-      if (['.md', '.txt'].includes(ext)) {
-        type = 'document';
-        description = 'Text document';
-      } else if (['.json', '.csv', '.xml'].includes(ext)) {
-        type = 'data';
-        description = 'Data file';
-      } else if (['.png', '.jpg', '.jpeg', '.gif', '.svg'].includes(ext)) {
-        type = 'asset';
-        description = 'Image';
-      }
-
-      const name = file.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').replace(/_/g, ' ');
-
-      outputs.push({
-        id: `output-${file}`,
-        type,
-        name: capitalizeWords(name),
-        path: `${relativePath}/${file}`,
-        absolutePath: filePath,
-        description: `${description} (${formatFileSize(stats.size)})`,
-        actions: [
-          {
-            id: 'view',
-            label: 'View',
-            type: 'view',
-            endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(`${relativePath}/${file}`)}`,
-          },
-          {
-            id: 'download',
-            label: 'Download',
-            type: 'download',
-          },
-        ],
-        metadata: {
-          size: stats.size,
-          modified: stats.mtime.toISOString(),
-          extension: ext,
-        },
-      });
-    }
-  } catch {
-    // Folder read error
-  }
-
-  return outputs;
-}
-
-/**
- * Detect outputs from task_* directories (Ralph worker outputs)
- * These contain findings.md, output.md, research_findings.md etc.
- */
-function detectTaskDirectories(workspacePath: string, outcomeId: string): DetectedOutput[] {
-  const outputs: DetectedOutput[] = [];
-
-  try {
-    const entries = fs.readdirSync(workspacePath);
-    const taskDirs = entries.filter(e => {
-      const fullPath = path.join(workspacePath, e);
-      return e.startsWith('task_') && fs.statSync(fullPath).isDirectory();
-    });
-
-    for (const taskDir of taskDirs) {
-      const taskPath = path.join(workspacePath, taskDir);
-      const taskFiles = fs.readdirSync(taskPath);
-
-      // Look for output files (exclude CLAUDE.md and progress.txt)
-      const outputFiles = taskFiles.filter(f =>
-        f.endsWith('.md') &&
-        f.toLowerCase() !== 'claude.md' &&
-        f.toLowerCase() !== 'progress.txt'
-      );
-
-      for (const file of outputFiles) {
-        const filePath = path.join(taskPath, file);
-        const stats = fs.statSync(filePath);
-
-        if (!stats.isFile()) continue;
-
-        const relativePath = `${taskDir}/${file}`;
-        const name = file.replace('.md', '').replace(/-/g, ' ').replace(/_/g, ' ');
-        const taskId = taskDir.replace('task_', '');
-
-        outputs.push({
-          id: `task-${taskId}-${file}`,
-          type: 'research',
-          name: capitalizeWords(name),
-          path: relativePath,
-          absolutePath: filePath,
-          description: `Task output (${formatFileSize(stats.size)})`,
-          actions: [
-            {
-              id: 'view',
-              label: 'View',
-              type: 'view',
-              endpoint: `/api/outcomes/${outcomeId}/outputs/${encodeURIComponent(relativePath)}`,
-            },
-          ],
-          metadata: {
-            size: stats.size,
-            modified: stats.mtime.toISOString(),
-            taskId: taskDir,
-          },
-        });
-      }
-    }
-  } catch {
-    // Folder read error
-  }
-
-  return outputs;
-}
-
-// ============================================================================
-// Utilities
-// ============================================================================
 
 // ============================================================================
 // App Detection

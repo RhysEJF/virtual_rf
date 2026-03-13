@@ -20,12 +20,17 @@ interface RefineResponse {
 
 const command = new Command('refine')
   .description('Refine pending tasks for an outcome (enrich intent, approach, complexity, dependencies)')
-  .argument('<outcome-id>', 'The outcome ID to refine tasks for');
+  .argument('<outcome-id>', 'The outcome ID to refine tasks for')
+  .option('--skill <name>', 'Skill methodology to use (default: task-refiner)');
 
 addOutputFlags(command);
 
+interface RefineOptions extends OutputOptions {
+  skill?: string;
+}
+
 export const refineCommand = command
-  .action(async (outcomeId: string, options: OutputOptions) => {
+  .action(async (outcomeId: string, options: RefineOptions) => {
     try {
       if (!options.json && !options.quiet) {
         console.log();
@@ -34,7 +39,7 @@ export const refineCommand = command
 
       const response = await api.post<RefineResponse>(
         `/outcomes/${outcomeId}/refine`,
-        {}
+        { skill: options.skill }
       );
 
       // Handle JSON/quiet output
@@ -46,6 +51,9 @@ export const refineCommand = command
 
       console.log();
       console.log(chalk.green('✓'), chalk.bold('Refinement task created'));
+      if (options.skill) {
+        console.log(`  ${chalk.gray('Skill:')}     ${chalk.cyan(options.skill)}`);
+      }
       console.log();
       console.log(`  ${chalk.gray('Task ID:')}   ${chalk.cyan(response.taskId)}`);
 

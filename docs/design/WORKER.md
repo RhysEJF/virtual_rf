@@ -10,10 +10,11 @@
 
 | File | Purpose | Size |
 |------|---------|------|
-| `lib/ralph/worker.ts` | Main worker logic | ~50KB |
+| `lib/ralph/worker.ts` | Main worker logic, tiered complexity, turn exhaustion | ~55KB |
 | `lib/ralph/verification.ts` | Deterministic verify_command execution | ~1KB |
 | `lib/ralph/teaching-errors.ts` | Retry context builder from past failures | ~2KB |
 | `lib/ralph/evolve-loop.ts` | Hill-climbing optimization loop | ~6KB |
+| `lib/agents/task-decomposer.ts` | Task decomposition + remaining work decomposition | ~35KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
 | `lib/db/tasks.ts` | Task claiming, status, decomposition lock | ~8KB |
 | `lib/db/progress.ts` | Progress entry recording | ~3KB |
@@ -200,65 +201,135 @@ Detection logic:
 
 ---
 
-## Turn Exhaustion Detection
+## Tiered Complexity Handling
 
-When Claude CLI hits its max turns limit, the task is **not failed**. Instead it is released back to pending so another worker (or the same worker on the next iteration) can pick it up without burning a failure attempt.
+Workers use graduated response tiers instead of a single complexity threshold:
+
+### `ComplexityTier` Type
+
+```typescript
+type ComplexityTierAction = 'proceed' | 'proceed_extended' | 'decompose' | 'escalate';
+
+interface ComplexityTier {
+  minScore: number;
+  maxScore: number;
+  action: ComplexityTierAction;
+  turnMultiplier?: number;  // For proceed_extended (default: 2)
+}
+```
+
+### Default Tiers
+
+```typescript
+const DEFAULT_COMPLEXITY_TIERS: ComplexityTier[] = [
+  { minScore: 0, maxScore: 5, action: 'proceed' },
+  { minScore: 6, maxScore: 7, action: 'proceed_extended', turnMultiplier: 2 },
+  { minScore: 8, maxScore: 9, action: 'decompose' },
+  { minScore: 10, maxScore: 10, action: 'escalate' },
+];
+```
+
+### `ComplexityCheckResult`
+
+```typescript
+interface ComplexityCheckResult {
+  shouldProceed: boolean;
+  estimate: ComplexityEstimate | null;
+  action: 'proceed' | 'proceed_extended' | 'decomposed' | 'escalated' | 'skipped';
+  decompositionResult?: DecompositionResult;
+  escalationId?: string;
+  effectiveMaxTurns?: number;  // Set when action is 'proceed_extended'
+  reason: string;
+}
+```
+
+### Worker Loop Integration
+
+When `action === 'proceed_extended'`:
+- `max_attempts` is updated on the task in the database
+- The existing `--max-turns` CLI arg builder uses `Math.max(task.max_attempts || maxTurns, maxTurns)`, so the extended budget propagates automatically
+
+When `action === 'decompose'` fails at score 8-9:
+- Falls back to `proceed_extended` (2x turns) rather than escalating
+- This avoids creating human-blocking escalations for tasks that can likely finish with more time
+
+---
+
+## Turn Exhaustion Detection & Auto-Decomposition
+
+When Claude CLI hits its max turns limit, the worker attempts to decompose the remaining work into subtasks.
 
 ### Detection — `detectTurnExhaustion(fullOutput, exitCode)`
 
 Two-tier detection strategy:
 
-1. **Primary (JSON):** Scan CLI output lines (last-to-first) for a JSON result with `subtype: 'error_max_turns'`. This is emitted when using `--output-format json`.
-2. **Fallback (keyword + exit code):** When `exitCode === null` (process killed by signal), check for turn-related keywords (`max turns`, `max_turns`, `turn limit`) in the output.
+1. **Primary (JSON):** Scan CLI output lines (last-to-first) for a JSON result with `subtype: 'error_max_turns'`.
+2. **Fallback (keyword + exit code):** When `exitCode === null`, check for turn-related keywords.
 
 ```typescript
 function detectTurnExhaustion(fullOutput: string, exitCode: number | null): boolean
 ```
 
-### `executeTask` Return Type
+### Turn Exhaustion Flow
+
+```
+Task hits max turns
+  │
+  ▼
+extractProgressSummary(fullOutput)     ← pulls STATUS lines, commits, files
+  │
+  ▼
+saveCheckpoint(progressSummary)         ← captures what was done
+  │
+  ▼
+decomposeRemainingWork(task, checkpoint, fullOutput)
+  │
+  ├── Success → parent completed, subtasks created, continue loop
+  │
+  └── Failure → fallback:
+        │
+        ├── attempts < 3 → releaseTask() + recordAttempt(), continue
+        │
+        └── attempts >= 3 → failTask() (stop retrying)
+```
+
+### `extractProgressSummary(fullOutput)` — `lib/ralph/worker.ts`
+
+Extracts a concise progress summary from worker output:
+- Last STATUS lines (from progress.txt updates)
+- Commit count (evidence of completed work)
+- Files created/modified
+
+### `decomposeRemainingWork(context)` — `lib/agents/task-decomposer.ts`
 
 ```typescript
-Promise<{
-  success: boolean;
-  error?: string;
+interface RemainingWorkContext {
+  task: Task;
+  checkpoint: TaskCheckpoint;
   fullOutput?: string;
-  guardBlocks?: number;
-  rateLimited?: boolean;
-  turnExhausted?: boolean;   // Set when max turns reached
-}>
+  outcomeIntent?: Intent | null;
+}
+
+function decomposeRemainingWork(context: RemainingWorkContext): Promise<DecompositionResult>
 ```
+
+Differs from `decomposeTask()`:
+- Prompt focuses on **remaining** work, not the whole task
+- Includes checkpoint data (what was done) and worker output
+- Explicitly instructs Claude not to re-do completed work
+- Reuses existing `claimDecompositionLock()`, `createSubtasks()`, verification task generation
 
 ### Close Handler Resolution Order
 
-Inside the `claudeProcess.on('close')` handler, checks run in this order:
-
 1. **Rate limit** → resolve `rateLimited: true`, break loop
 2. **Turn exhaustion** → check progress.txt:
-   - If `DONE` found → resolve as `success: true` (work completed despite exhaustion)
+   - If `DONE` found → resolve as `success: true`
    - Otherwise → resolve `turnExhausted: true`
 3. **Progress file** → normal `DONE` / `ERROR` / exit-code logic
 
-### Worker Loop Handling
-
-Both `startRalphWorker` (main loop) and `runWorkerLoop` (self-healing loop) handle `turnExhausted` identically:
-
-```typescript
-if (taskResult.turnExhausted) {
-  appendLog(`[Turn Exhaustion] Max turns reached on "${task.title}". Releasing back to pending (no attempt burned).`);
-  releaseTask(task.id);
-  createProgressEntry({ ... });
-  continue;  // Next iteration — do NOT break the loop
-}
-```
-
-Key behavior:
-- `releaseTask()` sets the task back to `pending` (no failure recorded)
-- The worker **continues** to the next iteration (does not pause or stop)
-- No circuit-breaker attempt is consumed
-
 ### Error Categorization
 
-`categorizeError` recognizes turn exhaustion via the pattern `'code null'` (the error string from a null exit code), categorizing it as `turn_limit_exhausted`. This feeds into the circuit breaker's failure pattern analysis.
+`categorizeError` recognizes turn exhaustion via the pattern `'code null'`, categorizing it as `turn_limit_exhausted` for circuit breaker tracking.
 
 ---
 

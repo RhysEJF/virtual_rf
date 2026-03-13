@@ -446,6 +446,8 @@ kill -9 <PID>
 - [x] Failure pattern categorization (timeout, permission, syntax, runtime)
 - [x] Turn limit risk assessment to prevent mid-task failures
 - [x] Turn exhaustion detection — release tasks to pending instead of failing (`detectTurnExhaustion`)
+- [x] Turn exhaustion auto-decomposition — decompose remaining work into subtasks (`decomposeRemainingWork`)
+- [x] Tiered complexity handling — graduated auto-response for scores 0-10 (`ComplexityTier`)
 - [x] Rate-limit exit detection — pauses worker instead of failing tasks
 - [x] Self-healing restart loop — exponential backoff recovery for infrastructure failures
 - [x] Atomic decomposition lock — prevents duplicate subtask creation via SQL UPDATE WHERE

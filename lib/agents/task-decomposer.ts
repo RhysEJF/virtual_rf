@@ -15,6 +15,7 @@ import type { Task, Intent, Approach, DecompositionStatus } from '../db/schema';
 import { ComplexityEstimate, ComplexityThresholds, estimateTaskComplexity } from './task-complexity-estimator';
 import { detectBulkDataTask, BulkDetectionResult, DecompositionSuggestion } from './bulk-detector';
 import { getMaxChildrenPerTask } from '../db/system-config';
+import type { TaskCheckpoint } from '../db/checkpoints';
 
 // ============================================================================
 // Types
@@ -912,6 +913,238 @@ export async function proactiveDecomposeMultipleTasks(
   }
 
   return results;
+}
+
+// ============================================================================
+// Remaining Work Decomposition (Turn Exhaustion)
+// ============================================================================
+
+/**
+ * Context for decomposing remaining work after turn exhaustion.
+ */
+export interface RemainingWorkContext {
+  task: Task;
+  checkpoint: TaskCheckpoint;
+  fullOutput?: string;
+  outcomeIntent?: Intent | null;
+}
+
+/**
+ * Decompose the remaining work of a task that hit its turn limit.
+ * Unlike `decomposeTask()`, this focuses only on what's LEFT to do,
+ * using checkpoint data and worker output to understand progress.
+ *
+ * Flow:
+ * 1. Acquire decomposition lock (atomic, prevents races)
+ * 2. Build a checkpoint-aware prompt that describes completed + remaining work
+ * 3. Create subtasks for only the remaining work
+ * 4. Mark parent task as completed (decomposed)
+ *
+ * @returns DecompositionResult with created subtask IDs, or failure
+ */
+export async function decomposeRemainingWork(
+  context: RemainingWorkContext
+): Promise<DecompositionResult> {
+  const { task, checkpoint, fullOutput, outcomeIntent } = context;
+
+  // Idempotency: check for existing subtasks
+  const existingSubtasks = getSubtasksByParentTaskId(task.id);
+  if (existingSubtasks.length > 0) {
+    console.log(`[TaskDecomposer] Found ${existingSubtasks.length} existing subtasks for task ${task.id} (remaining work idempotency)`);
+    return {
+      success: true,
+      originalTaskId: task.id,
+      subtasks: existingSubtasks.map(st => ({
+        title: st.title,
+        description: st.description || '',
+        estimatedComplexity: st.complexity_score || 3,
+        estimatedTurns: st.estimated_turns || 5,
+        dependsOnIndices: [],
+      })),
+      createdTaskIds: existingSubtasks.map(st => st.id),
+      reasoning: 'Returning existing subtasks (idempotency check)',
+    };
+  }
+
+  // Acquire decomposition lock
+  const lockAcquired = claimDecompositionLock(task.id);
+  if (!lockAcquired) {
+    console.log(`[TaskDecomposer] Remaining work decomposition lock not acquired for task ${task.id}`);
+    return {
+      success: false,
+      originalTaskId: task.id,
+      subtasks: [],
+      createdTaskIds: [],
+      reasoning: 'Decomposition already in progress or completed by another process',
+    };
+  }
+  console.log(`[TaskDecomposer] Acquired remaining work decomposition lock for task ${task.id}`);
+
+  // Build prompt focused on remaining work
+  const prompt = buildRemainingWorkPrompt(task, checkpoint, fullOutput, outcomeIntent);
+
+  try {
+    const result = await claudeComplete({
+      prompt,
+      maxTurns: 5,
+      timeout: 90000,
+      description: `Remaining work decomposition for: ${task.title}`,
+    });
+
+    if (!result.success || !result.text) {
+      console.log(`[TaskDecomposer] Remaining work decomposition failed for task ${task.id}`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+      return {
+        success: false,
+        originalTaskId: task.id,
+        subtasks: [],
+        createdTaskIds: [],
+        reasoning: 'Claude remaining work decomposition failed',
+        error: result.error || 'No response from Claude',
+      };
+    }
+
+    const parseResult = parseDecompositionResponse(result.text, DEFAULT_THRESHOLDS);
+    if (!parseResult.success || parseResult.subtasks.length === 0) {
+      console.log(`[TaskDecomposer] Failed to parse remaining work response for task ${task.id}`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+      return {
+        success: false,
+        originalTaskId: task.id,
+        subtasks: [],
+        createdTaskIds: [],
+        reasoning: parseResult.reasoning || 'Failed to parse remaining work decomposition',
+        error: parseResult.error,
+      };
+    }
+
+    // Guard check
+    const subtaskGuard = canCreateTask(task.outcome_id, { parentTaskId: task.id });
+    if (!subtaskGuard.allowed) {
+      console.warn(`[TaskDecomposer] Guard blocked remaining work subtasks for task ${task.id}: ${subtaskGuard.reason}`);
+      await updateTask(task.id, { decomposition_status: 'failed' });
+      return {
+        success: false,
+        originalTaskId: task.id,
+        subtasks: [],
+        createdTaskIds: [],
+        reasoning: `Subtask creation blocked: ${subtaskGuard.reason}`,
+        error: subtaskGuard.reason,
+      };
+    }
+
+    // Create subtasks
+    const createdIds = await createSubtasks(task, parseResult.subtasks);
+
+    // Mark parent as completed (decomposed)
+    console.log(`[TaskDecomposer] Remaining work subtasks created for task ${task.id}, marking parent completed`);
+    await updateTask(task.id, {
+      description: `${task.description || ''}\n\n[TURN EXHAUSTION — Remaining work decomposed into ${createdIds.length} subtasks: ${createdIds.join(', ')}]`,
+      status: 'completed',
+      decomposition_status: 'completed',
+    });
+
+    return {
+      success: true,
+      originalTaskId: task.id,
+      subtasks: parseResult.subtasks,
+      createdTaskIds: createdIds,
+      reasoning: parseResult.reasoning,
+    };
+  } catch (error) {
+    console.error('[TaskDecomposer] Remaining work decomposition failed:', error);
+    await updateTask(task.id, { decomposition_status: 'failed' });
+    return {
+      success: false,
+      originalTaskId: task.id,
+      subtasks: [],
+      createdTaskIds: [],
+      reasoning: 'Remaining work decomposition failed with exception',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Build a prompt focused on decomposing only the remaining work.
+ */
+function buildRemainingWorkPrompt(
+  task: Task,
+  checkpoint: TaskCheckpoint,
+  fullOutput?: string,
+  intent?: Intent | null
+): string {
+  const progressSummary = checkpoint.progress_summary || 'Unknown progress';
+  const remainingWork = checkpoint.remaining_work || 'Unknown remaining work';
+
+  // Extract a condensed summary of what was done from full output (last ~2000 chars)
+  let outputContext = '';
+  if (fullOutput) {
+    const truncated = fullOutput.length > 2000 ? fullOutput.slice(-2000) : fullOutput;
+    outputContext = `\nWORKER OUTPUT (last portion):\n${truncated}\n`;
+  }
+
+  let intentContext = '';
+  if (intent) {
+    intentContext = `\nOUTCOME SUMMARY: ${intent.summary}`;
+    if (intent.success_criteria?.length) {
+      intentContext += `\nSUCCESS CRITERIA: ${intent.success_criteria.join(', ')}`;
+    }
+  }
+
+  return `You are decomposing the REMAINING WORK of a task that ran out of turns before completing.
+
+IMPORTANT: The worker already made partial progress. You must create subtasks for ONLY the unfinished work. Do NOT re-do work that was already completed.
+
+ORIGINAL TASK
+Title: ${task.title}
+Description: ${task.description || 'No description provided'}
+${task.prd_context ? `PRD Context: ${task.prd_context}` : ''}
+${task.design_context ? `Design Context: ${task.design_context}` : ''}
+${intentContext}
+
+PROGRESS SO FAR
+${progressSummary}
+
+REMAINING WORK
+${remainingWork}
+${outputContext}
+
+CONSTRAINTS
+- Each subtask should require at most 10 turns
+- Create between 2 and 6 subtasks
+- Focus ONLY on work that has NOT been done yet
+- Each subtask should be independently completable
+- Subtasks can depend on other subtasks (specify dependencies)
+
+Break the REMAINING work into smaller subtasks. For each subtask, specify:
+1. A clear, actionable title
+2. A description of what specifically needs to be done (reference existing progress)
+3. Estimated complexity (1-5)
+4. Estimated turns to complete (max 10)
+5. Dependencies (which other subtask indices this depends on)
+
+CRITICAL: Dependencies must use 0-based indices.
+
+Response format (EXACTLY this format):
+
+REASONING: [Explain what was already done and what remains, and how you split the remaining work]
+---
+SUBTASK_0:
+TITLE: [Clear, actionable title]
+DESCRIPTION: [What needs to be done — reference what the previous worker already completed]
+COMPLEXITY: [1-5]
+TURNS: [1-10]
+DEPENDS_ON: [comma-separated indices, or "none"]
+---
+SUBTASK_1:
+TITLE: [Title]
+DESCRIPTION: [Description]
+COMPLEXITY: [1-5]
+TURNS: [1-10]
+DEPENDS_ON: [indices or "none"]
+---
+[Continue for more subtasks...]`;
 }
 
 /**

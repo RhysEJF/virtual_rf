@@ -41,6 +41,19 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Workspace isolation enforcement | Complete |
 | Task gate enforcement (human-in-the-loop) | Complete |
 | Document catalog context injection | Complete |
+| Tiered complexity handling (graduated auto-response 0-10) | Complete |
+| Turn exhaustion auto-decomposition (remaining work → subtasks) | Complete |
+| Rate-limit exit detection (keeps tasks pending) | Complete |
+| Self-healing restart loop (infrastructure failure recovery) | Complete |
+| Atomic decomposition lock (prevents duplicate subtasks) | Complete |
+| Task refinement via worker (pre-execution enrichment) | Complete |
+| Shared file path guidance (absolute paths for cross-task files) | Complete |
+| Attempt tracking and teaching errors | Complete |
+| Checkpointing on turn exhaustion | Complete |
+| Deterministic verification (verify_command) | Complete |
+| Evolve mode (hill-climbing optimization) | Complete |
+| Content-aware circuit breaker (HOMR blocker detection) | Complete |
+| Event bus integration | Complete |
 
 **Overall:** Complete and production-ready (largest module at ~50KB)
 
@@ -117,28 +130,131 @@ Workers now implement a circuit breaker to prevent cascading failures:
 
 When the circuit breaker trips, all active workers on the outcome pause, preventing wasted resources on a broken outcome.
 
-### Task Complexity Estimation
+### Turn Exhaustion Detection & Auto-Decomposition
 
-Before claiming a task, workers now estimate its complexity:
+When Claude CLI hits `--max-turns`, the worker detects this and attempts to decompose the remaining work:
 
-1. **Pre-Claim Check** - Analyze task description for complexity signals
-2. **Factors Analyzed:**
-   - Ambiguity level (vague requirements, missing details)
-   - Scope breadth (multi-file, cross-system changes)
-   - Technical depth (new tech, complex algorithms)
-   - Dependency complexity (external APIs, unclear integrations)
-3. **Turn Limit Risk** - Estimate if task can complete within worker's max turns (default 20)
+1. **Detection** — `detectTurnExhaustion()` checks the CLI output for a JSON result with `subtype: 'error_max_turns'` (primary). Falls back to keyword matching when exit code is `null`.
+2. **Progress Summary** — `extractProgressSummary()` pulls STATUS lines, commit counts, and file modifications from the full output.
+3. **Checkpoint** — A checkpoint is saved capturing what was accomplished so far.
+4. **Remaining Work Decomposition** — `decomposeRemainingWork()` creates subtasks for only the unfinished work, using the checkpoint context. The prompt explicitly tells Claude what was already done to avoid re-doing completed work.
+5. **Success Path** — If decomposition succeeds, the parent task is marked completed and subtasks are picked up in the next iteration.
+6. **Fallback Path** — If decomposition fails, the task is released back to pending with an attempt recorded. After 3 turn-exhaustion retries without successful decomposition, the task is failed.
+7. **Progress.txt Override** — If `progress.txt` contains `DONE` despite turn exhaustion, the task is treated as a success.
+8. **Error Categorization** — `categorizeError()` classifies turn-related errors as `turn_limit_exhausted` for circuit breaker tracking.
 
-High-complexity tasks are flagged for potential decomposition before execution.
+This converts turn exhaustion from a "release and retry" loop into a productive decomposition step that breaks remaining work into achievable chunks.
+
+### Rate-Limit Exit Detection
+
+When Claude CLI hits a rate limit, the worker detects this and pauses (instead of failing tasks):
+
+1. **Detection** — Regex pattern `/you've hit your limit|rate.?limit|resets \d+am/i` is tested against the full CLI output.
+2. **Task Preserved** — The task is NOT failed or released — it stays in its current state. The worker simply stops processing.
+3. **Worker Pauses** — The worker exits with `exitReason = 'rate_limited'`, which is NOT in `RESTARTABLE_EXITS` — so the self-healing loop does not retry.
+4. **Distinction from Turn Exhaustion** — Turn exhaustion releases the task and continues to the next one. Rate limiting pauses the entire worker since no further API calls will succeed.
+
+### Self-Healing Restart Loop
+
+Workers can automatically recover from transient infrastructure failures (Claude CLI crashes, OOM kills, signal deaths):
+
+1. **Exit Reason Classification** — Every worker exit is classified into a `WorkerExitReason`:
+   - **Semantic exits** (intentional): `user_paused`, `all_tasks_complete`, `gate_reached`, `complexity_escalation`, `circuit_breaker`, `homr_paused`, `critical_error`, `rate_limited`
+   - **Infrastructure exits** (transient): `uncaught_exception`, `max_iterations`, `unknown`
+
+2. **Restartable Set** — Only infrastructure exits trigger restart: `RESTARTABLE_EXITS = { uncaught_exception, max_iterations, unknown }`
+
+3. **Exponential Backoff** — Restarts use exponential backoff: 10s → 20s → 40s → 80s → 120s (capped). Maximum 5 restart attempts before giving up.
+
+4. **State Preservation** — Between restarts, the current task is released back to pending. The worker record stays `running`. On restart, the worker re-enters the normal claim-execute loop.
+
+5. **Clean Exit** — If a semantic exit occurs inside the restart loop, the loop terminates normally (no more restarts).
+
+### Attempt Tracking and Teaching Errors
+
+Workers now learn from past failures before attempting a task again:
+
+1. **task_attempts table** — Every task attempt is recorded with timestamp, exit reason, error category, and truncated output.
+2. **Teaching context** — When a worker claims a task that has prior failed attempts, the failure history is injected into the worker's CLAUDE.md as a "Previous Attempts" section. This gives the new worker explicit context on what was tried and why it failed.
+3. **Error categorization** — Failures are categorized (timeout, permission, syntax, runtime, turn_limit_exhausted) to help the teaching context be actionable.
+
+This converts every failure into a learning signal for the next attempt, reducing repeated mistakes on retried tasks.
+
+### Task Checkpoints
+
+Workers can save progress mid-task, enabling partial recovery on turn exhaustion:
+
+1. **task_checkpoints table** — Stores JSON snapshots of work-in-progress keyed by task ID and turn number.
+2. **Checkpoint on turn exhaustion** — When `detectTurnExhaustion()` fires, the worker saves a checkpoint before releasing the task back to pending. This captures what was accomplished so far.
+3. **Checkpoint injection** — When the task is next claimed, any saved checkpoint is injected into the worker's CLAUDE.md, letting the new worker resume from the saved state rather than starting over.
+
+### Deterministic Verification
+
+Tasks can declare a shell command that objectively measures success:
+
+1. **verify_command column** — A shell command (e.g., `npm test`, `python verify.py`) stored on the task.
+2. **Post-execution check** — After the worker signals DONE, the worker runs `verify_command` in the task workspace.
+3. **Pass/fail signal** — Non-zero exit code means the task failed verification and is re-queued with an error note. Zero exit means verified success.
+4. **Determinism** — Unlike subjective review, verification commands produce the same result every time, making quality gates machine-enforceable.
+
+### Evolve Mode (Hill-Climbing Optimization)
+
+Tasks can enter an optimization loop that iteratively improves a measurable metric:
+
+1. **metric_command** — A shell command that outputs a numeric score (e.g., Lighthouse score, test pass rate, benchmark throughput).
+2. **metric_baseline** — Starting score; improvements must beat this to be kept.
+3. **optimization_budget** — Maximum number of improvement attempts.
+4. **experiments table** — Each attempt is recorded as an experiment with before/after scores, the change attempted, and outcome (improvement/regression/plateau).
+5. **Auto git init** — The workspace is git-initialized at evolve start so each attempt can be committed and reverted cleanly.
+6. **Git revert on regression** — If a change makes the metric worse, the commit is reverted automatically.
+7. **Plateau detection** — After 3 consecutive non-improvements, the loop exits even if budget remains.
+
+Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle.
+
+### Content-Aware Circuit Breaker
+
+The circuit breaker now analyzes failure content to distinguish recoverable errors from HOMR blockers:
+
+1. **HOMR blocker detection** — Failure output is scanned for patterns indicating the task is waiting on HOMR (e.g., escalation phrases, "waiting for human", gate-related language).
+2. **Separate handling** — HOMR-blocked tasks do not increment the consecutive-failure counter. The circuit breaker trips only on genuine errors, not intentional pauses.
+3. **Escalation-aware** — This prevents false circuit-breaker trips when HOMR is correctly escalating an ambiguous task to a human.
+
+### Atomic Decomposition Lock
+
+Task decomposition uses an atomic SQL lock to prevent race conditions:
+
+1. **Problem** — Multiple processes (worker complexity check, HOMR auto-resolve) could simultaneously attempt to decompose the same task, creating duplicate subtasks.
+2. **Solution** — `claimDecompositionLock()` uses a single `UPDATE ... WHERE (decomposition_status IS NULL OR decomposition_status = 'failed')`. If another process already set the status, the UPDATE affects 0 rows and the second process bails out.
+3. **No TOCTOU Gap** — Unlike a separate check-then-set pattern, the atomic UPDATE eliminates the time window between reading the status and changing it.
+
+### Tiered Complexity Handling
+
+Before claiming a task, workers estimate its complexity and respond with graduated actions:
+
+| Score | Action | Behavior |
+|-------|--------|----------|
+| 0-5 | `proceed` | Normal turn budget |
+| 6-7 | `proceed_extended` | Double the turn budget (2x max turns) |
+| 8-9 | `decompose` | Auto-decompose into subtasks before starting |
+| 10 | `escalate` | Human decision required (truly massive tasks only) |
+
+This replaces the previous binary "escalate or proceed" approach. Most complexity decisions (scores 0-9) are now handled automatically without human intervention:
+
+- **Extended turns** — Medium-complexity tasks get more time instead of being blocked
+- **Graceful fallback** — If auto-decomposition fails at score 8-9, the system falls back to extended turns rather than escalating
+- **Human escalation** — Reserved only for score 10 (maximum complexity), eliminating rubber-stamp bottlenecks
+
+The tiers are configurable via `ComplexityTier[]` on `ComplexityCheckConfig`. Legacy single-threshold fields are preserved for backwards compatibility but ignored when tiers are set.
 
 ### Auto-Decomposition
 
-When a task is too complex for a single worker iteration:
+When a task is too complex for a single worker iteration (score 8-9):
 
-1. **Detection** - Complexity estimate exceeds turn limit threshold
+1. **Detection** - Complexity estimate falls in the decompose tier
 2. **Decomposition** - Task is automatically broken into smaller subtasks
 3. **Dependency Chain** - Subtasks are linked with proper `depends_on` relationships
-4. **Original Task** - Parent task is skipped, replaced by subtask chain
+4. **Original Task** - Parent task is completed, replaced by subtask chain
+5. **Fallback** - If decomposition fails, proceed with extended turns instead of escalating
 
 This prevents workers from hitting turn limits mid-task and losing progress.
 
@@ -210,6 +326,9 @@ The isolation mode is set per-outcome (with a system-wide default). When in work
 - Explicit workspace path boundary
 - Instructions to ONLY work within that directory
 - Warnings about restricted areas (`.env`, `.ssh`, credentials)
+- **File path guidance** distinguishing shared vs. task-local files
+
+**Shared vs. Task-Local Files:** Each task runs in a task-specific subdirectory (`workspaces/{outcomeId}/{taskId}/`). Files created with relative paths are invisible to other tasks. The CLAUDE.md instructs workers to use **absolute paths** to the outcome workspace for any shared outputs (deliverables, documents other tasks will read), and allows relative paths only for scratch files. This prevents decomposed subtask handoff failures where one subtask produces a file that a sibling subtask can't find.
 
 This provides defense-in-depth alongside the destructive command guard.
 

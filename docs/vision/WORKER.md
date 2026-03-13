@@ -40,7 +40,8 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Workspace isolation enforcement | Complete |
 | Task gate enforcement (human-in-the-loop) | Complete |
 | Document catalog context injection | Complete |
-| Turn exhaustion detection (graceful --max-turns handling) | Complete |
+| Tiered complexity handling (graduated auto-response 0-10) | Complete |
+| Turn exhaustion auto-decomposition (remaining work → subtasks) | Complete |
 | Rate-limit exit detection (keeps tasks pending) | Complete |
 | Self-healing restart loop (infrastructure failure recovery) | Complete |
 | Atomic decomposition lock (prevents duplicate subtasks) | Complete |
@@ -128,17 +129,20 @@ Workers now implement a circuit breaker to prevent cascading failures:
 
 When the circuit breaker trips, all active workers on the outcome pause, preventing wasted resources on a broken outcome.
 
-### Turn Exhaustion Detection
+### Turn Exhaustion Detection & Auto-Decomposition
 
-When Claude CLI hits `--max-turns`, the worker detects this gracefully and avoids wasting attempts:
+When Claude CLI hits `--max-turns`, the worker detects this and attempts to decompose the remaining work:
 
-1. **Detection** — `detectTurnExhaustion()` checks the CLI output for a JSON result with `subtype: 'error_max_turns'` (primary). Falls back to keyword matching (`max turns`, `max_turns`, `turn limit`) when exit code is `null` (signal kill).
-2. **Task Release** — The task is released back to `pending` via `releaseTask()` — no attempt is burned. This differs from a normal failure, which increments the attempt counter.
-3. **Progress.txt Override** — If `progress.txt` contains `DONE` despite turn exhaustion, the task is treated as a success. The worker may have finished the actual work but ran out of turns during cleanup.
-4. **Worker Continues** — Unlike rate-limit detection (which pauses the worker), turn exhaustion simply moves on to the next task. The exhausted task can be picked up again by any worker.
-5. **Error Categorization** — `categorizeError()` classifies `turn`, `iteration`, `max_turns`, and `code null` errors as `turn_limit_exhausted` for circuit breaker tracking.
+1. **Detection** — `detectTurnExhaustion()` checks the CLI output for a JSON result with `subtype: 'error_max_turns'` (primary). Falls back to keyword matching when exit code is `null`.
+2. **Progress Summary** — `extractProgressSummary()` pulls STATUS lines, commit counts, and file modifications from the full output.
+3. **Checkpoint** — A checkpoint is saved capturing what was accomplished so far.
+4. **Remaining Work Decomposition** — `decomposeRemainingWork()` creates subtasks for only the unfinished work, using the checkpoint context. The prompt explicitly tells Claude what was already done to avoid re-doing completed work.
+5. **Success Path** — If decomposition succeeds, the parent task is marked completed and subtasks are picked up in the next iteration.
+6. **Fallback Path** — If decomposition fails, the task is released back to pending with an attempt recorded. After 3 turn-exhaustion retries without successful decomposition, the task is failed.
+7. **Progress.txt Override** — If `progress.txt` contains `DONE` despite turn exhaustion, the task is treated as a success.
+8. **Error Categorization** — `categorizeError()` classifies turn-related errors as `turn_limit_exhausted` for circuit breaker tracking.
 
-This follows the same release-not-fail pattern as rate limiting, ensuring transient CLI limits don't permanently fail tasks that could succeed on retry.
+This converts turn exhaustion from a "release and retry" loop into a productive decomposition step that breaks remaining work into achievable chunks.
 
 ### Rate-Limit Exit Detection
 
@@ -222,28 +226,34 @@ Task decomposition uses an atomic SQL lock to prevent race conditions:
 2. **Solution** — `claimDecompositionLock()` uses a single `UPDATE ... WHERE (decomposition_status IS NULL OR decomposition_status = 'failed')`. If another process already set the status, the UPDATE affects 0 rows and the second process bails out.
 3. **No TOCTOU Gap** — Unlike a separate check-then-set pattern, the atomic UPDATE eliminates the time window between reading the status and changing it.
 
-### Task Complexity Estimation
+### Tiered Complexity Handling
 
-Before claiming a task, workers now estimate its complexity:
+Before claiming a task, workers estimate its complexity and respond with graduated actions:
 
-1. **Pre-Claim Check** - Analyze task description for complexity signals
-2. **Factors Analyzed:**
-   - Ambiguity level (vague requirements, missing details)
-   - Scope breadth (multi-file, cross-system changes)
-   - Technical depth (new tech, complex algorithms)
-   - Dependency complexity (external APIs, unclear integrations)
-3. **Turn Limit Risk** - Estimate if task can complete within worker's max turns (default 20)
+| Score | Action | Behavior |
+|-------|--------|----------|
+| 0-5 | `proceed` | Normal turn budget |
+| 6-7 | `proceed_extended` | Double the turn budget (2x max turns) |
+| 8-9 | `decompose` | Auto-decompose into subtasks before starting |
+| 10 | `escalate` | Human decision required (truly massive tasks only) |
 
-High-complexity tasks are flagged for potential decomposition before execution.
+This replaces the previous binary "escalate or proceed" approach. Most complexity decisions (scores 0-9) are now handled automatically without human intervention:
+
+- **Extended turns** — Medium-complexity tasks get more time instead of being blocked
+- **Graceful fallback** — If auto-decomposition fails at score 8-9, the system falls back to extended turns rather than escalating
+- **Human escalation** — Reserved only for score 10 (maximum complexity), eliminating rubber-stamp bottlenecks
+
+The tiers are configurable via `ComplexityTier[]` on `ComplexityCheckConfig`. Legacy single-threshold fields are preserved for backwards compatibility but ignored when tiers are set.
 
 ### Auto-Decomposition
 
-When a task is too complex for a single worker iteration:
+When a task is too complex for a single worker iteration (score 8-9):
 
-1. **Detection** - Complexity estimate exceeds turn limit threshold
+1. **Detection** - Complexity estimate falls in the decompose tier
 2. **Decomposition** - Task is automatically broken into smaller subtasks
 3. **Dependency Chain** - Subtasks are linked with proper `depends_on` relationships
-4. **Original Task** - Parent task is skipped, replaced by subtask chain
+4. **Original Task** - Parent task is completed, replaced by subtask chain
+5. **Fallback** - If decomposition fails, proceed with extended turns instead of escalating
 
 This prevents workers from hitting turn limits mid-task and losing progress.
 

@@ -207,6 +207,76 @@ function showHelpAll(): void {
   console.log();
 }
 
+// Override default help to show grouped view
+program.configureHelp({
+  formatHelp: () => '', // suppress default
+});
+
+program.addHelpText('after', () => {
+  showGroupedHelp();
+  return '';
+});
+
+/**
+ * Display a clean, grouped help screen as the default.
+ */
+function showGroupedHelp(): void {
+  console.log();
+  console.log(chalk.bold.white('  Flow') + chalk.gray(' — AI workforce management'));
+  console.log();
+  console.log(chalk.gray('  Usage: ') + chalk.white('flow <command> [options]'));
+  console.log();
+
+  // Build a lookup: command name -> Command object
+  const cmdMap = new Map<string, Command>();
+  for (const cmd of program.commands) {
+    cmdMap.set(cmd.name(), cmd);
+  }
+
+  // Track grouped commands
+  const grouped = new Set<string>();
+
+  // Print each group
+  for (const group of COMMAND_GROUPS) {
+    const lines: string[] = [];
+    for (const cmdName of group.commands) {
+      const cmd = cmdMap.get(cmdName);
+      if (cmd) {
+        const desc = cmd.description() || '';
+        lines.push(`    ${chalk.green(cmdName.padEnd(14))} ${chalk.gray(desc)}`);
+        grouped.add(cmdName);
+      }
+    }
+    if (lines.length > 0) {
+      console.log(chalk.bold.cyan(`  ${group.label}`));
+      for (const line of lines) {
+        console.log(line);
+      }
+      console.log();
+    }
+  }
+
+  // Ungrouped
+  const ungroupedLines: string[] = [];
+  for (const cmd of program.commands) {
+    if (!grouped.has(cmd.name())) {
+      const desc = cmd.description() || '';
+      ungroupedLines.push(`    ${chalk.green(cmd.name().padEnd(14))} ${chalk.gray(desc)}`);
+    }
+  }
+  if (ungroupedLines.length > 0) {
+    console.log(chalk.bold.cyan('  Other'));
+    for (const line of ungroupedLines) {
+      console.log(line);
+    }
+    console.log();
+  }
+
+  console.log(chalk.gray('  Run ') + chalk.white('flow <command> --help') + chalk.gray(' for details on any command.'));
+  console.log(chalk.gray('  Run ') + chalk.white('flow --help-all') + chalk.gray(' for full command reference with subcommands.'));
+  console.log();
+}
+
 // Check for --help-all flag before Commander parses
 if (process.argv.includes('--help-all')) {
   showHelpAll();

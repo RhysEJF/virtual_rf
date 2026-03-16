@@ -662,6 +662,149 @@ optimizeSubcommand.action(async (taskId: string, options: OptimizeOptions) => {
   }
 });
 
+// Retry task: flow task retry <task-id> or flow task retry --blocked <outcome-id>
+interface RetryOptions extends OutputOptions {
+  blocked?: boolean;
+  all?: boolean;
+  start?: boolean;
+}
+
+const retrySubcommand = new Command('retry')
+  .description('Retry failed tasks')
+  .argument('<id>', 'Task ID to retry, or Outcome ID with --blocked/--all')
+  .option('--blocked', 'Retry all failed tasks blocking pending work (pass outcome ID)')
+  .option('--all', 'Retry ALL failed tasks for the outcome (pass outcome ID)')
+  .option('--start', 'Start a worker after retrying');
+
+addOutputFlags(retrySubcommand);
+
+retrySubcommand.addHelpText('after', `
+Examples:
+  $ flow task retry tsk_abc123                     Retry a single failed task
+  $ flow task retry out_abc123 --blocked           Retry failed tasks blocking progress
+  $ flow task retry abc123 --all                   Retry all failed tasks for an outcome
+  $ flow task retry out_abc123 --blocked --start   Retry blockers and start a worker
+`);
+
+retrySubcommand.action(async (rawId: string, options: RetryOptions) => {
+  try {
+    if (options.blocked) {
+      // Retry failed blockers for an outcome
+      const outcomeId = resolveOutcomeId(rawId);
+
+      if (!options.json && !options.quiet) {
+        console.log(chalk.gray('Finding failed tasks blocking progress...'));
+      }
+
+      const response = await api.post<{ retried: Array<{ id: string; title: string }>; message: string }>(
+        `/outcomes/${outcomeId}/tasks/retry-blocked`,
+        {}
+      );
+
+      if (options.json) {
+        handleOutput(response, options);
+        return;
+      }
+
+      if (response.retried.length === 0) {
+        console.log(chalk.gray('  No failed tasks blocking progress.'));
+      } else {
+        console.log(chalk.green(`\u2713 Reset ${response.retried.length} failed task(s) to pending:`));
+        for (const t of response.retried) {
+          console.log(`  ${chalk.gray(t.id)} ${chalk.white(t.title)}`);
+        }
+      }
+
+      // Optionally start a worker
+      if (options.start && response.retried.length > 0) {
+        console.log();
+        console.log(chalk.gray('Starting worker...'));
+        const startResponse = await api.outcomes.start(outcomeId);
+        console.log(chalk.green(`\u2713 Worker started: ${startResponse.worker.id}`));
+      }
+
+    } else if (options.all) {
+      // Retry ALL failed tasks for an outcome
+      const outcomeId = resolveOutcomeId(rawId);
+
+      if (!options.json && !options.quiet) {
+        console.log(chalk.gray('Finding all failed tasks...'));
+      }
+
+      // Get all failed tasks
+      const tasksResponse = await api.outcomes.tasks(outcomeId);
+      const failedTasks = tasksResponse.tasks.filter(t => t.status === 'failed');
+
+      if (failedTasks.length === 0) {
+        console.log(chalk.gray('  No failed tasks found.'));
+        return;
+      }
+
+      const retried: Array<{ id: string; title: string }> = [];
+      for (const ft of failedTasks) {
+        try {
+          await api.post(`/tasks/${ft.id}/retry`, {});
+          retried.push({ id: ft.id, title: ft.title });
+        } catch {
+          // Skip tasks that can't be retried
+        }
+      }
+
+      if (options.json) {
+        handleOutput({ retried, total_failed: failedTasks.length }, options);
+        return;
+      }
+
+      console.log(chalk.green(`\u2713 Reset ${retried.length}/${failedTasks.length} failed task(s) to pending:`));
+      for (const t of retried) {
+        console.log(`  ${chalk.gray(t.id)} ${chalk.white(t.title)}`);
+      }
+
+      if (options.start && retried.length > 0) {
+        console.log();
+        console.log(chalk.gray('Starting worker...'));
+        const startResponse = await api.outcomes.start(outcomeId);
+        console.log(chalk.green(`\u2713 Worker started: ${startResponse.worker.id}`));
+      }
+
+    } else {
+      // Retry a single task
+      const taskId = rawId.startsWith('task_') ? rawId : `task_${rawId}`;
+
+      if (!options.json && !options.quiet) {
+        console.log(chalk.gray('Retrying task...'));
+      }
+
+      const response = await api.post<{ task: Task; retried: boolean }>(`/tasks/${taskId}/retry`, {});
+
+      if (options.json) {
+        handleOutput(response, options);
+        return;
+      }
+
+      console.log(chalk.green('\u2713') + ` Task reset to pending: ${chalk.white(response.task.title)}`);
+      console.log(`  ${chalk.gray(response.task.id)} — attempts reset, ready for next worker`);
+    }
+
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
+      console.error(chalk.gray('Make sure the server is running (npm run dev)'));
+      process.exit(1);
+    }
+    if (error instanceof ApiError) {
+      if (error.status === 404) {
+        console.error(chalk.red('Error:'), 'Not found:', rawId);
+      } else {
+        const body = error.body as { error?: string } | undefined;
+        console.error(chalk.red('Error:'), body?.error || error.message);
+      }
+      process.exit(1);
+    }
+    throw error;
+  }
+});
+
 // Add examples
 optimizeSubcommand.addHelpText('after', `
 Examples:
@@ -690,6 +833,7 @@ taskCommand.addCommand(showSubcommand);
 taskCommand.addCommand(addSubcommand);
 taskCommand.addCommand(updateSubcommand);
 taskCommand.addCommand(optimizeSubcommand);
+taskCommand.addCommand(retrySubcommand);
 
 // Also support direct task ID as argument: flow task <id>
 // This is the default action when no subcommand is provided

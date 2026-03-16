@@ -370,6 +370,62 @@ export function areTaskDependenciesSatisfied(taskId: string): boolean {
   return blockingIds.length === 0;
 }
 
+/**
+ * Find failed tasks that are blocking pending tasks from being claimed.
+ * Returns unique failed tasks that appear in at least one pending task's depends_on list.
+ */
+export function getFailedBlockerTasks(outcomeId: string): Task[] {
+  const db = getDb();
+
+  // Get all pending tasks with their depends_on
+  const pendingTasks = db.prepare(`
+    SELECT id, depends_on FROM tasks
+    WHERE outcome_id = ? AND status = 'pending'
+  `).all(outcomeId) as { id: string; depends_on: string | null }[];
+
+  // Collect all dependency IDs from pending tasks
+  const failedBlockerIds = new Set<string>();
+  for (const pt of pendingTasks) {
+    const deps = parseDependsOn(pt.depends_on);
+    for (const depId of deps) {
+      const dep = db.prepare('SELECT id, status FROM tasks WHERE id = ?').get(depId) as { id: string; status: string } | undefined;
+      if (dep && dep.status === 'failed') {
+        failedBlockerIds.add(dep.id);
+      }
+    }
+  }
+
+  if (failedBlockerIds.size === 0) return [];
+
+  // Return full task objects for the failed blockers
+  const result: Task[] = [];
+  const ids = Array.from(failedBlockerIds);
+  for (let i = 0; i < ids.length; i++) {
+    const task = getTaskById(ids[i]);
+    if (task) result.push(task);
+  }
+  return result;
+}
+
+/**
+ * Reset a failed task for auto-retry: set status to pending and reset attempts counter.
+ */
+export function resetTaskForRetry(taskId: string): Task | null {
+  const db = getDb();
+  const timestamp = now();
+
+  db.prepare(`
+    UPDATE tasks
+    SET status = 'pending', attempts = 0, claimed_by = NULL, claimed_at = NULL, updated_at = ?
+    WHERE id = ? AND status = 'failed'
+  `).run(timestamp, taskId);
+
+  touchOutcome(
+    (getTaskById(taskId) as Task)?.outcome_id
+  );
+  return getTaskById(taskId);
+}
+
 export function getTasksByOutcome(outcomeId: string): Task[] {
   const db = getDb();
   const rows = db.prepare(`

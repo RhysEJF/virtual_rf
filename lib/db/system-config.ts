@@ -163,3 +163,27 @@ export function getMaxChildrenPerTask(): number {
 export function setMaxChildrenPerTask(value: number): void {
   setConfig('max_children_per_task', String(value));
 }
+
+/**
+ * Get the maximum number of times a failed dependency-blocking task can be auto-retried.
+ * When a worker finds no claimable tasks because pending tasks are blocked by failed
+ * dependencies, it will auto-reset those failed tasks up to this many times.
+ * Returns 2 if not configured.
+ */
+export function getMaxAutoRetries(): number {
+  const value = getConfig('max_auto_retries');
+  if (value !== null) {
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 2; // Default: allow 2 auto-retry cycles
+}
+
+/**
+ * Set the maximum number of auto-retries for failed dependency-blocking tasks.
+ */
+export function setMaxAutoRetries(value: number): void {
+  setConfig('max_auto_retries', String(value));
+}

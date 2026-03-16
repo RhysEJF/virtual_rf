@@ -16,12 +16,16 @@ import { resolveOutcomeId } from '../utils/ids.js';
 
 interface TasksOptions extends OutputOptions {
   status?: TaskStatus;
+  blocked?: boolean;
+  failed?: boolean;
 }
 
 const command = new Command('tasks')
   .description('List tasks for an outcome')
   .argument('<outcome-id>', 'Outcome ID to list tasks for')
-  .option('--status <status>', 'Filter by status (pending, claimed, running, completed, failed)');
+  .option('--status <status>', 'Filter by status (pending, claimed, running, completed, failed)')
+  .option('--failed', 'Show only failed tasks (shorthand for --status failed)')
+  .option('--blocked', 'Show only tasks blocked by failed dependencies');
 
 addOutputFlags(command);
 
@@ -30,6 +34,8 @@ Examples:
   $ flow tasks out_abc123                List all tasks
   $ flow tasks abc123                    Also works (out_ prefix is optional)
   $ flow tasks out_abc123 --status pending   Only show pending tasks
+  $ flow tasks out_abc123 --failed           Show failed tasks
+  $ flow tasks out_abc123 --blocked          Show tasks blocked by failed deps
 `);
 
 export const tasksCommand = command
@@ -43,6 +49,23 @@ export const tasksCommand = command
       let tasks = response.tasks;
 
       spinner.stop();
+
+      // Apply --failed shorthand
+      if (options.failed) {
+        tasks = tasks.filter(t => t.status === 'failed');
+      }
+
+      // Apply --blocked filter: pending tasks whose dependencies include failed tasks
+      if (options.blocked) {
+        const failedIds = new Set(
+          tasks.filter(t => t.status === 'failed').map(t => t.id)
+        );
+        tasks = tasks.filter(t => {
+          if (t.status !== 'pending') return false;
+          const blockedBy: string[] = (t as any).blocked_by || [];
+          return blockedBy.some((depId: string) => failedIds.has(depId));
+        });
+      }
 
       // Apply status filter if provided
       if (options.status) {
@@ -85,15 +108,12 @@ export const tasksCommand = command
       // Build table data
       const headers = ['ID', 'TITLE', 'STATUS', 'PRIORITY'];
 
-      /**
-       * Truncates a string to fit within a width.
-       */
-      function truncate(str: string, length: number): string {
+      const truncate = (str: string, length: number): string => {
         if (str.length >= length) {
           return str.substring(0, length - 1) + '\u2026';
         }
         return str;
-      }
+      };
 
       const rows: string[][] = tasks.map(task => {
         const id = chalk.gray(task.id);
@@ -104,7 +124,7 @@ export const tasksCommand = command
       });
 
       console.log();
-      drawTable(headers, rows, { columnWidths: [22, 30, 16, 10] });
+      drawTable(headers, rows, { columnWidths: [26, 30, 16, 10] });
       console.log();
 
       // Print summary

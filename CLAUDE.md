@@ -271,7 +271,7 @@ Users can request changes after completion via the Iterate section:
 - `outcome_items` - Tracked files with sync status (skills, tools, outputs)
 - `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
 - `guard_blocks` - Blocked dangerous commands with context
-- `system_config` - Key-value store for global settings (e.g., default_isolation_mode, max_pending_tasks, max_subtask_depth, max_children_per_task)
+- `system_config` - Key-value store for global settings (e.g., default_isolation_mode, max_pending_tasks, max_subtask_depth, max_children_per_task, max_auto_retries)
 - `events` - Event bus persistence (type, outcome/worker/task IDs, data JSON, 7-day retention)
 - `task_attempts` - Attempt tracking per task (approach, failure reason, error output, duration)
 - `task_checkpoints` - Progress checkpoints on turn exhaustion (summary, remaining work, git SHA)
@@ -451,6 +451,10 @@ kill -9 <PID>
 - [x] Rate-limit exit detection — pauses worker instead of failing tasks
 - [x] Self-healing restart loop — exponential backoff recovery for infrastructure failures
 - [x] Atomic decomposition lock — prevents duplicate subtask creation via SQL UPDATE WHERE
+- [x] Auto-retry failed dependency blockers — worker detects deadlocked pending tasks and resets failed blockers (`getFailedBlockerTasks`, `resetTaskForRetry`)
+- [x] Configurable auto-retry budget — `max_auto_retries` system config (default 2, total budget = `max_attempts * (1 + max_auto_retries)`)
+- [x] CLI: `flow task retry` — single task, `--blocked` (failed blockers), `--all` (all failed), `--start` (auto-deploy worker)
+- [x] CLI: `flow tasks --failed` / `--blocked` — diagnostic filters for deadlock visibility
 
 ### Destructive Command Guard (Complete)
 - [x] Command validation before execution (`lib/guard/index.ts`)
@@ -480,7 +484,7 @@ kill -9 <PID>
 - [x] Basic command structure (`cli/`)
 - [x] 40 commands implemented (full API coverage)
 - [x] Outcome management: list, show, new, update, archive
-- [x] Task management: tasks, task (add/update/optimize)
+- [x] Task management: tasks, task (add/update/optimize/retry), tasks --failed/--blocked
 - [x] Worker management: start, stop, workers, worker, intervene, pause, resume, logs
 - [x] HOMЯ integration: homr (--supervise, --yolo), escalations, answer, dismiss
 - [x] Resources: skills, skill, tools, tool, outputs, files, docs (list/add/paste/rm)

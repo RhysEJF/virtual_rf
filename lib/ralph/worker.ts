@@ -34,6 +34,8 @@ import {
   getPendingTasks,
   releaseTask,
   updateTask as updateTaskDb,
+  getFailedBlockerTasks,
+  resetTaskForRetry,
 } from '../db/tasks';
 import type { Task, Intent, TaskPhase, IsolationMode } from '../db/schema';
 import { getOutcomeById, getDesignDoc } from '../db/outcomes';
@@ -1625,6 +1627,42 @@ export async function startRalphWorker(
           const claimResult = claimNextTask(outcomeId, workerId);
 
           if (!claimResult.success || !claimResult.task) {
+            // Check for failed tasks blocking pending work (auto-retry)
+            const { getMaxAutoRetries } = require('../db/system-config');
+            const maxAutoRetries = getMaxAutoRetries();
+            const failedBlockers = getFailedBlockerTasks(outcomeId);
+
+            if (failedBlockers.length > 0 && maxAutoRetries > 0) {
+              // Check which blockers are eligible for auto-retry
+              // A task can be auto-retried if its total attempts < max_attempts * (1 + maxAutoRetries)
+              // e.g., max_attempts=3, maxAutoRetries=2 → up to 9 total attempts (3 original + 3×2 retries)
+              const eligibleBlockers = failedBlockers.filter(t => {
+                const totalBudget = t.max_attempts * (1 + maxAutoRetries);
+                const totalAttempts = getAttemptCount(t.id);
+                return totalAttempts < totalBudget;
+              });
+
+              if (eligibleBlockers.length > 0) {
+                appendLog(`[Auto-Retry] Found ${failedBlockers.length} failed task(s) blocking progress. ${eligibleBlockers.length} eligible for retry.`);
+                for (const blocker of eligibleBlockers) {
+                  const attemptsSoFar = getAttemptCount(blocker.id);
+                  resetTaskForRetry(blocker.id);
+                  appendLog(`[Auto-Retry] Reset "${blocker.title}" (${blocker.id}) to pending (${attemptsSoFar} prior attempts)`);
+                  getEventBus().emit({
+                    type: 'task.auto_retried' as any,
+                    outcomeId,
+                    workerId,
+                    taskId: blocker.id,
+                    timestamp: new Date().toISOString(),
+                    data: { attemptsSoFar, reason: 'dependency_deadlock' },
+                  });
+                }
+                // Continue the loop — claimNextTask will now find work
+                appendLog(`[Auto-Retry] Continuing worker loop...`);
+                continue;
+              }
+            }
+
             // Check for gated tasks to provide diagnostic message
             const { getTasksWithPendingGates } = require('../db/tasks');
             const gatedTasks = getTasksWithPendingGates(outcomeId);
@@ -1635,6 +1673,13 @@ export async function startRalphWorker(
                 appendLog(`  - "${gt.title}" (${gateLabels})`);
               }
               exitReason = 'gate_reached';
+            } else if (failedBlockers.length > 0) {
+              // Failed blockers exist but none are eligible for retry — budget exhausted
+              appendLog(`[Auto-Retry] ${failedBlockers.length} failed blocker(s) have exhausted retry budget. Manual intervention needed.`);
+              for (const blocker of failedBlockers) {
+                appendLog(`  - "${blocker.title}" (${blocker.id}, ${getAttemptCount(blocker.id)} attempts)`);
+              }
+              exitReason = 'all_tasks_complete';
             } else {
               appendLog(`No more pending tasks. Work complete.`);
               exitReason = 'all_tasks_complete';
@@ -2968,6 +3013,23 @@ export async function runWorkerLoop(
     const claimResult = claimNextTask(outcomeId, workerId, phase);
 
     if (!claimResult.success || !claimResult.task) {
+      // Auto-retry failed dependency blockers before giving up
+      const { getMaxAutoRetries } = require('../db/system-config');
+      const maxAutoRetries = getMaxAutoRetries();
+      const failedBlockers = getFailedBlockerTasks(outcomeId);
+      const eligibleBlockers = failedBlockers.filter(t => {
+        const totalBudget = t.max_attempts * (1 + maxAutoRetries);
+        return getAttemptCount(t.id) < totalBudget;
+      });
+
+      if (eligibleBlockers.length > 0) {
+        for (const blocker of eligibleBlockers) {
+          resetTaskForRetry(blocker.id);
+          appendLog(`[Auto-Retry] Reset "${blocker.title}" (${blocker.id}) to pending`);
+        }
+        continue;
+      }
+
       appendLog(`No more tasks available for phase: ${phase || 'any'}`);
       break;
     }

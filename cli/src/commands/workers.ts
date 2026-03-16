@@ -77,7 +77,7 @@ export const workersCommand = command
       console.log();
       console.log(chalk.bold(`  Workers (${workers.length})`));
       console.log();
-      drawTable(headers, rows, { columnWidths: [16, 16, 16, 18, 12] });
+      drawTable(headers, rows, { columnWidths: [24, 22, 16, 22, 12] });
       console.log();
 
       // Print summary

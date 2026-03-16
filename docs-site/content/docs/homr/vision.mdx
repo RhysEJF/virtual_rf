@@ -369,8 +369,9 @@ The **Protocol** suffix emphasizes that this is a systematic approach, not just 
 - [x] Auto-resolve mode for escalations (`lib/homr/auto-resolver.ts`)
   - Manual, Semi-Auto, and Full-Auto modes
   - Configurable confidence threshold (default 80%)
-  - Heuristic-based resolution for complexity escalations
-  - Claude-based resolution for complex cases
+  - Heuristic-based resolution for security (never), failure (retry once), and ambiguity (always human)
+  - Complexity escalations evaluated by Claude with task-type awareness (research→more turns, coding→decomposition)
+  - Auto-spawned workers disable complexity check to prevent re-escalation cascades
 - [x] Semi-auto confirmation flow
   - AI proposes resolution with confidence score, sets status to `pending_confirmation`
   - UI shows proposal with "Approve" / "Reject" buttons in `EscalationAlert`

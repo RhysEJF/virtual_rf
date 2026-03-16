@@ -123,7 +123,7 @@ export const listCommand = command
       });
 
       console.log();
-      drawTable(headers, rows, { columnWidths: [18, 30, 16, 30, 10] });
+      drawTable(headers, rows, { columnWidths: [24, 28, 16, 30, 10] });
       console.log();
 
       // Print summary

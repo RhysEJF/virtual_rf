@@ -174,6 +174,33 @@ Create a new global skill.
 
 ---
 
+## Claude-Powered Capability Detection
+
+`detectCapabilitiesWithClaude()` in `lib/capabilities/detection.ts` uses Claude to semantically analyze text and detect capability needs. Unlike pattern-based detection, it understands intent and avoids false positives.
+
+```typescript
+interface ClaudeCapabilityResult \{
+  existingSkills: string[];        // Names of genuinely relevant existing skills
+  newCapabilities: CapabilityNeed[];  // New skills/tools to propose
+\}
+
+async function detectCapabilitiesWithClaude(
+  text: string,
+  field: 'intent' | 'approach',
+  taskTitle: string,
+  outcomeContext: string,
+  outcomeId?: string
+): Promise<ClaudeCapabilityResult>
+```
+
+- Sends existing skill names + categories to Claude (compact summary, not full content)
+- Claude returns JSON with matched existing skills and proposed new capabilities
+- Validates returned skill names against actual database entries
+- Falls back to empty arrays on failure
+- Used by `POST /api/tasks/{id}/optimize-field` during task field optimization
+
+---
+
 ## Skill Search
 
 `searchSkills()` in `lib/db/skills.ts` uses a **reverse containment** strategy — checking if the (long) query text contains the (short) skill identifiers:

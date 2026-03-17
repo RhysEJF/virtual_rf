@@ -51,6 +51,7 @@ export async function POST(
       metric_command: originalTask.metric_command ?? undefined,
       metric_baseline: originalTask.metric_baseline ?? undefined,
       optimization_budget: originalTask.optimization_budget ?? undefined,
+      metric_direction: (originalTask.metric_direction as 'lower' | 'higher') ?? undefined,
     });
 
     return NextResponse.json({ task: newTask }, { status: 201 });

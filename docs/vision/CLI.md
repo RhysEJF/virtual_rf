@@ -91,6 +91,7 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Task refinement (`flow refine`) | Complete |
 | Task optimization (`flow task optimize`) | Complete |
 | Skill-injected optimization (`--skill` flag) | Complete |
+| Evolve mode CLI flags (`--metric-command`, `--metric-direction`, etc.) | Complete |
 | ID column in `flow list` | Complete |
 | Interactive chat mode | **Not started** |
 
@@ -193,8 +194,8 @@ flow outcome iterate <id> --feedback="..."              # Not started
 ```bash
 flow task list <outcome-id> [--status=<s>] [--phase=<p>]
 flow task show <id>
-flow task add <outcome-id> --title="..." [--description="..."] [--priority=<n>]
-flow task update <id> [--status=<s>] [--title="..."] [--optimize-description] [--skill <name>]
+flow task add <outcome-id> --title="..." [--description="..."] [--priority=<n>] [--metric-command="..."] [--metric-direction=lower|higher] [--optimization-budget=<n>] [--metric-baseline=<n>]
+flow task update <id> [--status=<s>] [--title="..."] [--optimize-description] [--skill <name>] [--metric-command="..."] [--metric-direction=lower|higher] [--optimization-budget=<n>] [--metric-baseline=<n>]
 flow task optimize <id> [--field <field>] [--skill <name>] [--create]  # AI-optimize + detect capabilities
 flow task delete <id>
 flow refine <outcome-id>                                    # Enrich pending tasks (intent, approach, complexity, deps)

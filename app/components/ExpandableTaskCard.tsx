@@ -97,6 +97,7 @@ export function ExpandableTaskCard({
   const [metricCommand, setMetricCommand] = useState(task.metric_command || '');
   const [metricBaseline, setMetricBaseline] = useState(task.metric_baseline?.toString() || '');
   const [optimizationBudget, setOptimizationBudget] = useState(task.optimization_budget?.toString() || '5');
+  const [metricDirection, setMetricDirection] = useState<'lower' | 'higher'>((task.metric_direction as 'lower' | 'higher') || 'lower');
   const [showEvolveSetup, setShowEvolveSetup] = useState(false);
   const [savingEvolve, setSavingEvolve] = useState(false);
 
@@ -406,6 +407,7 @@ export function ExpandableTaskCard({
           metric_command: metricCommand.trim(),
           metric_baseline: metricBaseline ? parseFloat(metricBaseline) : null,
           optimization_budget: optimizationBudget ? parseInt(optimizationBudget, 10) : 5,
+          metric_direction: metricDirection,
         }),
       });
       const data = await response.json();
@@ -431,6 +433,7 @@ export function ExpandableTaskCard({
           metric_command: null,
           metric_baseline: null,
           optimization_budget: null,
+          metric_direction: null,
         }),
       });
       const data = await response.json();
@@ -439,6 +442,7 @@ export function ExpandableTaskCard({
         setMetricCommand('');
         setMetricBaseline('');
         setOptimizationBudget('5');
+        setMetricDirection('lower');
         setShowEvolveSetup(false);
       }
     } catch (err) {
@@ -779,6 +783,7 @@ export function ExpandableTaskCard({
               metricCommand={task.metric_command}
               metricBaseline={task.metric_baseline}
               optimizationBudget={task.optimization_budget}
+              metricDirection={task.metric_direction}
             />
           )}
 
@@ -818,8 +823,35 @@ export function ExpandableTaskCard({
                     className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
                   />
                   <p className="text-[10px] text-text-tertiary mt-1">
-                    Shell command that outputs a single number. Higher = better.
+                    Shell command that outputs a single number.
                   </p>
+                </div>
+                <div>
+                  <label className="text-xs text-text-secondary block mb-1">Direction</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`metric-direction-${task.id}`}
+                        value="higher"
+                        checked={metricDirection === 'higher'}
+                        onChange={() => setMetricDirection('higher')}
+                        className="accent-accent"
+                      />
+                      Higher is better
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`metric-direction-${task.id}`}
+                        value="lower"
+                        checked={metricDirection === 'lower'}
+                        onChange={() => setMetricDirection('lower')}
+                        className="accent-accent"
+                      />
+                      Lower is better
+                    </label>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -862,6 +894,7 @@ export function ExpandableTaskCard({
                       setMetricCommand(task.metric_command || '');
                       setMetricBaseline(task.metric_baseline?.toString() || '');
                       setOptimizationBudget(task.optimization_budget?.toString() || '5');
+                      setMetricDirection((task.metric_direction as 'lower' | 'higher') || 'lower');
                     }}
                   >
                     Cancel

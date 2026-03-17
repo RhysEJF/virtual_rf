@@ -24,6 +24,7 @@ interface EvolvePanelProps {
   metricCommand: string;
   metricBaseline: number | null;
   optimizationBudget: number | null;
+  metricDirection?: string | null;
 }
 
 export function EvolvePanel({
@@ -32,7 +33,9 @@ export function EvolvePanel({
   metricCommand,
   metricBaseline,
   optimizationBudget,
+  metricDirection,
 }: EvolvePanelProps): JSX.Element {
+  const direction = metricDirection === 'higher' ? 'higher' : 'lower';
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -58,12 +61,14 @@ export function EvolvePanel({
   const bestExperiment = experiments.filter(e => e.kept === 1).sort((a, b) => {
     if (a.metric_value === null) return 1;
     if (b.metric_value === null) return -1;
-    return a.metric_value - b.metric_value;
+    return direction === 'higher' ? b.metric_value - a.metric_value : a.metric_value - b.metric_value;
   })[0] || null;
 
   const baseline = metricBaseline ?? experiments[0]?.baseline_value ?? null;
   const improvementPct = bestExperiment?.metric_value != null && baseline != null && baseline !== 0
-    ? ((baseline - bestExperiment.metric_value) / Math.abs(baseline) * 100)
+    ? (direction === 'higher'
+      ? ((bestExperiment.metric_value - baseline) / Math.abs(baseline) * 100)
+      : ((baseline - bestExperiment.metric_value) / Math.abs(baseline) * 100))
     : null;
 
   // Plateau detection: last 3 experiments all reverted
@@ -139,7 +144,7 @@ export function EvolvePanel({
                     <span className="absolute inset-0 flex items-center px-2 text-[10px] text-text-secondary">
                       {exp.metric_value}
                       {delta != null && (
-                        <span className={`ml-1 ${delta < 0 ? 'text-status-success' : delta > 0 ? 'text-status-error' : 'text-text-tertiary'}`}>
+                        <span className={`ml-1 ${(direction === 'higher' ? delta > 0 : delta < 0) ? 'text-status-success' : (direction === 'higher' ? delta < 0 : delta > 0) ? 'text-status-error' : 'text-text-tertiary'}`}>
                           ({delta > 0 ? '+' : ''}{delta.toFixed(1)})
                         </span>
                       )}

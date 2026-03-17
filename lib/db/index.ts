@@ -653,6 +653,7 @@ function runMigrations(database: Database.Database): void {
     { name: 'metric_command', sql: 'ALTER TABLE tasks ADD COLUMN metric_command TEXT' },
     { name: 'metric_baseline', sql: 'ALTER TABLE tasks ADD COLUMN metric_baseline REAL' },
     { name: 'optimization_budget', sql: 'ALTER TABLE tasks ADD COLUMN optimization_budget INTEGER' },
+    { name: 'metric_direction', sql: "ALTER TABLE tasks ADD COLUMN metric_direction TEXT DEFAULT 'lower'" },
   ];
   for (const col of evolveColumns) {
     const exists = tasksColsEvolve.some(c => c.name === col.name);

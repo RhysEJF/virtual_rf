@@ -150,6 +150,18 @@ showSubcommand.action(async (taskId: string, options: OutputOptions) => {
       }
     }
 
+    // Display evolve mode config
+    if (task.metric_command) {
+      console.log();
+      console.log(chalk.bold.magenta('Evolve Mode:'));
+      console.log(`  Metric:    ${chalk.gray(task.metric_command)}`);
+      console.log(`  Direction: ${chalk.white(task.metric_direction || 'lower')} is better`);
+      console.log(`  Budget:    ${chalk.white(String(task.optimization_budget || 5))} iterations`);
+      if (task.metric_baseline != null) {
+        console.log(`  Baseline:  ${chalk.white(String(task.metric_baseline))}`);
+      }
+    }
+
     if (task.description) {
       console.log();
       console.log(chalk.bold.cyan('Description:'));
@@ -185,6 +197,10 @@ interface AddOptions extends OutputOptions {
   priority?: string;
   dependsOn?: string;
   gate?: string[];
+  metricCommand?: string;
+  metricBaseline?: string;
+  optimizationBudget?: string;
+  metricDirection?: string;
 }
 
 const addSubcommand = new Command('add')
@@ -198,7 +214,11 @@ const addSubcommand = new Command('add')
     prev = prev || [];
     prev.push(val);
     return prev;
-  }, [] as string[]);
+  }, [] as string[])
+  .option('--metric-command <cmd>', 'Enable evolve mode with this metric command (shell command that outputs a number)')
+  .option('--metric-baseline <n>', 'Known baseline metric value')
+  .option('--optimization-budget <n>', 'Max optimization iterations (default 5)')
+  .option('--metric-direction <dir>', 'Optimization direction: lower or higher (default: lower)');
 
 addOutputFlags(addSubcommand);
 
@@ -206,7 +226,7 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
   const outcomeId = resolveOutcomeId(rawOutcomeId);
   try {
     // Prepare task data
-    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }> } = {
+    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }>; metric_command?: string; metric_baseline?: number; optimization_budget?: number; metric_direction?: string } = {
       title,
     };
 
@@ -249,6 +269,33 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
       taskData.gates = gates;
     }
 
+    if (options.metricCommand) {
+      taskData.metric_command = options.metricCommand;
+    }
+    if (options.metricBaseline) {
+      const baseline = parseFloat(options.metricBaseline);
+      if (isNaN(baseline)) {
+        console.error(chalk.red('Error:'), 'Metric baseline must be a number');
+        process.exit(1);
+      }
+      taskData.metric_baseline = baseline;
+    }
+    if (options.optimizationBudget) {
+      const budget = parseInt(options.optimizationBudget, 10);
+      if (isNaN(budget) || budget < 1) {
+        console.error(chalk.red('Error:'), 'Optimization budget must be a positive integer');
+        process.exit(1);
+      }
+      taskData.optimization_budget = budget;
+    }
+    if (options.metricDirection) {
+      if (!['lower', 'higher'].includes(options.metricDirection)) {
+        console.error(chalk.red('Error:'), 'Metric direction must be "lower" or "higher"');
+        process.exit(1);
+      }
+      taskData.metric_direction = options.metricDirection;
+    }
+
     // Create the task
     const response = await api.post<{ task: Task }>(`/outcomes/${outcomeId}/tasks`, taskData);
     const { task } = response;
@@ -272,6 +319,15 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
     }
     if (taskData.gates && taskData.gates.length > 0) {
       console.log(`  Gates: ${chalk.yellow(taskData.gates.map(g => `${g.type}:${g.label}`).join(', '))}`);
+    }
+    if (taskData.metric_command) {
+      console.log(`  Evolve:   ${chalk.magenta('enabled')}`);
+      console.log(`    Metric:    ${chalk.gray(taskData.metric_command)}`);
+      console.log(`    Direction: ${chalk.white(taskData.metric_direction || 'lower')} is better`);
+      console.log(`    Budget:    ${chalk.white(String(taskData.optimization_budget || 5))} iterations`);
+      if (taskData.metric_baseline !== undefined) {
+        console.log(`    Baseline:  ${chalk.white(String(taskData.metric_baseline))}`);
+      }
     }
 
   } catch (error) {
@@ -303,6 +359,10 @@ interface UpdateOptions extends OutputOptions {
   optimize?: boolean;
   optimizeDescription?: boolean;
   skill?: string;
+  metricCommand?: string;
+  metricBaseline?: string;
+  optimizationBudget?: string;
+  metricDirection?: string;
 }
 
 interface DetectedCapability {
@@ -330,14 +390,19 @@ const updateSubcommand = new Command('update')
   .option('--depends-on <task-ids>', 'Set dependencies (comma-separated task IDs, or "" to clear)')
   .option('--optimize', 'Optimize description via Claude (use with --description)')
   .option('--optimize-description', 'Re-optimize existing description via Claude')
-  .option('--skill <name>', 'Inject a skill as methodology guidance for optimization');
+  .option('--skill <name>', 'Inject a skill as methodology guidance for optimization')
+  .option('--metric-command <cmd>', 'Set evolve mode metric command (shell command that outputs a number)')
+  .option('--metric-baseline <n>', 'Set baseline metric value')
+  .option('--optimization-budget <n>', 'Set max optimization iterations')
+  .option('--metric-direction <dir>', 'Set optimization direction: lower or higher');
 
 addOutputFlags(updateSubcommand);
 
 updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
   try {
     const validStatuses = ['pending', 'completed', 'failed'];
-    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize) || options.priority !== undefined || options.dependsOn !== undefined;
+    const hasEvolveUpdate = options.metricCommand !== undefined || options.metricBaseline !== undefined || options.optimizationBudget !== undefined || options.metricDirection !== undefined;
+    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize) || options.priority !== undefined || options.dependsOn !== undefined || hasEvolveUpdate;
     const hasOptimizeDescription = (options.description && options.optimize) || options.optimizeDescription;
 
     // Validate at least one option is provided
@@ -372,7 +437,7 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
         console.log(chalk.gray('Updating task...'));
       }
 
-      const updatePayload: Record<string, string | number | string[]> = {};
+      const updatePayload: Record<string, string | number | string[] | null> = {};
       if (options.status) updatePayload.status = options.status;
       if (options.title) updatePayload.title = options.title;
       if (options.description && !options.optimize) updatePayload.description = options.description;
@@ -385,6 +450,32 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
           // Set dependencies
           updatePayload.depends_on = options.dependsOn.split(',').map(id => id.trim()).filter(id => id.length > 0);
         }
+      }
+      if (options.metricCommand !== undefined) {
+        updatePayload.metric_command = options.metricCommand || null;
+      }
+      if (options.metricBaseline !== undefined) {
+        const baseline = parseFloat(options.metricBaseline);
+        if (isNaN(baseline)) {
+          console.error(chalk.red('Error:'), 'Metric baseline must be a number');
+          process.exit(1);
+        }
+        updatePayload.metric_baseline = baseline;
+      }
+      if (options.optimizationBudget !== undefined) {
+        const budget = parseInt(options.optimizationBudget, 10);
+        if (isNaN(budget) || budget < 1) {
+          console.error(chalk.red('Error:'), 'Optimization budget must be a positive integer');
+          process.exit(1);
+        }
+        updatePayload.optimization_budget = budget;
+      }
+      if (options.metricDirection !== undefined) {
+        if (!['lower', 'higher'].includes(options.metricDirection)) {
+          console.error(chalk.red('Error:'), 'Metric direction must be "lower" or "higher"');
+          process.exit(1);
+        }
+        updatePayload.metric_direction = options.metricDirection;
       }
 
       const response = await api.tasks.update(taskId, updatePayload);

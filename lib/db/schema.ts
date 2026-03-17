@@ -204,9 +204,10 @@ export interface Task {
   // Deterministic post-task verification command (run in workspace dir after completion)
   verify_command: string | null;
   // Evolve mode: hill-climbing optimization fields
-  metric_command: string | null;      // Shell command that outputs a numeric metric (lower = better)
+  metric_command: string | null;      // Shell command that outputs a numeric metric
   metric_baseline: number | null;     // Baseline metric value before optimization begins
   optimization_budget: number | null; // Max optimization iterations (default 5)
+  metric_direction: string | null;    // 'lower' | 'higher' — which direction is better (default 'lower')
 }
 
 export interface Worker {

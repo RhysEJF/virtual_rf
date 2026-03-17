@@ -118,6 +118,7 @@ export async function PATCH(
       metric_command: body.metric_command,
       metric_baseline: body.metric_baseline,
       optimization_budget: body.optimization_budget,
+      metric_direction: body.metric_direction,
     });
 
     if (!task) {

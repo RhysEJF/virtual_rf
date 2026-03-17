@@ -118,6 +118,11 @@ export interface Task {
   task_intent: string | null;
   task_approach: string | null;
   depends_on: string | null;  // JSON array of task IDs
+  // Evolve mode fields
+  metric_command: string | null;
+  metric_baseline: number | null;
+  optimization_budget: number | null;
+  metric_direction: string | null;  // 'lower' | 'higher'
 }
 
 // Extended task with parsed dependency info (returned by API)

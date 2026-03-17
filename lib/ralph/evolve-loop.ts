@@ -11,6 +11,7 @@ interface EvolveTask {
   metric_command: string;
   metric_baseline: number | null;
   optimization_budget: number;
+  metric_direction: 'lower' | 'higher';
 }
 
 interface EvolveResult {
@@ -151,9 +152,8 @@ export async function runEvolveLoop(
     const sha = getCurrentSha(workspacePath);
     const durationSeconds = Math.floor((Date.now() - startTime) / 1000);
 
-    const improved = newValue !== null && bestValue !== null && newValue < bestValue;
-    // Note: lower is better (like file size, line count, latency, etc.)
-    // If higher-is-better semantics needed, this should be configurable
+    const improved = newValue !== null && bestValue !== null &&
+      (task.metric_direction === 'higher' ? newValue > bestValue : newValue < bestValue);
 
     if (improved || (newValue !== null && bestValue === null)) {
       // Keep the change
@@ -218,7 +218,9 @@ export async function runEvolveLoop(
     iterations: iteration - 1,
     bestValue,
     baselineValue: baseline,
-    improvement: baseline !== null && bestValue !== null ? baseline - bestValue : 0,
+    improvement: baseline !== null && bestValue !== null
+      ? (task.metric_direction === 'higher' ? bestValue - baseline : baseline - bestValue)
+      : 0,
     stopped: stopReason,
   };
 }

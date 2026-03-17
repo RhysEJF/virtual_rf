@@ -593,7 +593,8 @@ kill -9 <PID>
 
 ### Evolve Mode (Complete)
 - [x] Hill-climbing optimization loop (`lib/ralph/evolve-loop.ts`)
-- [x] `metric_command`, `metric_baseline`, `optimization_budget` columns on tasks
+- [x] `metric_command`, `metric_baseline`, `optimization_budget`, `metric_direction` columns on tasks
+- [x] `metric_direction` supports `'lower'` (default) and `'higher'` optimization semantics
 - [x] Experiments table tracking iterations, metric values, kept/reverted status
 - [x] Auto git init in workspace for rollback capability
 - [x] Git revert on regression, keep on improvement
@@ -603,6 +604,11 @@ kill -9 <PID>
 - [x] Optimize-task skill with GEPA methodology (`~/flow-data/skills/evolve/optimize-task.md`)
 - [x] Skill evolution skill (`~/flow-data/skills/evolve/skill-evolution.md`)
 - [x] Experiments API: GET `/api/outcomes/[id]/experiments`
+- [x] CLI: `flow task add/update` with `--metric-command`, `--metric-direction`, `--optimization-budget`, `--metric-baseline` flags
+- [x] CLI: `flow task show` displays evolve config
+- [x] UI: EvolvePanel direction-aware (sorting, colors, improvement %)
+- [x] UI: ExpandableTaskCard evolve setup form with direction toggle (Higher/Lower is better)
+- [x] Task creation API passes evolve fields through (was missing)
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

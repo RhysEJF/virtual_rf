@@ -149,12 +149,17 @@ The `experiments` table records hill-climbing optimization attempts for tasks ru
 | Column | Purpose |
 |--------|---------|
 | **task_id** | The task being optimized |
-| **attempt_number** | Sequential attempt index |
-| **metric_before** | Score before this attempt |
-| **metric_after** | Score after this attempt |
-| **change_description** | What the worker changed |
-| **outcome** | `improvement`, `regression`, or `plateau` |
-| **git_commit** | Commit SHA for this attempt (reverted if regression) |
+| **outcome_id** | Parent outcome |
+| **iteration** | Sequential iteration index |
+| **metric_value** | Measured metric value after this attempt |
+| **metric_command** | Shell command used to measure |
+| **baseline_value** | Baseline metric value before optimization began |
+| **change_summary** | What the worker changed |
+| **git_sha** | Commit SHA for this attempt (reverted if regression) |
+| **kept** | Boolean — was this experiment kept (1) or reverted (0) |
+| **duration_seconds** | Time spent on this iteration |
+
+Tasks table evolve columns: `metric_command` (TEXT), `metric_baseline` (REAL), `optimization_budget` (INTEGER), `metric_direction` (TEXT, default `'lower'` — supports `'lower'` or `'higher'`).
 
 ### Task Proliferation Guards
 

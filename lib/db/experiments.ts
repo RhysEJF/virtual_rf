@@ -85,11 +85,12 @@ export function getExperimentCount(taskId: string): number {
   return result.count;
 }
 
-export function getBestExperiment(taskId: string): Experiment | null {
+export function getBestExperiment(taskId: string, direction: 'lower' | 'higher' = 'lower'): Experiment | null {
   const db = getDb();
+  const order = direction === 'higher' ? 'DESC' : 'ASC';
   return db.prepare(`
     SELECT * FROM experiments WHERE task_id = ? AND kept = 1
-    ORDER BY metric_value ASC
+    ORDER BY metric_value ${order}
     LIMIT 1
   `).get(taskId) as Experiment | null;
 }

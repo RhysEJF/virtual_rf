@@ -53,6 +53,7 @@ export interface CreateTaskInput {
   metric_command?: string;
   metric_baseline?: number;
   optimization_budget?: number;
+  metric_direction?: 'lower' | 'higher';
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -104,10 +105,10 @@ export function createTask(input: CreateTaskInput): Task {
       from_review, review_cycle, phase, capability_type, required_skills,
       task_intent, task_approach, depends_on, required_capabilities,
       complexity_score, estimated_turns, decomposed_from_task_id,
-      gates, verify_command, metric_command, metric_baseline, optimization_budget,
+      gates, verify_command, metric_command, metric_baseline, optimization_budget, metric_direction,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -135,6 +136,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.metric_command || null,
     input.metric_baseline ?? null,
     input.optimization_budget ?? null,
+    input.metric_direction || 'lower',
     timestamp,
     timestamp
   );
@@ -1110,6 +1112,7 @@ export interface UpdateTaskInput {
   metric_command?: string | null;
   metric_baseline?: number | null;
   optimization_budget?: number | null;
+  metric_direction?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -1225,6 +1228,10 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.optimization_budget !== undefined) {
     updates.push('optimization_budget = ?');
     values.push(input.optimization_budget);
+  }
+  if (input.metric_direction !== undefined) {
+    updates.push('metric_direction = ?');
+    values.push(input.metric_direction);
   }
 
   values.push(id);

@@ -1782,6 +1782,7 @@ export async function startRalphWorker(
                   metric_command: task.metric_command,
                   metric_baseline: task.metric_baseline,
                   optimization_budget: task.optimization_budget || 5,
+                  metric_direction: (task.metric_direction as 'lower' | 'higher') || 'lower',
                 },
                 taskWorkspace, // Use task-level workspace to avoid git conflicts with concurrent workers
                 async (evolveTask, iter, previousExperiments, wsPath) => {
@@ -1800,14 +1801,14 @@ export async function startRalphWorker(
 ## Evolve Mode — Iteration ${iter} of ${evolveTask.optimization_budget}
 
 **Metric command:** \`${evolveTask.metric_command}\`
-**Optimization goal:** Lower the metric value (smaller is better)
+**Optimization goal:** ${task.metric_direction === 'higher' ? 'Increase' : 'Decrease'} the metric value (${task.metric_direction === 'higher' ? 'higher' : 'lower'} is better)
 
 ${previousExperiments ? `### Previous Experiments\n${previousExperiments}\n` : ''}
 
 ## Evolve Instructions
 
 1. Analyze the metric command to understand what you are optimizing
-2. Make ONE focused, targeted change that you hypothesize will reduce the metric value
+2. Make ONE focused, targeted change that you hypothesize will ${task.metric_direction === 'higher' ? 'increase' : 'reduce'} the metric value
 3. Do NOT make sweeping changes — one hypothesis per iteration
 4. Do NOT repeat approaches that have already been tried and reverted
 5. After making your change, write a ONE-LINE summary of what you changed and why to progress.txt

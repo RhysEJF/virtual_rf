@@ -199,17 +199,25 @@ Tasks can declare a shell command that objectively measures success:
 
 ### Evolve Mode (Hill-Climbing Optimization)
 
-Tasks can enter an optimization loop that iteratively improves a measurable metric:
+Tasks can enter an optimization loop that iteratively improves a measurable metric using the GEPA methodology (Generate, Execute, Profile, Analyze):
 
 1. **metric_command** — A shell command that outputs a numeric score (e.g., Lighthouse score, test pass rate, benchmark throughput).
-2. **metric_baseline** — Starting score; improvements must beat this to be kept.
-3. **optimization_budget** — Maximum number of improvement attempts.
-4. **experiments table** — Each attempt is recorded as an experiment with before/after scores, the change attempted, and outcome (improvement/regression/plateau).
-5. **Auto git init** — The workspace is git-initialized at evolve start so each attempt can be committed and reverted cleanly.
-6. **Git revert on regression** — If a change makes the metric worse, the commit is reverted automatically.
-7. **Plateau detection** — After 3 consecutive non-improvements, the loop exits even if budget remains.
+2. **metric_baseline** — Starting score; improvements must beat this to be kept. Auto-measured if not provided.
+3. **metric_direction** — Whether `lower` or `higher` values are better (default: `lower`). Supports both optimization directions (e.g., `lower` for bundle size/latency, `higher` for test coverage/scores).
+4. **optimization_budget** — Maximum number of improvement attempts (default: 5).
+5. **experiments table** — Each attempt is recorded as an experiment with before/after scores, the change attempted, and outcome (kept/reverted).
+6. **Auto git init** — The workspace is git-initialized at evolve start so each attempt can be committed and reverted cleanly.
+7. **Git revert on regression** — If a change makes the metric worse (wrong direction), the commit is reverted automatically.
+8. **Plateau detection** — After 3 consecutive non-improvements, the loop exits even if budget remains.
 
-Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle.
+Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle. The `optimize-task.md` skill (in `~/flow-data/skills/evolve/`) provides GEPA methodology instructions to workers. The `skill-evolution.md` skill provides a framework for iteratively improving skill files themselves.
+
+**CLI support:**
+- `flow task add <outcome-id> "title" --metric-command "cmd" --metric-direction higher --optimization-budget 10`
+- `flow task update <task-id> --metric-command "cmd" --metric-direction lower`
+- `flow task show <task-id>` displays evolve config when set
+
+**UI support:** ExpandableTaskCard has an "Optimize Mode" section with a setup form (metric command, direction toggle, baseline, budget). The EvolvePanel component displays experiment history with a bar chart, kept/reverted badges, improvement %, and plateau detection.
 
 ### Content-Aware Circuit Breaker
 

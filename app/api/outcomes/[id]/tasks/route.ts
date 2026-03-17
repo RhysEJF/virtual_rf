@@ -175,6 +175,10 @@ export async function POST(
       verify_command: body.verify_command,
       complexity_score: body.complexity_score,
       estimated_turns: body.estimated_turns,
+      metric_command: body.metric_command,
+      metric_baseline: body.metric_baseline,
+      optimization_budget: body.optimization_budget,
+      metric_direction: body.metric_direction,
     });
 
     // Auto-create escalations for any gates

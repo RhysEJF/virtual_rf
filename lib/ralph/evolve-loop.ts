@@ -24,11 +24,17 @@ interface EvolveResult {
 
 function runMetricCommand(command: string, cwd: string): number | null {
   try {
+    // Strip CLAUDECODE env var so metric commands can spawn Claude CLI
+    // (nested Claude sessions refuse to start if CLAUDECODE is set)
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+
     const output = execSync(command, {
       cwd,
       timeout: 120000,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: cleanEnv,
     });
 
     // Extract first number from output

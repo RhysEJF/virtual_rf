@@ -72,8 +72,14 @@ command
     try {
       // Option 1: Use existing eval
       if (options.eval) {
+        const overrides: Record<string, unknown> = {};
+        if (options.budget) overrides.budget = parseInt(options.budget, 10);
+        if (options.samples) overrides.samples = parseInt(options.samples, 10);
+        if (options.direction) overrides.direction = options.direction;
+
         const response = await api.post<EvolveActivateResponse>(`/tasks/${taskId}/evolve`, {
           recipe_name: options.eval,
+          overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
         });
 
         if (options.json) {

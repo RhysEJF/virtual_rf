@@ -49,6 +49,34 @@ export interface TaskWithDependencies extends Task {
   attempt_count?: number;
 }
 
+const RECIPE_TEMPLATE = `# Evolve Recipe: My Eval
+
+## Artifact
+- file: title.txt
+- description: The file to optimize
+
+## Scoring
+- mode: judge
+- direction: higher
+- budget: 5
+- samples: 1
+
+## Criteria
+- Quality (0.4): Overall quality of the output
+- Clarity (0.3): Clear and easy to understand
+- Completeness (0.3): Covers all necessary aspects
+
+## Examples
+### "Poor quality" → 20
+Lacks structure, unclear, missing key elements.
+
+### "Excellent quality" → 85
+Well-structured, clear and concise, covers all requirements.
+
+## Context
+Add any additional context the judge needs here.
+`;
+
 interface ExpandableTaskCardProps {
   task: TaskWithDependencies;
   /** Map of all tasks by ID for displaying dependency titles */
@@ -108,6 +136,10 @@ export function ExpandableTaskCard({
   const [recipeContent, setRecipeContent] = useState('');
   const [recipeSaveName, setRecipeSaveName] = useState('');
   const [generatingRecipe, setGeneratingRecipe] = useState(false);
+  // Override state for eval recipe settings
+  const [overrideBudget, setOverrideBudget] = useState('');
+  const [overrideSamples, setOverrideSamples] = useState('');
+  const [overrideDirection, setOverrideDirection] = useState<'higher' | 'lower' | ''>('');
 
   // Gate satisfy modal state
   const [satisfyingGate, setSatisfyingGate] = useState<TaskGate | null>(null);
@@ -475,10 +507,18 @@ export function ExpandableTaskCard({
   const handleActivateFromRecipe = async (recipeName: string) => {
     setSavingEvolve(true);
     try {
+      const overrides: Record<string, unknown> = {};
+      if (overrideBudget) overrides.budget = parseInt(overrideBudget, 10);
+      if (overrideSamples) overrides.samples = parseInt(overrideSamples, 10);
+      if (overrideDirection) overrides.direction = overrideDirection;
+
       const response = await fetch(`/api/tasks/${task.id}/evolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipe_name: recipeName }),
+        body: JSON.stringify({
+          recipe_name: recipeName,
+          overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        }),
       });
       const data = await response.json();
       if (response.ok && data.task && onUpdate) {
@@ -516,12 +556,18 @@ export function ExpandableTaskCard({
     if (!recipeContent.trim()) return;
     setSavingEvolve(true);
     try {
+      const overrides: Record<string, unknown> = {};
+      if (overrideBudget) overrides.budget = parseInt(overrideBudget, 10);
+      if (overrideSamples) overrides.samples = parseInt(overrideSamples, 10);
+      if (overrideDirection) overrides.direction = overrideDirection;
+
       const response = await fetch(`/api/tasks/${task.id}/evolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipe_content: recipeContent,
           save_as: recipeSaveName.trim() || undefined,
+          overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
         }),
       });
       const data = await response.json();
@@ -906,7 +952,7 @@ export function ExpandableTaskCard({
                     Use Eval
                   </button>
                   <button
-                    onClick={() => setEvolveTab('create')}
+                    onClick={() => { setEvolveTab('create'); if (!recipeContent) setRecipeContent(RECIPE_TEMPLATE); }}
                     className={`px-2 py-1 text-xs rounded-t ${evolveTab === 'create' ? 'bg-bg-secondary text-text-primary font-medium' : 'text-text-tertiary hover:text-text-secondary'}`}
                   >
                     Create New
@@ -935,7 +981,12 @@ export function ExpandableTaskCard({
                         .map(e => (
                           <button
                             key={e.id}
-                            onClick={() => setSelectedEval(e.id)}
+                            onClick={() => {
+                              setSelectedEval(e.id);
+                              setOverrideDirection(e.direction as 'higher' | 'lower');
+                              setOverrideBudget('5');
+                              setOverrideSamples('1');
+                            }}
                             className={`w-full text-left px-2 py-1.5 text-xs rounded ${selectedEval === e.id ? 'bg-accent/10 border border-accent/30' : 'hover:bg-bg-secondary border border-transparent'}`}
                           >
                             <div className="font-medium text-text-primary">{e.name}</div>
@@ -949,6 +1000,34 @@ export function ExpandableTaskCard({
                         <p className="text-text-tertiary text-xs py-2 text-center">No evals found. Create one or use manual mode.</p>
                       )}
                     </div>
+                    {selectedEval && (
+                      <div className="mt-2 p-2 bg-bg-secondary/50 rounded border border-border space-y-2">
+                        <p className="text-[10px] text-text-tertiary uppercase tracking-wide">Settings (editable)</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[10px] text-text-tertiary block">Direction</label>
+                            <select
+                              value={overrideDirection}
+                              onChange={(e) => setOverrideDirection(e.target.value as 'higher' | 'lower')}
+                              className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded"
+                            >
+                              <option value="higher">Higher is better</option>
+                              <option value="lower">Lower is better</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-text-tertiary block">Budget</label>
+                            <input type="number" min="1" max="20" value={overrideBudget} onChange={(e) => setOverrideBudget(e.target.value)}
+                              className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-text-tertiary block">Samples</label>
+                            <input type="number" min="1" max="10" value={overrideSamples} onChange={(e) => setOverrideSamples(e.target.value)}
+                              className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 pt-1">
                       <Button
                         variant="primary"
@@ -978,8 +1057,7 @@ export function ExpandableTaskCard({
                     <textarea
                       value={recipeContent}
                       onChange={(e) => setRecipeContent(e.target.value)}
-                      placeholder="# Evolve Recipe: My Eval&#10;&#10;## Artifact&#10;- file: output.txt&#10;- description: The file to optimize&#10;&#10;## Scoring&#10;- mode: judge&#10;- direction: higher&#10;- budget: 5&#10;- samples: 1&#10;&#10;## Criteria&#10;- Quality (0.5): Overall quality&#10;- Clarity (0.5): Easy to understand"
-                      rows={10}
+                      rows={16}
                       className="w-full px-3 py-2 text-xs bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary resize-y"
                     />
                     <div>
@@ -991,6 +1069,32 @@ export function ExpandableTaskCard({
                         placeholder="my-eval-name"
                         className="w-full px-3 py-1.5 text-xs bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
                       />
+                    </div>
+                    <div className="mt-2 p-2 bg-bg-secondary/50 rounded border border-border space-y-2">
+                      <p className="text-[10px] text-text-tertiary uppercase tracking-wide">Settings (editable)</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] text-text-tertiary block">Direction</label>
+                          <select
+                            value={overrideDirection}
+                            onChange={(e) => setOverrideDirection(e.target.value as 'higher' | 'lower')}
+                            className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded"
+                          >
+                            <option value="higher">Higher is better</option>
+                            <option value="lower">Lower is better</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-text-tertiary block">Budget</label>
+                          <input type="number" min="1" max="20" value={overrideBudget} onChange={(e) => setOverrideBudget(e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-text-tertiary block">Samples</label>
+                          <input type="number" min="1" max="10" value={overrideSamples} onChange={(e) => setOverrideSamples(e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-bg-secondary border border-border rounded" />
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 pt-1">
                       <Button

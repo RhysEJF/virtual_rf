@@ -268,7 +268,7 @@ Users can request changes after completion via the Iterate section:
 ## Database Tables
 
 - `outcomes` - Outcomes with intent, design_doc, git config, save targets
-- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed), with `gates` JSON column for human-in-the-loop checkpoints, `eval_recipe_name` for evolve recipe binding
+- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed), with `gates` JSON column for human-in-the-loop checkpoints, `eval_recipe_name` for evolve recipe binding, `eval_overrides` JSON for task-scoped recipe setting overrides
 - `workers` - Ralph worker instances with PID tracking
 - `progress_entries` - Episodic memory of worker iterations (full_output capture)
 - `review_cycles` - Review history with issues found and convergence tracking
@@ -637,6 +637,11 @@ kill -9 <PID>
 - [x] CLI: `flow evals`, `flow eval` — eval listing and detail commands
 - [x] Converse tools: listEvals, setupEvolve (`lib/converse/tools/evolve.ts`)
 - [x] Worker recipe regeneration + criteria injection into CLAUDE.md before evolve loop
+- [x] `eval_overrides` JSON column on tasks — task-scoped recipe setting overrides (budget, samples, direction, criteria weights)
+- [x] `applyOverrides()` in recipe-parser — merges overrides onto base recipe before eval generation
+- [x] UI settings panel on Use Eval and Create New tabs — editable direction/budget/samples per-task
+- [x] CLI: `flow evolve setup --eval <name> --budget N --samples N --direction higher` override flags
+- [x] Pre-filled editable recipe template in Create New tab (not just placeholder)
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

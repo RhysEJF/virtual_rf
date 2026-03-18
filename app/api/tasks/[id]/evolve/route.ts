@@ -5,6 +5,7 @@
  *   { recipe_name: string }              — Use existing eval by name
  *   { recipe_content: string }           — Inline recipe markdown
  *   { recipe_content: string, save_as: string } — Save + activate
+ *   { overrides: { budget?, samples?, direction? } } — Override recipe defaults
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,7 +14,7 @@ import { join } from 'path';
 import { getTaskById, updateTask } from '@/lib/db/tasks';
 import { getOutcomeById } from '@/lib/db/outcomes';
 import { paths } from '@/lib/config/paths';
-import { parseRecipe } from '@/lib/evolve/recipe-parser';
+import { parseRecipe, applyOverrides } from '@/lib/evolve/recipe-parser';
 import { writeEvalToWorkspace } from '@/lib/evolve/eval-generator';
 import { findEvalByName, getEvalContent } from '@/lib/evolve/eval-manager';
 
@@ -38,7 +39,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { recipe_name, recipe_content, save_as } = body;
+    const { recipe_name, recipe_content, save_as, overrides } = body;
 
     let recipeMarkdown: string;
     let recipeName: string;
@@ -80,14 +81,20 @@ export async function POST(
       );
     }
 
+    // Apply overrides if provided
+    let finalRecipe = recipe;
+    if (overrides && typeof overrides === 'object') {
+      finalRecipe = applyOverrides(recipe, overrides);
+    }
+
     // Ensure task workspace exists
     const taskWorkspace = join(paths.workspaces, task.outcome_id, task.id);
     if (!existsSync(taskWorkspace)) {
       mkdirSync(taskWorkspace, { recursive: true });
     }
 
-    // Generate and write eval.sh
-    const evalScriptPath = writeEvalToWorkspace(recipe, taskWorkspace);
+    // Generate and write eval.sh (using potentially overridden recipe)
+    const evalScriptPath = writeEvalToWorkspace(finalRecipe, taskWorkspace);
 
     // Save recipe to workspace evals/ directory
     const evalsDir = join(paths.workspaces, task.outcome_id, 'evals');
@@ -106,12 +113,13 @@ export async function POST(
       writeFileSync(join(userEvalsDir, `${safeRecipeName}.md`), recipeMarkdown, 'utf-8');
     }
 
-    // Update task with evolve settings
+    // Update task with evolve settings (using overridden values)
     const updated = updateTask(task.id, {
       metric_command: 'bash eval.sh',
-      metric_direction: recipe.scoring.direction,
-      optimization_budget: recipe.scoring.budget,
+      metric_direction: finalRecipe.scoring.direction,
+      optimization_budget: finalRecipe.scoring.budget,
       eval_recipe_name: safeRecipeName,
+      eval_overrides: overrides ? JSON.stringify(overrides) : null,
     });
 
     return NextResponse.json({
@@ -119,11 +127,11 @@ export async function POST(
       eval_script: evalScriptPath,
       recipe: {
         name: recipe.name,
-        mode: recipe.scoring.mode,
-        direction: recipe.scoring.direction,
-        budget: recipe.scoring.budget,
-        criteria_count: recipe.criteria.length,
-        examples_count: recipe.examples.length,
+        mode: finalRecipe.scoring.mode,
+        direction: finalRecipe.scoring.direction,
+        budget: finalRecipe.scoring.budget,
+        criteria_count: finalRecipe.criteria.length,
+        examples_count: finalRecipe.examples.length,
       },
     });
   } catch (error) {

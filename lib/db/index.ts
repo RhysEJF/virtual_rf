@@ -669,6 +669,10 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks ADD COLUMN eval_recipe_name TEXT');
     console.log('[DB Migration] Added eval_recipe_name column to tasks');
   }
+  if (!tasksColsRecipe.some(c => c.name === 'eval_overrides')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN eval_overrides TEXT');
+    console.log('[DB Migration] Added eval_overrides column to tasks');
+  }
 }
 
 /**

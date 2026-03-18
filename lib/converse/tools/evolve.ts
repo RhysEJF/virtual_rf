@@ -45,7 +45,8 @@ export function listEvals(outcomeId?: string): {
 export async function setupEvolve(
   taskId: string,
   evalName?: string,
-  generate?: boolean
+  generate?: boolean,
+  overrides?: Record<string, unknown>
 ): Promise<{ success: boolean; message: string; recipe_name?: string }> {
   const task = getTaskById(taskId);
   if (!task) {
@@ -98,12 +99,19 @@ export async function setupEvolve(
     return { success: false, message: `Invalid recipe: ${recipe.error}` };
   }
 
+  // Apply overrides if provided
+  let finalRecipe = recipe;
+  if (overrides) {
+    const { applyOverrides } = await import('../../evolve/recipe-parser');
+    finalRecipe = applyOverrides(recipe as import('../../evolve/recipe-parser').EvolveRecipe, overrides);
+  }
+
   // Write eval.sh to task workspace
   const taskWorkspace = join(paths.workspaces, task.outcome_id, task.id);
   if (!existsSync(taskWorkspace)) {
     mkdirSync(taskWorkspace, { recursive: true });
   }
-  writeEvalToWorkspace(recipe, taskWorkspace);
+  writeEvalToWorkspace(finalRecipe, taskWorkspace);
 
   // Save recipe to outcome evals dir
   const evalsDir = join(paths.workspaces, task.outcome_id, 'evals');
@@ -116,14 +124,15 @@ export async function setupEvolve(
   // Update task
   updateTask(task.id, {
     metric_command: 'bash eval.sh',
-    metric_direction: recipe.scoring.direction,
-    optimization_budget: recipe.scoring.budget,
+    metric_direction: finalRecipe.scoring.direction,
+    optimization_budget: finalRecipe.scoring.budget,
     eval_recipe_name: safeName,
+    eval_overrides: overrides ? JSON.stringify(overrides) : null,
   });
 
   return {
     success: true,
-    message: `Evolve mode activated on task ${taskId} using recipe "${recipe.name}" (${recipe.scoring.mode}, ${recipe.scoring.direction}, budget=${recipe.scoring.budget})`,
+    message: `Evolve mode activated on task ${taskId} using recipe "${recipe.name}" (${finalRecipe.scoring.mode}, ${finalRecipe.scoring.direction}, budget=${finalRecipe.scoring.budget})`,
     recipe_name: safeName,
   };
 }

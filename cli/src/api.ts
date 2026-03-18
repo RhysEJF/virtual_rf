@@ -124,6 +124,7 @@ export interface Task {
   optimization_budget: number | null;
   metric_direction: string | null;  // 'lower' | 'higher'
   eval_recipe_name: string | null;
+  eval_overrides: string | null;
 }
 
 // Extended task with parsed dependency info (returned by API)

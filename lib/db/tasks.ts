@@ -56,6 +56,7 @@ export interface CreateTaskInput {
   metric_direction?: 'lower' | 'higher';
   // Eval recipe linkage
   eval_recipe_name?: string;
+  eval_overrides?: string;
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -108,9 +109,9 @@ export function createTask(input: CreateTaskInput): Task {
       task_intent, task_approach, depends_on, required_capabilities,
       complexity_score, estimated_turns, decomposed_from_task_id,
       gates, verify_command, metric_command, metric_baseline, optimization_budget, metric_direction,
-      eval_recipe_name, created_at, updated_at
+      eval_recipe_name, eval_overrides, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -140,6 +141,7 @@ export function createTask(input: CreateTaskInput): Task {
     input.optimization_budget ?? null,
     input.metric_direction || 'lower',
     input.eval_recipe_name || null,
+    input.eval_overrides || null,
     timestamp,
     timestamp
   );
@@ -1118,6 +1120,7 @@ export interface UpdateTaskInput {
   metric_direction?: string | null;
   // Eval recipe linkage
   eval_recipe_name?: string | null;
+  eval_overrides?: string | null;
 }
 
 export function updateTask(id: string, input: UpdateTaskInput): Task | null {
@@ -1241,6 +1244,10 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.eval_recipe_name !== undefined) {
     updates.push('eval_recipe_name = ?');
     values.push(input.eval_recipe_name);
+  }
+  if (input.eval_overrides !== undefined) {
+    updates.push('eval_overrides = ?');
+    values.push(input.eval_overrides);
   }
 
   values.push(id);

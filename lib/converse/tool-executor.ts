@@ -634,7 +634,16 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         if (!taskId) return { success: false, error: 'task_id is required' };
         const evalName = args.eval_name as string | undefined;
         const generate = args.generate as boolean | undefined;
-        const result = await evolveTools.setupEvolve(taskId, evalName, generate);
+        const overridesStr = args.overrides as string | undefined;
+        let overrides: Record<string, unknown> | undefined;
+        if (overridesStr) {
+          try {
+            overrides = JSON.parse(overridesStr);
+          } catch {
+            return { success: false, error: 'Invalid JSON in overrides parameter' };
+          }
+        }
+        const result = await evolveTools.setupEvolve(taskId, evalName, generate, overrides);
         return {
           success: result.success,
           data: { message: result.message, recipe_name: result.recipe_name },

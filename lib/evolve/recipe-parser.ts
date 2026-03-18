@@ -201,3 +201,39 @@ function extractField(section: string, key: string): string | null {
   }
   return null;
 }
+
+// ============================================================================
+// Override Merging
+// ============================================================================
+
+/**
+ * Apply overrides to a parsed recipe. Returns a new recipe with overrides merged.
+ */
+export function applyOverrides(recipe: EvolveRecipe, overrides: Record<string, unknown>): EvolveRecipe {
+  const merged = { ...recipe };
+
+  if (overrides.budget !== undefined) {
+    merged.scoring = { ...merged.scoring, budget: Number(overrides.budget) };
+  }
+  if (overrides.samples !== undefined) {
+    merged.scoring = { ...merged.scoring, samples: Number(overrides.samples) };
+  }
+  if (overrides.direction !== undefined) {
+    merged.scoring = { ...merged.scoring, direction: overrides.direction as 'higher' | 'lower' };
+  }
+  if (overrides.mode !== undefined) {
+    merged.scoring = { ...merged.scoring, mode: overrides.mode as 'judge' | 'command' };
+  }
+  if (overrides.command !== undefined) {
+    merged.scoring = { ...merged.scoring, command: overrides.command as string };
+  }
+  if (Array.isArray(overrides.criteria)) {
+    merged.criteria = (overrides.criteria as Array<{ name: string; weight: number; description?: string }>).map(c => ({
+      name: c.name,
+      weight: c.weight,
+      description: c.description || merged.criteria.find(mc => mc.name === c.name)?.description || '',
+    }));
+  }
+
+  return merged;
+}

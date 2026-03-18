@@ -721,6 +721,11 @@ export const converseTools: ToolDefinition[] = [
         description: 'AI-generate a recipe draft from task context',
         required: false,
       },
+      overrides: {
+        type: 'string',
+        description: 'JSON string of overrides (e.g., {"budget": 8, "samples": 3})',
+        required: false,
+      },
     },
   },
 ];

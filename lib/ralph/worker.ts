@@ -1785,16 +1785,27 @@ export async function startRalphWorker(
                   if (recipeContent) {
                     const recipe = parseRecipe(recipeContent);
                     if (!('error' in recipe)) {
-                      writeEvalToWorkspace(recipe, taskWorkspace);
+                      // Apply task-level overrides if present
+                      let finalRecipe = recipe;
+                      if (task.eval_overrides) {
+                        try {
+                          const overrides = JSON.parse(task.eval_overrides);
+                          const { applyOverrides } = await import('../evolve/recipe-parser');
+                          finalRecipe = applyOverrides(recipe, overrides);
+                        } catch (e) {
+                          appendLog(`[Evolve] Warning: could not apply eval overrides: ${e}`);
+                        }
+                      }
+                      writeEvalToWorkspace(finalRecipe, taskWorkspace);
                       appendLog(`[Evolve] Regenerated eval.sh from recipe: ${task.eval_recipe_name}`);
                       // Build criteria context for worker CLAUDE.md
-                      if (recipe.criteria.length > 0) {
+                      if (finalRecipe.criteria.length > 0) {
                         recipeContext = '\n### Eval Criteria (what the judge scores on)\n' +
-                          recipe.criteria.map(c => `- **${c.name}** (weight ${c.weight}): ${c.description}`).join('\n');
+                          finalRecipe.criteria.map(c => `- **${c.name}** (weight ${c.weight}): ${c.description}`).join('\n');
                       }
-                      if (recipe.examples.length > 0) {
+                      if (finalRecipe.examples.length > 0) {
                         recipeContext += '\n\n### Calibration Examples\n' +
-                          recipe.examples.map(e => `- "${e.label}" → ${e.score}: ${e.reasoning}`).join('\n');
+                          finalRecipe.examples.map(e => `- "${e.label}" → ${e.score}: ${e.reasoning}`).join('\n');
                       }
                     }
                   }

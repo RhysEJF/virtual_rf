@@ -210,6 +210,7 @@ export interface Task {
   metric_direction: string | null;    // 'lower' | 'higher' — which direction is better (default 'lower')
   // Eval recipe linkage (name of eval recipe used to configure evolve mode)
   eval_recipe_name: string | null;
+  eval_overrides: string | null;    // JSON overrides for eval recipe (budget, samples, criteria weights, etc.)
 }
 
 export interface Worker {

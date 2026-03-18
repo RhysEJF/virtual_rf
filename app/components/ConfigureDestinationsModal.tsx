@@ -18,6 +18,7 @@ interface ContentTargets {
   tool_repo_id: string | null;
   output_repo_id: string | null;
   file_repo_id: string | null;
+  eval_repo_id: string | null;
 }
 
 interface ConfigureDestinationsModalProps {

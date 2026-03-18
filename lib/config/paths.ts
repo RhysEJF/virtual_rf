@@ -59,6 +59,14 @@ export const paths = {
   /** App-internal skills (ship with the app) */
   appSkills: path.join(appRoot, 'skills'),
 
+  /** User's personal eval library */
+  userEvals: isLegacyLayout
+    ? path.join(appRoot, 'evals')
+    : path.join(dataRoot, 'evals'),
+
+  /** App-internal evals (ship with the app) */
+  appEvals: path.join(appRoot, 'evals'),
+
   /** .env.local file (always in app root) */
   envFile: path.join(appRoot, '.env.local'),
 

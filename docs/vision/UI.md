@@ -55,6 +55,8 @@ The UI is the user's window into Digital Twin. It provides:
 | Task refinement button (pre-execution enrichment) | Complete |
 | Task-level capability detection (Claude-powered) | Complete |
 | TaskCapabilitySuggestion inline component | Complete |
+| EvalsSection (browse evals on outcome page) | Complete |
+| ExpandableTaskCard 3-tab evolve setup (Use Eval / Create New / Manual) | Complete |
 
 **Overall:** Complete and production-ready (40+ components, 6 pages)
 
@@ -92,7 +94,7 @@ The outcome detail page uses a split panel design:
 - Approach (How) - Collapsible
 - Tasks - Collapsible with progress badge
 - Git & Commit Settings - Collapsible
-- Skills, Tools, Documents - Collapsible
+- Skills, Tools, Evals, Documents - Collapsible
 
 **Right Panel (60%) - Control Tower:**
 - HOMЯ Alerts - Always at top, never buried

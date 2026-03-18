@@ -113,10 +113,10 @@ export async function POST(
     const { item_type, filename, file_path, action = 'register' } = body;
 
     // Validate item_type
-    const validTypes: OutcomeItemType[] = ['skill', 'tool', 'file', 'output'];
+    const validTypes: OutcomeItemType[] = ['skill', 'tool', 'file', 'output', 'eval'];
     if (!validTypes.includes(item_type)) {
       return NextResponse.json(
-        { error: 'Invalid item_type. Must be: skill, tool, file, or output' },
+        { error: 'Invalid item_type. Must be: skill, tool, file, output, or eval' },
         { status: 400 }
       );
     }
@@ -188,7 +188,7 @@ export async function PATCH(
     const { item_type, filename, action, target, repo_ids, repo_id } = body;
 
     // Validate item_type
-    const validTypes: OutcomeItemType[] = ['skill', 'tool', 'file', 'output'];
+    const validTypes: OutcomeItemType[] = ['skill', 'tool', 'file', 'output', 'eval'];
     if (!validTypes.includes(item_type)) {
       return NextResponse.json(
         { error: 'Invalid item_type' },

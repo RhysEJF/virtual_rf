@@ -17,6 +17,10 @@
 | `lib/capabilities/detection.ts` | Unified capability detection service | ~15KB |
 | `lib/capabilities/creation.ts` | Unified capability creation service | ~8KB |
 | `lib/capabilities/index.ts` | Module exports | ~1KB |
+| `lib/evolve/recipe-parser.ts` | Parse markdown eval recipes → EvolveRecipe | ~3KB |
+| `lib/evolve/eval-generator.ts` | Generate eval.sh scripts from recipes | ~4KB |
+| `lib/evolve/eval-manager.ts` | Three-level eval scanning (app/user/outcome) | ~3KB |
+| `skills/evolve/recipe-writer.md` | App-internal skill for writing eval recipes | ~2KB |
 
 ---
 
@@ -393,4 +397,5 @@ Skill Built
 
 - `SkillsSection.tsx` - Shows sync status badge, promotion buttons
 - `ToolsSection.tsx` - Same pattern for tools
+- `EvalsSection.tsx` - Browse eval recipes on outcome page
 - `SaveTargetsSection.tsx` - Configure outcome defaults

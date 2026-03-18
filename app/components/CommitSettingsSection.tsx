@@ -20,6 +20,7 @@ interface ContentTargets {
   tool_repo_id: string | null;
   output_repo_id: string | null;
   file_repo_id: string | null;
+  eval_repo_id: string | null;
 }
 
 interface CommitSettingsConfig {
@@ -44,6 +45,7 @@ const CONTENT_TYPES = [
   { key: 'tool' as const, label: 'Tools', targetKey: 'tool_repo_id' as const, subfolder: 'tools' },
   { key: 'output' as const, label: 'Outputs', targetKey: 'output_repo_id' as const, subfolder: 'outputs' },
   { key: 'file' as const, label: 'Files', targetKey: 'file_repo_id' as const, subfolder: 'files' },
+  { key: 'eval' as const, label: 'Evals', targetKey: 'eval_repo_id' as const, subfolder: 'evals' },
 ];
 
 export function CommitSettingsSection({
@@ -64,6 +66,7 @@ export function CommitSettingsSection({
     tool_repo_id: config.tool_target === 'repo' ? config.repository_id : null,
     output_repo_id: config.output_target === 'repo' ? config.repository_id : null,
     file_repo_id: config.file_target === 'repo' ? config.repository_id : null,
+    eval_repo_id: null,
   }));
 
   const [autoSave, setAutoSave] = useState(config.auto_save);

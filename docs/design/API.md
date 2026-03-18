@@ -37,6 +37,9 @@
 | `/api/skills` | GET, POST | Skills management |
 | `/api/skills/outcome` | GET | Outcome-specific skills |
 | `/api/tools/outcome` | GET | Outcome-specific tools |
+| `/api/evals` | GET, POST | Eval recipe CRUD |
+| `/api/evals/outcome` | GET | Outcome-specific evals |
+| `/api/tasks/[id]/evolve` | GET, POST | Activate evolve from eval recipe |
 | `/api/repositories` | GET, POST | Repository configuration |
 | `/api/repositories/[id]` | GET, PUT, DELETE | Repository CRUD |
 

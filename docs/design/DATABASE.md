@@ -137,6 +137,7 @@ CREATE TABLE tasks (
   metric_command TEXT,             -- Shell command outputting numeric metric (evolve mode)
   metric_baseline REAL,            -- Baseline metric before optimization
   optimization_budget INTEGER,     -- Max evolve iterations (default 5)
+  eval_recipe_name TEXT,           -- Name of eval recipe (links to eval resource)
   created_at TEXT,
   updated_at TEXT,
   FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
@@ -388,7 +389,7 @@ Events are persisted via write-behind batching (500ms flush interval) and pruned
 CREATE TABLE outcome_items (
   id TEXT PRIMARY KEY,
   outcome_id TEXT NOT NULL,
-  item_type TEXT NOT NULL,       -- skill/tool/file/output
+  item_type TEXT NOT NULL,       -- skill/tool/eval/file/output
   filename TEXT NOT NULL,
   file_path TEXT NOT NULL,
   target_override TEXT,          -- local/repo/inherit (NULL = use outcome default)

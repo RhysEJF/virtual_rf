@@ -1771,6 +1771,39 @@ export async function startRalphWorker(
           // Evolve mode: if task has metric_command, use hill-climbing optimization loop
           if (task.metric_command) {
             appendLog(`[Evolve] Task has metric_command — entering evolve mode`);
+
+            // If task has an eval recipe, regenerate eval.sh before running
+            let recipeContext = '';
+            if (task.eval_recipe_name) {
+              try {
+                const { parseRecipe } = await import('../evolve/recipe-parser');
+                const { writeEvalToWorkspace } = await import('../evolve/eval-generator');
+                const { findEvalByName, getEvalContent } = await import('../evolve/eval-manager');
+                const evalMeta = findEvalByName(task.eval_recipe_name, outcomeId);
+                if (evalMeta) {
+                  const recipeContent = getEvalContent(evalMeta.path);
+                  if (recipeContent) {
+                    const recipe = parseRecipe(recipeContent);
+                    if (!('error' in recipe)) {
+                      writeEvalToWorkspace(recipe, taskWorkspace);
+                      appendLog(`[Evolve] Regenerated eval.sh from recipe: ${task.eval_recipe_name}`);
+                      // Build criteria context for worker CLAUDE.md
+                      if (recipe.criteria.length > 0) {
+                        recipeContext = '\n### Eval Criteria (what the judge scores on)\n' +
+                          recipe.criteria.map(c => `- **${c.name}** (weight ${c.weight}): ${c.description}`).join('\n');
+                      }
+                      if (recipe.examples.length > 0) {
+                        recipeContext += '\n\n### Calibration Examples\n' +
+                          recipe.examples.map(e => `- "${e.label}" → ${e.score}: ${e.reasoning}`).join('\n');
+                      }
+                    }
+                  }
+                }
+              } catch (recipeErr) {
+                appendLog(`[Evolve] Warning: could not regenerate eval.sh from recipe: ${recipeErr}`);
+              }
+            }
+
             try {
               const { runEvolveLoop } = await import('./evolve-loop');
               const evolveResult = await runEvolveLoop(
@@ -1804,7 +1837,7 @@ export async function startRalphWorker(
 **Optimization goal:** ${task.metric_direction === 'higher' ? 'Increase' : 'Decrease'} the metric value (${task.metric_direction === 'higher' ? 'higher' : 'lower'} is better)
 
 ${previousExperiments ? `### Previous Experiments\n${previousExperiments}\n` : ''}
-
+${recipeContext ? `${recipeContext}\n` : ''}
 ## Evolve Instructions
 
 1. Analyze the metric command to understand what you are optimizing

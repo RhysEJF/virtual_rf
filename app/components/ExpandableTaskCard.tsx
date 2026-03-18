@@ -100,6 +100,14 @@ export function ExpandableTaskCard({
   const [metricDirection, setMetricDirection] = useState<'lower' | 'higher'>((task.metric_direction as 'lower' | 'higher') || 'lower');
   const [showEvolveSetup, setShowEvolveSetup] = useState(false);
   const [savingEvolve, setSavingEvolve] = useState(false);
+  // Recipe-based evolve state
+  const [evolveTab, setEvolveTab] = useState<'existing' | 'create' | 'manual'>('existing');
+  const [availableEvals, setAvailableEvals] = useState<Array<{ id: string; name: string; description: string; mode: string; direction: string; path: string }>>([]);
+  const [selectedEval, setSelectedEval] = useState<string | null>(null);
+  const [evalSearchQuery, setEvalSearchQuery] = useState('');
+  const [recipeContent, setRecipeContent] = useState('');
+  const [recipeSaveName, setRecipeSaveName] = useState('');
+  const [generatingRecipe, setGeneratingRecipe] = useState(false);
 
   // Gate satisfy modal state
   const [satisfyingGate, setSatisfyingGate] = useState<TaskGate | null>(null);
@@ -452,6 +460,84 @@ export function ExpandableTaskCard({
     }
   };
 
+  // Fetch available evals when evolve setup opens
+  const fetchAvailableEvals = async () => {
+    try {
+      const response = await fetch('/api/evals');
+      const data = await response.json();
+      setAvailableEvals(data.evals || []);
+    } catch (err) {
+      console.error('Failed to fetch evals:', err);
+    }
+  };
+
+  // Activate evolve from an existing eval recipe
+  const handleActivateFromRecipe = async (recipeName: string) => {
+    setSavingEvolve(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/evolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe_name: recipeName }),
+      });
+      const data = await response.json();
+      if (response.ok && data.task && onUpdate) {
+        onUpdate(data.task);
+        setShowEvolveSetup(false);
+      }
+    } catch (err) {
+      console.error('Failed to activate evolve from recipe:', err);
+    } finally {
+      setSavingEvolve(false);
+    }
+  };
+
+  // AI-generate a recipe draft
+  const handleGenerateRecipe = async () => {
+    setGeneratingRecipe(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/evolve/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (response.ok && data.recipe) {
+        setRecipeContent(data.recipe);
+      }
+    } catch (err) {
+      console.error('Failed to generate recipe:', err);
+    } finally {
+      setGeneratingRecipe(false);
+    }
+  };
+
+  // Save and activate from inline recipe content
+  const handleSaveAndActivateRecipe = async () => {
+    if (!recipeContent.trim()) return;
+    setSavingEvolve(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/evolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipe_content: recipeContent,
+          save_as: recipeSaveName.trim() || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.task && onUpdate) {
+        onUpdate(data.task);
+        setShowEvolveSetup(false);
+        setRecipeContent('');
+        setRecipeSaveName('');
+      }
+    } catch (err) {
+      console.error('Failed to save and activate recipe:', err);
+    } finally {
+      setSavingEvolve(false);
+    }
+  };
+
   // Add gate to task
   const handleAddGate = async () => {
     if (!newGateLabel.trim()) return;
@@ -567,7 +653,7 @@ export function ExpandableTaskCard({
                 {/* Evolve mode indicator */}
                 {task.metric_command && (
                   <span className="text-accent text-xs shrink-0" title="Evolve mode (hill-climbing optimization)">
-                    ⚗
+                    🧬
                   </span>
                 )}
               </div>
@@ -797,7 +883,7 @@ export function ExpandableTaskCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowEvolveSetup(true)}
+                  onClick={() => { setShowEvolveSetup(true); fetchAvailableEvals(); }}
                   className="text-xs h-6 px-2"
                 >
                   {task.metric_command ? 'Edit' : 'Enable'}
@@ -806,10 +892,218 @@ export function ExpandableTaskCard({
             </div>
             {!showEvolveSetup && !task.metric_command && (
               <p className="text-text-tertiary text-xs">
-                Enable hill-climbing optimization with a metric command that returns a numeric score.
+                Enable hill-climbing optimization with an eval recipe or manual metric command.
               </p>
             )}
-            {showEvolveSetup && (
+            {showEvolveSetup && !task.metric_command && (
+              <div className="space-y-3 p-3 bg-bg-primary border border-border rounded-lg">
+                {/* Tab selection */}
+                <div className="flex items-center gap-1 border-b border-border pb-2">
+                  <button
+                    onClick={() => setEvolveTab('existing')}
+                    className={`px-2 py-1 text-xs rounded-t ${evolveTab === 'existing' ? 'bg-bg-secondary text-text-primary font-medium' : 'text-text-tertiary hover:text-text-secondary'}`}
+                  >
+                    Use Eval
+                  </button>
+                  <button
+                    onClick={() => setEvolveTab('create')}
+                    className={`px-2 py-1 text-xs rounded-t ${evolveTab === 'create' ? 'bg-bg-secondary text-text-primary font-medium' : 'text-text-tertiary hover:text-text-secondary'}`}
+                  >
+                    Create New
+                  </button>
+                  <button
+                    onClick={() => setEvolveTab('manual')}
+                    className={`px-2 py-1 text-xs rounded-t ${evolveTab === 'manual' ? 'bg-bg-secondary text-text-primary font-medium' : 'text-text-tertiary hover:text-text-secondary'}`}
+                  >
+                    Manual
+                  </button>
+                </div>
+
+                {/* Tab A: Use Existing Eval */}
+                {evolveTab === 'existing' && (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={evalSearchQuery}
+                      onChange={(e) => setEvalSearchQuery(e.target.value)}
+                      placeholder="Search evals..."
+                      className="w-full px-3 py-1.5 text-xs bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                    />
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {availableEvals
+                        .filter(e => !evalSearchQuery || e.name.toLowerCase().includes(evalSearchQuery.toLowerCase()))
+                        .map(e => (
+                          <button
+                            key={e.id}
+                            onClick={() => setSelectedEval(e.id)}
+                            className={`w-full text-left px-2 py-1.5 text-xs rounded ${selectedEval === e.id ? 'bg-accent/10 border border-accent/30' : 'hover:bg-bg-secondary border border-transparent'}`}
+                          >
+                            <div className="font-medium text-text-primary">{e.name}</div>
+                            {e.description && <div className="text-text-tertiary text-[10px] mt-0.5">{e.description}</div>}
+                            <div className="text-text-tertiary text-[10px] mt-0.5">
+                              {e.mode} &middot; {e.direction} is better
+                            </div>
+                          </button>
+                        ))}
+                      {availableEvals.length === 0 && (
+                        <p className="text-text-tertiary text-xs py-2 text-center">No evals found. Create one or use manual mode.</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => selectedEval && handleActivateFromRecipe(selectedEval)}
+                        disabled={!selectedEval || savingEvolve}
+                      >
+                        {savingEvolve ? 'Activating...' : 'Activate'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowEvolveSetup(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab B: Create New Eval */}
+                {evolveTab === 'create' && (
+                  <div className="space-y-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleGenerateRecipe}
+                      disabled={generatingRecipe}
+                      className="text-xs"
+                    >
+                      {generatingRecipe ? 'Generating...' : 'Generate with AI'}
+                    </Button>
+                    <textarea
+                      value={recipeContent}
+                      onChange={(e) => setRecipeContent(e.target.value)}
+                      placeholder="# Evolve Recipe: My Eval&#10;&#10;## Artifact&#10;- file: output.txt&#10;- description: The file to optimize&#10;&#10;## Scoring&#10;- mode: judge&#10;- direction: higher&#10;- budget: 5&#10;- samples: 1&#10;&#10;## Criteria&#10;- Quality (0.5): Overall quality&#10;- Clarity (0.5): Easy to understand"
+                      rows={10}
+                      className="w-full px-3 py-2 text-xs bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary resize-y"
+                    />
+                    <div>
+                      <label className="text-xs text-text-secondary block mb-1">Save as (optional — saves to eval library)</label>
+                      <input
+                        type="text"
+                        value={recipeSaveName}
+                        onChange={(e) => setRecipeSaveName(e.target.value)}
+                        placeholder="my-eval-name"
+                        className="w-full px-3 py-1.5 text-xs bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleSaveAndActivateRecipe}
+                        disabled={!recipeContent.trim() || savingEvolve}
+                      >
+                        {savingEvolve ? 'Saving...' : 'Save & Activate'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowEvolveSetup(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab C: Manual (power user / raw metric command) */}
+                {evolveTab === 'manual' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-text-secondary block mb-1">
+                        Metric Command <span className="text-status-error">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={metricCommand}
+                        onChange={(e) => setMetricCommand(e.target.value)}
+                        placeholder="e.g., node benchmark.js --json | jq .score"
+                        className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                      />
+                      <p className="text-[10px] text-text-tertiary mt-1">
+                        Shell command that outputs a single number.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-text-secondary block mb-1">Direction</label>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`metric-direction-${task.id}`}
+                            value="higher"
+                            checked={metricDirection === 'higher'}
+                            onChange={() => setMetricDirection('higher')}
+                            className="accent-accent"
+                          />
+                          Higher is better
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`metric-direction-${task.id}`}
+                            value="lower"
+                            checked={metricDirection === 'lower'}
+                            onChange={() => setMetricDirection('lower')}
+                            className="accent-accent"
+                          />
+                          Lower is better
+                        </label>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-text-secondary block mb-1">Baseline</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={metricBaseline}
+                          onChange={(e) => setMetricBaseline(e.target.value)}
+                          placeholder="Current value"
+                          className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-text-secondary block mb-1">Budget (iterations)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={optimizationBudget}
+                          onChange={(e) => setOptimizationBudget(e.target.value)}
+                          className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleSaveEvolve}
+                        disabled={savingEvolve || !metricCommand.trim()}
+                      >
+                        {savingEvolve ? 'Saving...' : 'Enable Optimize'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowEvolveSetup(false);
+                          setMetricCommand(task.metric_command || '');
+                          setMetricBaseline(task.metric_baseline?.toString() || '');
+                          setOptimizationBudget(task.optimization_budget?.toString() || '5');
+                          setMetricDirection((task.metric_direction as 'lower' | 'higher') || 'lower');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Edit mode when evolve is already configured */}
+            {showEvolveSetup && task.metric_command && (
               <div className="space-y-3 p-3 bg-bg-primary border border-border rounded-lg">
                 <div>
                   <label className="text-xs text-text-secondary block mb-1">
@@ -819,36 +1113,19 @@ export function ExpandableTaskCard({
                     type="text"
                     value={metricCommand}
                     onChange={(e) => setMetricCommand(e.target.value)}
-                    placeholder="e.g., node benchmark.js --json | jq .score"
+                    placeholder="e.g., bash eval.sh"
                     className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded font-mono focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
                   />
-                  <p className="text-[10px] text-text-tertiary mt-1">
-                    Shell command that outputs a single number.
-                  </p>
                 </div>
                 <div>
                   <label className="text-xs text-text-secondary block mb-1">Direction</label>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`metric-direction-${task.id}`}
-                        value="higher"
-                        checked={metricDirection === 'higher'}
-                        onChange={() => setMetricDirection('higher')}
-                        className="accent-accent"
-                      />
+                      <input type="radio" name={`metric-direction-${task.id}`} value="higher" checked={metricDirection === 'higher'} onChange={() => setMetricDirection('higher')} className="accent-accent" />
                       Higher is better
                     </label>
                     <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`metric-direction-${task.id}`}
-                        value="lower"
-                        checked={metricDirection === 'lower'}
-                        onChange={() => setMetricDirection('lower')}
-                        className="accent-accent"
-                      />
+                      <input type="radio" name={`metric-direction-${task.id}`} value="lower" checked={metricDirection === 'lower'} onChange={() => setMetricDirection('lower')} className="accent-accent" />
                       Lower is better
                     </label>
                   </div>
@@ -856,60 +1133,23 @@ export function ExpandableTaskCard({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-text-secondary block mb-1">Baseline</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={metricBaseline}
-                      onChange={(e) => setMetricBaseline(e.target.value)}
-                      placeholder="Current value"
-                      className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
-                    />
+                    <input type="number" step="any" value={metricBaseline} onChange={(e) => setMetricBaseline(e.target.value)} placeholder="Current value" className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary" />
                   </div>
                   <div>
-                    <label className="text-xs text-text-secondary block mb-1">Budget (iterations)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="20"
-                      value={optimizationBudget}
-                      onChange={(e) => setOptimizationBudget(e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary"
-                    />
+                    <label className="text-xs text-text-secondary block mb-1">Budget</label>
+                    <input type="number" min="1" max="20" value={optimizationBudget} onChange={(e) => setOptimizationBudget(e.target.value)} className="w-full px-3 py-2 text-sm bg-bg-secondary border border-border rounded focus:outline-none focus:border-accent text-text-primary placeholder:text-text-tertiary" />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSaveEvolve}
-                    disabled={savingEvolve || !metricCommand.trim()}
-                  >
-                    {savingEvolve ? 'Saving...' : task.metric_command ? 'Update' : 'Enable Optimize'}
+                  <Button variant="primary" size="sm" onClick={handleSaveEvolve} disabled={savingEvolve || !metricCommand.trim()}>
+                    {savingEvolve ? 'Saving...' : 'Update'}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowEvolveSetup(false);
-                      setMetricCommand(task.metric_command || '');
-                      setMetricBaseline(task.metric_baseline?.toString() || '');
-                      setOptimizationBudget(task.optimization_budget?.toString() || '5');
-                      setMetricDirection((task.metric_direction as 'lower' | 'higher') || 'lower');
-                    }}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => { setShowEvolveSetup(false); setMetricCommand(task.metric_command || ''); setMetricBaseline(task.metric_baseline?.toString() || ''); setOptimizationBudget(task.optimization_budget?.toString() || '5'); setMetricDirection((task.metric_direction as 'lower' | 'higher') || 'lower'); }}>
                     Cancel
                   </Button>
-                  {task.metric_command && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleRemoveEvolve}
-                      disabled={savingEvolve}
-                      className="text-status-error hover:text-status-error/80 ml-auto"
-                    >
-                      Disable
-                    </Button>
-                  )}
+                  <Button variant="ghost" size="sm" onClick={handleRemoveEvolve} disabled={savingEvolve} className="text-status-error hover:text-status-error/80 ml-auto">
+                    Disable
+                  </Button>
                 </div>
               </div>
             )}

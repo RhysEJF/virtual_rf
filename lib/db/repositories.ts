@@ -506,6 +506,7 @@ export function getEffectiveSaveTarget(
     skill: 'skill_target',
     tool: 'tool_target',
     file: 'file_target',
+    eval: 'eval_target',
   }[item.item_type] as 'output_target' | 'skill_target' | 'tool_target' | 'file_target';
 
   return getEffectiveTarget(outcomeId, targetType);

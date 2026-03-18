@@ -686,6 +686,43 @@ export const converseTools: ToolDefinition[] = [
       },
     },
   },
+  // ==========================================================================
+  // Evolve Tools
+  // ==========================================================================
+  {
+    name: 'listEvals',
+    description:
+      'List available eval recipes for evolve mode. Use for "show evals", "what evals exist?", "list eval recipes".',
+    parameters: {
+      outcome_id: {
+        type: 'string',
+        description: 'Optional outcome ID to list outcome-specific evals only',
+        required: false,
+      },
+    },
+  },
+  {
+    name: 'setupEvolve',
+    description:
+      'Set up evolve mode on a task using an eval recipe. Use for "enable evolve on task X", "set up optimization", "activate hill-climbing".',
+    parameters: {
+      task_id: {
+        type: 'string',
+        description: 'Task ID to enable evolve mode on',
+        required: true,
+      },
+      eval_name: {
+        type: 'string',
+        description: 'Name of eval recipe to use (from listEvals)',
+        required: false,
+      },
+      generate: {
+        type: 'boolean',
+        description: 'AI-generate a recipe draft from task context',
+        required: false,
+      },
+    },
+  },
 ];
 
 /**

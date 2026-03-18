@@ -662,6 +662,13 @@ function runMigrations(database: Database.Database): void {
       console.log(`[DB Migration] Added ${col.name} column to tasks (evolve mode)`);
     }
   }
+
+  // Add eval_recipe_name column to tasks table (evolve recipe linkage)
+  const tasksColsRecipe = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
+  if (!tasksColsRecipe.some(c => c.name === 'eval_recipe_name')) {
+    database.exec('ALTER TABLE tasks ADD COLUMN eval_recipe_name TEXT');
+    console.log('[DB Migration] Added eval_recipe_name column to tasks');
+  }
 }
 
 /**

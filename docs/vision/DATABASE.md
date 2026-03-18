@@ -62,7 +62,7 @@ All state in Digital Twin is persisted to SQLite. The database:
 | **Interventions** | Human instructions to workers |
 | **Supervisor Alerts** | Safety alerts from monitoring |
 | **Repositories** | External git repos for syncing skills/tools (per-outcome) |
-| **Outcome Items** | Tracked files (skills, tools, outputs) with sync status |
+| **Outcome Items** | Tracked files (skills, tools, evals, outputs) with sync status |
 
 ### Repository Inheritance
 
@@ -158,7 +158,7 @@ The `experiments` table records hill-climbing optimization attempts for tasks ru
 | **kept** | Boolean — was this experiment kept (1) or reverted (0) |
 | **duration_seconds** | Time spent on this iteration |
 
-Tasks table evolve columns: `metric_command` (TEXT), `metric_baseline` (REAL), `optimization_budget` (INTEGER), `metric_direction` (TEXT, default `'lower'` — supports `'lower'` or `'higher'`).
+Tasks table evolve columns: `metric_command` (TEXT), `metric_baseline` (REAL), `optimization_budget` (INTEGER), `metric_direction` (TEXT, default `'lower'` — supports `'lower'` or `'higher'`), `eval_recipe_name` (TEXT — links task to an eval recipe).
 
 ### Task Proliferation Guards
 

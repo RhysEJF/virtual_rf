@@ -12,6 +12,7 @@ import { OutputsSection } from '@/app/components/OutputsSection';
 import { GitConfigSection } from '@/app/components/GitConfigSection';
 import { SkillsSection } from '@/app/components/SkillsSection';
 import { ToolsSection } from '@/app/components/ToolsSection';
+import { EvalsSection } from '@/app/components/EvalsSection';
 import { DocumentsSection } from '@/app/components/DocumentsSection';
 import { OutcomeBreadcrumbs } from '@/app/components/OutcomeBreadcrumbs';
 import { ChildOutcomesList } from '@/app/components/ChildOutcomesList';
@@ -1324,6 +1325,15 @@ export default function OutcomeDetailPage(): JSX.Element {
                   defaultExpanded={false}
                 >
                   <ToolsSection outcomeId={outcomeId} />
+                </CollapsibleSection>
+
+                {/* Evals */}
+                <CollapsibleSection
+                  id={`outcome-${outcomeId}-evals`}
+                  title="Evals"
+                  defaultExpanded={false}
+                >
+                  <EvalsSection outcomeId={outcomeId} />
                 </CollapsibleSection>
 
                 {/* Documents */}

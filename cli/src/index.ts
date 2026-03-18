@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand } from './commands/index.js';
 
 const program = new Command();
 
@@ -56,6 +56,9 @@ program.addCommand(telegramCommand);
 program.addCommand(docsCommand);
 program.addCommand(refineCommand);
 program.addCommand(healthCommand);
+program.addCommand(evolveCommand);
+program.addCommand(evalsCommand);
+program.addCommand(evalCommand);
 
 // Command group definitions for --help-all
 const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [
@@ -77,7 +80,7 @@ const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [
   },
   {
     label: 'Resources',
-    commands: ['skills', 'skill', 'tools', 'tool', 'outputs', 'files', 'docs'],
+    commands: ['skills', 'skill', 'tools', 'tool', 'outputs', 'files', 'docs', 'evals', 'eval', 'evolve'],
   },
   {
     label: 'System',

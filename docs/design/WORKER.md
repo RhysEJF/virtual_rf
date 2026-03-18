@@ -14,6 +14,10 @@
 | `lib/ralph/verification.ts` | Deterministic verify_command execution | ~1KB |
 | `lib/ralph/teaching-errors.ts` | Retry context builder from past failures | ~2KB |
 | `lib/ralph/evolve-loop.ts` | Hill-climbing optimization loop | ~6KB |
+| `lib/evolve/recipe-parser.ts` | Parse markdown eval recipes → EvolveRecipe | ~3KB |
+| `lib/evolve/eval-generator.ts` | Generate eval.sh scripts from recipes | ~4KB |
+| `lib/evolve/recipe-generator.ts` | AI-generate draft recipes from context | ~3KB |
+| `lib/evolve/eval-manager.ts` | Three-level eval scanning (app/user/outcome) | ~3KB |
 | `lib/agents/task-decomposer.ts` | Task decomposition + remaining work decomposition | ~35KB |
 | `lib/db/workers.ts` | Worker database operations | ~4KB |
 | `lib/db/tasks.ts` | Task claiming, status, decomposition lock | ~8KB |
@@ -123,6 +127,7 @@ interface RalphConfig {
 workspaces/out_{outcomeId}/
 ├── skills/              # Outcome-specific skills
 ├── tools/               # Outcome-specific tools
+├── evals/               # Outcome-specific eval recipes
 ├── task_{taskId}/       # Per-task working directory
 │   ├── CLAUDE.md        # Instructions for this task
 │   └── progress.txt     # Status updates
@@ -679,9 +684,22 @@ function getExperimentCount(taskId: string): number
 function getBestExperiment(taskId: string): Experiment | null
 ```
 
+### Eval Recipe Integration
+
+When a task has `eval_recipe_name` set, the worker:
+1. Loads the recipe via `lib/evolve/eval-manager.ts` (scans app/user/outcome levels)
+2. Parses it with `lib/evolve/recipe-parser.ts` into a typed `EvolveRecipe`
+3. Generates an eval script via `lib/evolve/eval-generator.ts` (command mode for numeric metrics, judge mode via Claude CLI for qualitative criteria)
+4. Injects recipe criteria into the worker's CLAUDE.md before entering the evolve loop
+5. Can regenerate recipes on the fly if the task context changes
+
 ### API
 
 - `GET /api/outcomes/[id]/experiments` — List experiments for an outcome
+- `GET /api/evals` — List available evals (app/user/outcome)
+- `POST /api/evals` — Create eval recipe
+- `GET /api/tasks/[id]/evolve` — Get evolve config for task
+- `POST /api/tasks/[id]/evolve` — Activate evolve from eval recipe
 
 ---
 

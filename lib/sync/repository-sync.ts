@@ -82,6 +82,7 @@ function getDestinationPath(
     skill: 'skills',
     tool: 'tools',
     file: 'files',
+    eval: 'evals',
   };
 
   const folder = folders[itemType];

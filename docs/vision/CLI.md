@@ -92,6 +92,8 @@ Bot: "Started worker for 'Landing Page'. Use /status to check progress."
 | Task optimization (`flow task optimize`) | Complete |
 | Skill-injected optimization (`--skill` flag) | Complete |
 | Evolve mode CLI flags (`--metric-command`, `--metric-direction`, etc.) | Complete |
+| Evolve recipe management (`flow evolve setup\|show`) | Complete |
+| Eval management (`flow evals`, `flow eval`) | Complete |
 | ID column in `flow list` | Complete |
 | Interactive chat mode | **Not started** |
 
@@ -236,6 +238,14 @@ flow capability create <type> <name> --outcome <id>         # Create capability 
 flow capability create skill my-skill --outcome out_xxx     # Example: create skill task
 flow capability list [--outcome <id>]                       # List all capabilities
 flow cap list                                               # Alias
+```
+
+#### Evolve & Evals
+```bash
+flow evolve setup <task-id>                            # Configure evolve from eval recipe
+flow evolve show <task-id>                             # Show evolve config + experiment history
+flow evals [--outcome=<id>]                            # List available evals (app/user/outcome)
+flow eval <name>                                       # Show eval recipe details
 ```
 
 #### HOMЯ (Orchestration)

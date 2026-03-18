@@ -51,6 +51,7 @@ Named after the "Ralph Wiggum" loop pattern from early Claude Code experiments.
 | Checkpointing on turn exhaustion | Complete |
 | Deterministic verification (verify_command) | Complete |
 | Evolve mode (hill-climbing optimization) | Complete |
+| Evolve recipe system (eval recipes, auto-generated eval scripts) | Complete |
 | Content-aware circuit breaker (HOMR blocker detection) | Complete |
 | Event bus integration | Complete |
 
@@ -211,12 +212,18 @@ Tasks can enter an optimization loop that iteratively improves a measurable metr
 
 Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle. The `optimize-task.md` skill (in `~/flow-data/skills/evolve/`) provides GEPA methodology instructions to workers. The `skill-evolution.md` skill provides a framework for iteratively improving skill files themselves.
 
+**Eval Recipe System:** Tasks can be configured via **eval recipes** — structured markdown documents that define what to optimize and how to judge it. Recipes are parsed by `lib/evolve/recipe-parser.ts`, and `lib/evolve/eval-generator.ts` auto-generates eval scripts (command mode for numeric metrics, judge mode via Claude CLI for qualitative criteria). Evals are a first-class resource type (alongside skills and tools), scanned at three levels: app (`evals/`), user (`~/flow-data/evals/`), and outcome workspace. The worker injects recipe criteria into the CLAUDE.md before entering the evolve loop, and can regenerate recipes on the fly.
+
 **CLI support:**
 - `flow task add <outcome-id> "title" --metric-command "cmd" --metric-direction higher --optimization-budget 10`
 - `flow task update <task-id> --metric-command "cmd" --metric-direction lower`
 - `flow task show <task-id>` displays evolve config when set
+- `flow evolve setup <task-id>` — configure evolve from an eval recipe
+- `flow evolve show <task-id>` — show evolve config and experiment history
+- `flow evals [--outcome <id>]` — list available evals
+- `flow eval <name>` — show eval recipe details
 
-**UI support:** ExpandableTaskCard has an "Optimize Mode" section with a setup form (metric command, direction toggle, baseline, budget). The EvolvePanel component displays experiment history with a bar chart, kept/reverted badges, improvement %, and plateau detection.
+**UI support:** ExpandableTaskCard has a 3-tab evolve setup UI (Use Eval / Create New / Manual) with a direction toggle (Higher/Lower is better). The EvolvePanel component displays experiment history with a bar chart, kept/reverted badges, improvement %, and plateau detection. The EvalsSection component on the outcome detail page allows browsing available evals.
 
 ### Content-Aware Circuit Breaker
 

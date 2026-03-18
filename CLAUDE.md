@@ -74,6 +74,11 @@ mkdir -p ~/flow-data/{data,workspaces,skills}
 │   │   ├── evolve-loop.ts     # Hill-climbing optimization
 │   │   ├── verification.ts    # Deterministic task verification
 │   │   └── teaching-errors.ts # Retry context builder
+│   ├── evolve/            # Evolve recipe system
+│   │   ├── recipe-parser.ts   # Parse markdown recipes → EvolveRecipe
+│   │   ├── eval-generator.ts  # Generate eval.sh from recipes
+│   │   ├── recipe-generator.ts # AI-generate draft recipes
+│   │   └── eval-manager.ts    # Three-level eval scanning
 │   ├── events/            # Event backbone
 │   │   ├── bus.ts             # In-memory pub/sub + persistence
 │   │   ├── types.ts           # Event type definitions
@@ -88,10 +93,13 @@ mkdir -p ~/flow-data/{data,workspaces,skills}
 │   ├── workspace/         # Workspace utilities
 │   └── utils/             # Utilities
 ├── cli/                   # CLI tool
+├── evals/                 # Seed eval recipes (code-size, test-pass-rate, headline-quality)
 ├── skills/                # APP-INTERNAL skills only
 │   ├── converse-agent.md  #   system prompt for converse REPL
 │   ├── update-docs.md     #   doc update instructions
-│   └── cli-patterns.md    #   CLI coding patterns
+│   ├── cli-patterns.md    #   CLI coding patterns
+│   └── evolve/            #   Evolve-related skills
+│       └── recipe-writer.md # Recipe format guide
 ├── archive/               # Historical reference
 │   ├── ralph-wiggum-method/
 │   ├── VISION.md          #   Original vision doc
@@ -260,7 +268,7 @@ Users can request changes after completion via the Iterate section:
 ## Database Tables
 
 - `outcomes` - Outcomes with intent, design_doc, git config, save targets
-- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed), with `gates` JSON column for human-in-the-loop checkpoints
+- `tasks` - Tasks belonging to outcomes (pending/claimed/running/completed/failed), with `gates` JSON column for human-in-the-loop checkpoints, `eval_recipe_name` for evolve recipe binding
 - `workers` - Ralph worker instances with PID tracking
 - `progress_entries` - Episodic memory of worker iterations (full_output capture)
 - `review_cycles` - Review history with issues found and convergence tracking
@@ -268,7 +276,7 @@ Users can request changes after completion via the Iterate section:
 - `interventions` - Human instructions sent to workers
 - `supervisor_alerts` - System alerts for stuck workers, failures, etc.
 - `repositories` - External git repos for syncing (private/team)
-- `outcome_items` - Tracked files with sync status (skills, tools, outputs)
+- `outcome_items` - Tracked files with sync status (skills, tools, evals, outputs)
 - `homr_*` - HOMЯ Protocol tables (context, observations, escalations, activity)
 - `guard_blocks` - Blocked dangerous commands with context
 - `system_config` - Key-value store for global settings (e.g., default_isolation_mode, max_pending_tasks, max_subtask_depth, max_children_per_task, max_auto_retries)
@@ -495,6 +503,8 @@ kill -9 <PID>
 - [x] Workspace servers: `serve`, `serve start`, `serve stop`, `serve list`
 - [x] Output flags: --json, --quiet on all commands
 - [x] Telegram bot management: `flow telegram start/stop/status`
+- [x] Evolve recipe management: `flow evolve setup|show`
+- [x] Eval management: `flow evals`, `flow eval`
 - [ ] Interactive mode (REPL)
 
 ### Converse Mode (Complete)
@@ -504,6 +514,7 @@ kill -9 <PID>
 - [x] 30+ tools for system interaction
 - [x] Retro tools: triggerRetroAnalysis, getRetroJobStatus, getRetroJobDetails, listRecentRetroJobs, createFromRetroProposal
 - [x] Document tools: listDocuments, saveDocument
+- [x] Evolve tools: listEvals, setupEvolve
 
 ### Working Flow
 1. User submits request via CommandBar
@@ -609,6 +620,23 @@ kill -9 <PID>
 - [x] UI: EvolvePanel direction-aware (sorting, colors, improvement %)
 - [x] UI: ExpandableTaskCard evolve setup form with direction toggle (Higher/Lower is better)
 - [x] Task creation API passes evolve fields through (was missing)
+- [x] **Eval recipe system** — structured markdown recipes define what to optimize and how to judge
+- [x] Recipe parser (`lib/evolve/recipe-parser.ts`) — parses markdown recipes into typed EvolveRecipe objects
+- [x] Eval generator (`lib/evolve/eval-generator.ts`) — generates eval.sh scripts (command mode + judge mode via Claude CLI)
+- [x] Recipe generator (`lib/evolve/recipe-generator.ts`) — AI-generates draft recipes from task/outcome context
+- [x] Eval manager (`lib/evolve/eval-manager.ts`) — three-level eval scanning (app/user/outcome)
+- [x] Recipe writer skill (`skills/evolve/recipe-writer.md`) — app-internal skill for recipe format
+- [x] Seed evals in `evals/` directory (code-size, test-pass-rate, headline-quality)
+- [x] `eval_recipe_name` column on tasks table — links task to eval recipe
+- [x] `'eval'` added to OutcomeItemType — evals are a first-class resource
+- [x] EvalsSection UI component (`app/components/EvalsSection.tsx`) — browse evals on outcome page
+- [x] ExpandableTaskCard 3-tab evolve setup (Use Eval / Create New / Manual)
+- [x] Evals API endpoints (`app/api/evals/`) — eval CRUD
+- [x] Task evolve API (`app/api/tasks/[id]/evolve/`) — activate evolve from recipes
+- [x] CLI: `flow evolve setup|show` — evolve management commands
+- [x] CLI: `flow evals`, `flow eval` — eval listing and detail commands
+- [x] Converse tools: listEvals, setupEvolve (`lib/converse/tools/evolve.ts`)
+- [x] Worker recipe regeneration + criteria injection into CLAUDE.md before evolve loop
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)
@@ -643,6 +671,9 @@ kill -9 <PID>
 - `lib/ralph/evolve-loop.ts` - Hill-climbing optimization loop
 - `lib/ralph/verification.ts` - Deterministic task verification
 - `lib/ralph/teaching-errors.ts` - Retry context from previous attempts
+- `lib/evolve/recipe-parser.ts` - Parse eval recipes from markdown
+- `lib/evolve/eval-generator.ts` - Generate eval.sh scripts from recipes
+- `lib/evolve/eval-manager.ts` - Three-level eval scanning (app/user/outcome)
 - `lib/db/attempts.ts` - Task attempt tracking CRUD
 - `lib/db/checkpoints.ts` - Task checkpoint CRUD
 - `lib/db/experiments.ts` - Evolve mode experiment CRUD

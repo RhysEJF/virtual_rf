@@ -95,6 +95,7 @@ app/
 | DocumentsSection | `DocumentsSection.tsx` | Uploaded documents |
 | SkillsSection | `SkillsSection.tsx` | Skills with sync status |
 | ToolsSection | `ToolsSection.tsx` | Tools with sync status |
+| EvalsSection | `EvalsSection.tsx` | Browse eval recipes on outcome page |
 | SkillDetailModal | `SkillDetailModal.tsx` | Skill viewer |
 | GitConfigSection | `GitConfigSection.tsx` | Git workflow config |
 | CommitSettingsSection | `CommitSettingsSection.tsx` | Repository sync config with inheritance |
@@ -203,8 +204,9 @@ toast({
 │                                │  │ [Send]                         ││
 │  ▶ Tools                       │  └────────────────────────────────┘│
 │                                │                                    │
-│  ▶ Documents                   │  Outputs Section                   │
-│                                │  Worker Progress (Episodic)        │
+│  ▶ Evals                       │  Outputs Section                   │
+│                                │                                    │
+│  ▶ Documents                   │  Worker Progress (Episodic)        │
 │                                │  HOMЯ Status Card                  │
 │                                │  Actions                           │
 └────────────────────────────────┴────────────────────────────────────┘

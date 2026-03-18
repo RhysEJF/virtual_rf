@@ -208,6 +208,8 @@ export interface Task {
   metric_baseline: number | null;     // Baseline metric value before optimization begins
   optimization_budget: number | null; // Max optimization iterations (default 5)
   metric_direction: string | null;    // 'lower' | 'higher' — which direction is better (default 'lower')
+  // Eval recipe linkage (name of eval recipe used to configure evolve mode)
+  eval_recipe_name: string | null;
 }
 
 export interface Worker {
@@ -287,7 +289,7 @@ export interface Repository {
   updated_at: number;
 }
 
-export type OutcomeItemType = 'output' | 'skill' | 'tool' | 'file';
+export type OutcomeItemType = 'output' | 'skill' | 'tool' | 'file' | 'eval';
 
 export interface OutcomeItem {
   id: string;

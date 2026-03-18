@@ -619,6 +619,30 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
       }
 
       // =====================================================================
+      // Evolve Tools
+      // =====================================================================
+      case 'listEvals': {
+        const evolveTools = await import('./tools/evolve');
+        const outcomeId = args.outcome_id as string | undefined;
+        const result = evolveTools.listEvals(outcomeId);
+        return { success: true, data: result };
+      }
+
+      case 'setupEvolve': {
+        const evolveTools = await import('./tools/evolve');
+        const taskId = args.task_id as string;
+        if (!taskId) return { success: false, error: 'task_id is required' };
+        const evalName = args.eval_name as string | undefined;
+        const generate = args.generate as boolean | undefined;
+        const result = await evolveTools.setupEvolve(taskId, evalName, generate);
+        return {
+          success: result.success,
+          data: { message: result.message, recipe_name: result.recipe_name },
+          error: result.success ? undefined : result.message,
+        };
+      }
+
+      // =====================================================================
       // Unknown Tool
       // =====================================================================
       default:

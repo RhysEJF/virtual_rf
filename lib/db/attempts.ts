@@ -10,6 +10,7 @@ export interface TaskAttempt {
   files_modified: string | null;
   error_output: string | null;
   duration_seconds: number | null;
+  progress_entry_id: number | null;
   created_at: string;
 }
 
@@ -22,13 +23,14 @@ export interface RecordAttemptInput {
   filesModified?: string[];
   errorOutput?: string;
   durationSeconds?: number;
+  progressEntryId?: number;
 }
 
 export function recordAttempt(input: RecordAttemptInput): TaskAttempt {
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO task_attempts (task_id, attempt_number, worker_id, approach_summary, failure_reason, files_modified, error_output, duration_seconds)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO task_attempts (task_id, attempt_number, worker_id, approach_summary, failure_reason, files_modified, error_output, duration_seconds, progress_entry_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.taskId,
     input.attemptNumber,
@@ -36,8 +38,9 @@ export function recordAttempt(input: RecordAttemptInput): TaskAttempt {
     input.approachSummary || null,
     input.failureReason || null,
     input.filesModified ? JSON.stringify(input.filesModified) : null,
-    input.errorOutput ? input.errorOutput.slice(-2000) : null,
-    input.durationSeconds || null
+    input.errorOutput ? input.errorOutput.slice(-8000) : null,
+    input.durationSeconds || null,
+    input.progressEntryId || null
   );
 
   return db.prepare('SELECT * FROM task_attempts WHERE id = ?').get(result.lastInsertRowid) as TaskAttempt;

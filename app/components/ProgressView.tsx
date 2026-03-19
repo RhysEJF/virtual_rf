@@ -46,6 +46,8 @@ interface IterationContext {
     issues: Array<{ type: string; description: string; severity: string }>;
     discoveries: Array<{ type: string; content: string }>;
   } | null;
+  fullOutput: string | null;
+  fullOutputLength: number | null;
 }
 
 function formatTime(timestamp: number): string {
@@ -180,7 +182,7 @@ function IterationDetailModal({ entry, workerName, onClose }: IterationDetailMod
               <p className="text-text-primary">{parsed.summary}</p>
             </div>
 
-            {/* Claude Full Output - if available */}
+            {/* Claude Full Output - from entry or context API */}
             {entry.full_output ? (
               <div>
                 <h4 className="text-xs text-text-tertiary uppercase tracking-wide mb-2">
@@ -191,6 +193,20 @@ function IterationDetailModal({ entry, workerName, onClose }: IterationDetailMod
                 </h4>
                 <pre className="text-text-secondary text-xs whitespace-pre-wrap bg-bg-secondary p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto font-mono">
                   {entry.full_output}
+                </pre>
+              </div>
+            ) : context?.fullOutput ? (
+              <div>
+                <h4 className="text-xs text-text-tertiary uppercase tracking-wide mb-2">
+                  Full Worker Output
+                  {context.fullOutputLength && (
+                    <span className="ml-2 text-text-tertiary font-normal">
+                      ({Math.round(context.fullOutputLength / 1024)}KB total)
+                    </span>
+                  )}
+                </h4>
+                <pre className="text-text-secondary text-xs whitespace-pre-wrap bg-bg-secondary p-3 rounded-lg overflow-x-auto max-h-96 overflow-y-auto font-mono">
+                  {context.fullOutput}
                 </pre>
               </div>
             ) : (

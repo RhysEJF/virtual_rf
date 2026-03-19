@@ -97,10 +97,28 @@ export async function GET(
     }
   }
 
+  // Full output from the progress entry (truncated for API response)
+  let fullOutput: string | null = null;
+  let fullOutputLength: number | null = null;
+  if (entry.full_output) {
+    fullOutputLength = entry.full_output.length;
+    const MAX_HEAD = 5000;
+    const MAX_TAIL = 5000;
+    if (entry.full_output.length <= MAX_HEAD + MAX_TAIL) {
+      fullOutput = entry.full_output;
+    } else {
+      fullOutput = entry.full_output.slice(0, MAX_HEAD) +
+        `\n\n--- [${fullOutputLength - MAX_HEAD - MAX_TAIL} bytes omitted] ---\n\n` +
+        entry.full_output.slice(-MAX_TAIL);
+    }
+  }
+
   return NextResponse.json({
     task,
     attempts,
     checkpoint,
     observation,
+    fullOutput,
+    fullOutputLength,
   });
 }

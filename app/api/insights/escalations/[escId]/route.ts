@@ -31,6 +31,7 @@ interface AttemptSummary {
   errorOutput: string | null;
   filesModified: string[];
   durationSeconds: number | null;
+  progressEntryId: number | null;
   createdAt: string;
 }
 
@@ -140,6 +141,7 @@ export async function GET(
     errorOutput: a.error_output,
     filesModified: a.files_modified ? JSON.parse(a.files_modified) : [],
     durationSeconds: a.duration_seconds,
+    progressEntryId: a.progress_entry_id,
     createdAt: a.created_at,
   }));
 

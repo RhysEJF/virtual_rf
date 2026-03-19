@@ -37,6 +37,7 @@ interface AttemptSummary {
   errorOutput: string | null;
   filesModified: string[];
   durationSeconds: number | null;
+  progressEntryId: number | null;
   createdAt: string;
 }
 
@@ -185,6 +186,48 @@ function CollapsibleSection({ title, defaultOpen = false, badge, children }: {
         <div className="p-3 border-t border-border">
           {children}
         </div>
+      )}
+    </div>
+  );
+}
+
+function AttemptFullOutput({ progressEntryId }: { progressEntryId: number }): JSX.Element {
+  const [output, setOutput] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const fetchOutput = (): void => {
+    if (output !== null) {
+      setExpanded(!expanded);
+      return;
+    }
+    setLoading(true);
+    setExpanded(true);
+    fetch(`/api/progress/${progressEntryId}/context`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.fullOutput) {
+          setOutput(data.fullOutput);
+        } else {
+          setOutput('[No full output available]');
+        }
+      })
+      .catch(() => setOutput('[Failed to load output]'))
+      .finally(() => setLoading(false));
+  };
+
+  return (
+    <div className="mt-1">
+      <button
+        onClick={fetchOutput}
+        className="text-xs text-accent hover:text-accent/80 underline"
+      >
+        {loading ? 'Loading...' : expanded ? 'Hide full output' : 'View full output'}
+      </button>
+      {expanded && output && (
+        <pre className="text-xs text-text-secondary bg-bg-secondary p-2 rounded mt-1 overflow-x-auto max-h-48 overflow-y-auto font-mono whitespace-pre-wrap">
+          {output}
+        </pre>
       )}
     </div>
   );
@@ -421,6 +464,9 @@ export function EscalationDetailModal({ escalationId, onClose }: Props): JSX.Ele
                                     </span>
                                   ))}
                                 </div>
+                              )}
+                              {attempt.progressEntryId && (
+                                <AttemptFullOutput progressEntryId={attempt.progressEntryId} />
                               )}
                             </div>
                           ))}

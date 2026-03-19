@@ -673,6 +673,13 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE tasks ADD COLUMN eval_overrides TEXT');
     console.log('[DB Migration] Added eval_overrides column to tasks');
   }
+
+  // Add progress_entry_id column to task_attempts for linking attempts to full output
+  const attemptsCols = database.prepare(`PRAGMA table_info(task_attempts)`).all() as { name: string }[];
+  if (!attemptsCols.some(c => c.name === 'progress_entry_id')) {
+    database.exec('ALTER TABLE task_attempts ADD COLUMN progress_entry_id INTEGER');
+    console.log('[DB Migration] Added progress_entry_id column to task_attempts');
+  }
 }
 
 /**

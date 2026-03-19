@@ -2076,9 +2076,25 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
               failTask(task.id);
               logTaskFailed(outcomeId, outcome.name, task.title, `Turn exhaustion after ${MAX_EXHAUSTION_RETRIES} attempts`);
               recordFailure(outcomeId, task.id, 'Turn exhaustion: max retries exceeded');
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Turn limit exhausted on: ${task.title} — decomposition failed, task failed after ${MAX_EXHAUSTION_RETRIES} retries`,
+                full_output: taskResult.fullOutput,
+                task_id: task.id,
+              });
             } else {
               appendLog(`[Turn Exhaustion] Releasing back to pending (attempt ${exhaustionAttempts + 1}/${MAX_EXHAUSTION_RETRIES}).`);
               releaseTask(task.id);
+              const exhaustionProgressEntry = createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Turn limit exhausted on: ${task.title} — decomposition failed, released to pending`,
+                full_output: taskResult.fullOutput,
+                task_id: task.id,
+              });
               try {
                 recordAttempt({
                   taskId: task.id,
@@ -2086,20 +2102,22 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
                   workerId: String(workerId),
                   failureReason: 'Turn limit exhausted, decomposition failed',
                   durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+                  progressEntryId: exhaustionProgressEntry.id,
                 });
               } catch (attemptErr) {
                 appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
               }
             }
 
-            createProgressEntry({
-              outcome_id: outcomeId,
-              worker_id: workerId,
-              iteration,
-              content: `Turn limit exhausted on: ${task.title} — decomposition failed, ${exhaustionAttempts >= MAX_EXHAUSTION_RETRIES ? 'task failed' : 'released to pending'}`,
-              full_output: taskResult.fullOutput,
-              task_id: task.id,
-            });
+            // Quick HOMЯ observation for turn exhaustion (task released for retry)
+            if (homr.isEnabled(outcomeId) && taskResult.fullOutput && taskResult.fullOutput.length > 500) {
+              try {
+                homr.quickObserve(task, outcomeId, false);
+                appendLog(`HOMЯ (turn exhaustion): quick observation recorded`);
+              } catch (err) {
+                appendLog(`HOMЯ observation skipped: ${err instanceof Error ? err.message : 'unknown'}`);
+              }
+            }
             continue;
           }
 
@@ -2117,7 +2135,17 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
                 logTaskFailed(outcomeId, outcome.name, task.title, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
                 getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: 'Verification failed' }, timestamp: new Date().toISOString() });
 
-                // Record attempt with verification failure details
+                recordFailure(outcomeId, task.id, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
+                const verifyProgressEntry = createProgressEntry({
+                  outcome_id: outcomeId,
+                  worker_id: workerId,
+                  iteration,
+                  content: `Verification failed: ${task.title} — ${verifyResult.output.slice(0, 200)}`,
+                  full_output: taskResult.fullOutput,
+                  task_id: task.id,
+                });
+
+                // Record attempt with verification failure details (linked to progress entry)
                 try {
                   recordAttempt({
                     taskId: task.id,
@@ -2127,20 +2155,28 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
                     failureReason: `Verification command failed: ${task.verify_command}`,
                     errorOutput: verifyResult.output,
                     durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+                    progressEntryId: verifyProgressEntry.id,
                   });
                 } catch (attemptErr) {
                   appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
                 }
 
-                recordFailure(outcomeId, task.id, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
-                createProgressEntry({
-                  outcome_id: outcomeId,
-                  worker_id: workerId,
-                  iteration,
-                  content: `Verification failed: ${task.title} — ${verifyResult.output.slice(0, 200)}`,
-                  full_output: taskResult.fullOutput,
-                  task_id: task.id,
-                });
+                // HOMЯ observation for verification failure
+                if (homr.isEnabled(outcomeId) && taskResult.fullOutput && taskResult.fullOutput.length > 500) {
+                  try {
+                    const obsResult = await homr.observeAndProcess({
+                      task, fullOutput: taskResult.fullOutput, intent, outcomeId, workerId,
+                    });
+                    if (obsResult.observation) appendLog(`HOMЯ (verification failure): ${obsResult.observation.summary}`);
+                    if (obsResult.workerPaused) {
+                      workerState.running = false;
+                      exitReason = 'homr_paused';
+                      break;
+                    }
+                  } catch (err) {
+                    appendLog(`HOMЯ observation skipped: ${err instanceof Error ? err.message : 'unknown'}`);
+                  }
+                }
 
                 const circuitBreakerCheck = shouldTripCircuitBreaker(outcomeId, circuitBreakerThreshold);
                 if (circuitBreakerCheck.shouldTrip) {
@@ -2160,24 +2196,11 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
             getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
-            // Record successful attempt
-            try {
-              recordAttempt({
-                taskId: task.id,
-                attemptNumber: getAttemptCount(task.id) + 1,
-                workerId: String(workerId),
-                approachSummary: 'Task completed successfully',
-                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
-              });
-            } catch (attemptErr) {
-              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
-            }
-
             // Circuit breaker: Record success (resets consecutive failures)
             recordSuccess(outcomeId);
 
-            // Record progress entry with full output for auditing
-            createProgressEntry({
+            // Record progress entry with full output for auditing (before attempt, to get ID)
+            const successProgressEntry = createProgressEntry({
               outcome_id: outcomeId,
               worker_id: workerId,
               iteration,
@@ -2185,6 +2208,20 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
               full_output: taskResult.fullOutput,
               task_id: task.id,
             });
+
+            // Record successful attempt (linked to progress entry)
+            try {
+              recordAttempt({
+                taskId: task.id,
+                attemptNumber: getAttemptCount(task.id) + 1,
+                workerId: String(workerId),
+                approachSummary: 'Task completed successfully',
+                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+                progressEntryId: successProgressEntry.id,
+              });
+            } catch (attemptErr) {
+              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
+            }
 
             // HOMЯ observation - analyze the completed task
             if (homr.isEnabled(outcomeId) && taskResult.fullOutput) {
@@ -2228,26 +2265,11 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
             getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: taskResult.error }, timestamp: new Date().toISOString() });
 
-            // Record failed attempt for teaching-errors context on next retry
-            try {
-              const attemptNum = getAttemptCount(task.id) + 1;
-              recordAttempt({
-                taskId: task.id,
-                attemptNumber: attemptNum,
-                workerId: String(workerId),
-                failureReason: taskResult.error,
-                errorOutput: taskResult.fullOutput ? taskResult.fullOutput.slice(-2000) : undefined,
-                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
-              });
-            } catch (attemptErr) {
-              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
-            }
-
             // Circuit breaker: Record failure for pattern analysis
             recordFailure(outcomeId, task.id, taskResult.error || 'unknown error');
 
-            // Record failure with full output for debugging
-            createProgressEntry({
+            // Record failure with full output for debugging (before attempt, to get ID)
+            const failureProgressEntry = createProgressEntry({
               outcome_id: outcomeId,
               worker_id: workerId,
               iteration,
@@ -2255,6 +2277,39 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
               full_output: taskResult.fullOutput,
               task_id: task.id,
             });
+
+            // Record failed attempt for teaching-errors context on next retry (linked to progress entry)
+            try {
+              const attemptNum = getAttemptCount(task.id) + 1;
+              recordAttempt({
+                taskId: task.id,
+                attemptNumber: attemptNum,
+                workerId: String(workerId),
+                failureReason: taskResult.error,
+                errorOutput: taskResult.fullOutput ? taskResult.fullOutput.slice(-8000) : undefined,
+                durationSeconds: Math.floor((Date.now() - taskStartTime) / 1000),
+                progressEntryId: failureProgressEntry.id,
+              });
+            } catch (attemptErr) {
+              appendLog(`[Attempt] Failed to record attempt: ${attemptErr instanceof Error ? attemptErr.message : 'unknown'}`);
+            }
+
+            // HOMЯ observation for failed tasks
+            if (homr.isEnabled(outcomeId) && taskResult.fullOutput && taskResult.fullOutput.length > 500) {
+              try {
+                const obsResult = await homr.observeAndProcess({
+                  task, fullOutput: taskResult.fullOutput, intent, outcomeId, workerId,
+                });
+                if (obsResult.observation) appendLog(`HOMЯ (failure): ${obsResult.observation.summary}`);
+                if (obsResult.workerPaused) {
+                  workerState.running = false;
+                  exitReason = 'homr_paused';
+                  break;
+                }
+              } catch (err) {
+                appendLog(`HOMЯ observation skipped: ${err instanceof Error ? err.message : 'unknown'}`);
+              }
+            }
 
             // Check if this is a critical error
             if (taskResult.error?.includes('critical') || taskResult.error?.includes('blocked')) {
@@ -2284,6 +2339,7 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
                     `Actual failures: ${circuitBreakerCheck.failureCount}`,
                     `Pattern: ${circuitBreakerCheck.pattern}`,
                     `Most recent failed task: ${task.title}`,
+                    ...(taskResult.fullOutput ? [`Last output (tail):\n${taskResult.fullOutput.slice(-1500)}`] : []),
                   ],
                   affectedTasks: [task.id],
                   suggestedQuestion: 'Multiple tasks are failing with a similar pattern. How should we proceed?',

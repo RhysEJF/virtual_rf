@@ -43,6 +43,11 @@ Think of skills as "employee training manuals" that workers read before starting
 | Task refiner skill (pre-execution enrichment) | Complete |
 | Discovery skills (auto-discovered from ~/flow-data/skills/discovery/) | Complete |
 | Evolve skills (auto-discovered from ~/flow-data/skills/evolve/) | Complete |
+| **Eval recipes (evolve resource type)** | Complete |
+| - Three-level eval scanning (app/user/outcome) | Complete |
+| - Recipe parser (markdown → typed EvolveRecipe) | Complete |
+| - Eval script auto-generation (command + judge mode) | Complete |
+| - Recipe writer skill (`skills/evolve/recipe-writer.md`) | Complete |
 
 **Overall:** Complete and production-ready
 
@@ -81,6 +86,19 @@ Skills placed in these directories are automatically composed by the appropriate
 **Evolve skills:**
 - `optimize-task.md` — GEPA methodology (Goal, Explore, Propose, Apply) for hill-climbing
 - `skill-evolution.md` — Strategies for iteratively improving skills themselves
+- `recipe-writer.md` — App-internal skill (`~/flow/skills/evolve/`) for writing eval recipe markdown
+
+### Eval Recipes (Evolve Resource Type)
+
+Evals are a first-class resource type alongside skills and tools. They are structured markdown documents (eval recipes) that define what to optimize and how to judge it. Flow auto-generates eval scripts from recipes.
+
+| Level | Location | Purpose |
+|-------|----------|---------|
+| **App** | `~/flow/evals/` | Seed evals shipped with Flow (e.g., code-size, test-pass-rate, headline-quality) |
+| **User** | `~/flow-data/evals/` | Your personal eval library |
+| **Outcome** | `~/flow-data/workspaces/out_{id}/evals/` | Outcome-specific evals |
+
+Evals are scanned by `lib/evolve/eval-manager.ts` which merges all three levels. Recipes are parsed by `lib/evolve/recipe-parser.ts` and converted to eval scripts by `lib/evolve/eval-generator.ts`. Tasks link to evals via the `eval_recipe_name` column. The `'eval'` item type in `outcome_items` enables repository sync for evals.
 
 ### Repository Sync
 

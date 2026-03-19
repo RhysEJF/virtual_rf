@@ -12,13 +12,13 @@ Think of it as a team of AI agents managed by a single interface. You set the go
 ## Core Loop
 
 ```
-You describe an outcome
-    → Dispatcher classifies and routes it
-    → Orchestrator plans two phases:
-        1. Capability Phase — build skills & tools
-        2. Execution Phase — workers complete tasks
+You create an outcome (UI, CLI, Telegram, or Claude Code)
+    → Discovery refines intent into tasks (optional)
+    → Workers claim and execute tasks
+        ↳ If a task needs a skill or tool, it's built first automatically
     → HOMR observes, steers, and escalates
     → Reviewer checks quality
+    → Evolve mode optimizes measurable outputs (optional)
     → System learns for next time
 ```
 
@@ -38,6 +38,24 @@ The intelligent orchestration layer above the workers. HOMR **observes** task ou
 
 ### Skills
 Reusable markdown instruction files that get injected into worker context. Three levels: app skills (ship with Flow), user skills (your personal library), and outcome skills (built during capability phase).
+
+### Tools
+Executable TypeScript CLI tools built during the capability phase. Unlike skills (which are text instructions), tools are runnable code that workers can invoke. Built automatically when the orchestrator detects a task needs programmatic capabilities.
+
+### Discovery Engine
+The pipeline that turns a vague idea into structured, actionable work. Runs a clarity check on your input, asks targeted interview questions, researches your codebase for context, writes a plan, and generates tasks with dependencies and verification commands. Three tiers: QUICK, STANDARD, and DEEP.
+
+### Evolve Mode
+Hill-climbing optimization for tasks. When a task has a metric command, the worker iterates: make a change, measure the result, keep improvements, revert regressions. Stops after hitting the budget or detecting a plateau. Think of it as automated A/B testing for any measurable output.
+
+### Evals
+Structured markdown recipes that define what to optimize and how to judge it. Evals power evolve mode — they specify the artifact, scoring criteria, grading examples, and whether to use an LLM judge or a shell command. Three levels (app/user/outcome), just like skills.
+
+### Task Gates
+Human-in-the-loop checkpoints on tasks. A gate blocks a task from being claimed until a human provides approval or uploads a required document. Workers skip gated tasks automatically, and the system escalates to get your input.
+
+### Repository Sync
+How Flow artifacts get saved to external Git repos. Skills, tools, evals, and outputs each have a configurable save target (local, private repo, or team repo). Flow handles the git operations — commit, push, and sync status tracking per item.
 
 ## Architecture
 

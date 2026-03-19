@@ -441,7 +441,7 @@ function storeAnswerPattern(
  */
 const TURN_LIMIT_INCREASE_MULTIPLIER = 2;
 const DEFAULT_MAX_ATTEMPTS = 3;
-const DEFAULT_WORKER_MAX_TURNS = 20; // Must match worker.ts config default
+const DEFAULT_WORKER_MAX_TURNS = 100; // Must match worker.ts config default
 
 /**
  * Apply the 'increase_turn_limit' action to affected tasks.

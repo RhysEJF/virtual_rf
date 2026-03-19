@@ -15,6 +15,8 @@ import {
   setMaxSubtaskDepth,
   getMaxChildrenPerTask,
   setMaxChildrenPerTask,
+  getDefaultTurnBudget,
+  setDefaultTurnBudget,
 } from '@/lib/db/system-config';
 import type { IsolationMode } from '@/lib/db/schema';
 
@@ -28,6 +30,7 @@ export async function GET(): Promise<NextResponse> {
         max_pending_tasks: getMaxPendingTasks(),
         max_subtask_depth: getMaxSubtaskDepth(),
         max_children_per_task: getMaxChildrenPerTask(),
+        default_turn_budget: getDefaultTurnBudget(),
       },
     });
   } catch (error) {
@@ -88,6 +91,17 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       setMaxChildrenPerTask(val);
     }
 
+    if (body.default_turn_budget !== undefined) {
+      const val = Number(body.default_turn_budget);
+      if (isNaN(val) || val < 1 || val > 1000) {
+        return NextResponse.json(
+          { error: 'default_turn_budget must be between 1 and 1000.' },
+          { status: 400 }
+        );
+      }
+      setDefaultTurnBudget(val);
+    }
+
     // Return updated config
     const config = getAllConfig();
 
@@ -98,6 +112,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         max_pending_tasks: getMaxPendingTasks(),
         max_subtask_depth: getMaxSubtaskDepth(),
         max_children_per_task: getMaxChildrenPerTask(),
+        default_turn_budget: getDefaultTurnBudget(),
       },
     });
   } catch (error) {

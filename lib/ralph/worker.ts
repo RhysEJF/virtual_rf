@@ -77,6 +77,7 @@ import { runVerification } from './verification';
 import { buildTeachingContext } from './teaching-errors';
 import { runSafetyCheck, buildSafetyEscalationSignal } from './safety-check';
 import { getDiscoveriesForTask } from '../db/homr';
+import { getDefaultTurnBudget } from '../db/system-config';
 
 // ============================================================================
 // Types
@@ -413,28 +414,32 @@ const DEFAULT_COMPLEXITY_TIERS: ComplexityTier[] = [
 ];
 
 /**
- * Configuration for pre-claim complexity check
+ * Configuration for pre-claim complexity check (logging-only mode)
+ *
+ * The complexity check no longer gates task execution. It runs purely for
+ * data collection — logging predicted complexity and turns so we can build
+ * better adaptive budgeting in the future.
  */
 export interface ComplexityCheckConfig {
-  maxTurns: number;                 // Worker's max turns limit (default: 40)
-  autoDecompose: boolean;           // Auto-decompose high-complexity tasks (default: false) — legacy, ignored when tiers is set
-  escalateOnHighComplexity: boolean; // Create escalation for human decision (default: true) — legacy, ignored when tiers is set
-  complexityThreshold: number;      // Complexity score threshold (default: 6) — legacy, ignored when tiers is set
-  turnsWarningRatio: number;        // Warn if estimated > maxTurns * ratio (default: 0.8)
-  tiers?: ComplexityTier[];         // Graduated response tiers (when set, overrides legacy fields)
+  maxTurns: number;                 // Worker's max turns limit (default: 100)
+  autoDecompose: boolean;           // Legacy — kept for interface compat, not used
+  escalateOnHighComplexity: boolean; // Legacy — kept for interface compat, not used
+  complexityThreshold: number;      // Legacy — kept for interface compat, not used
+  turnsWarningRatio: number;        // Legacy — kept for interface compat, not used
+  tiers?: ComplexityTier[];         // Legacy — kept for interface compat, not used
 }
 
 const DEFAULT_COMPLEXITY_CHECK_CONFIG: ComplexityCheckConfig = {
-  maxTurns: 40,
+  maxTurns: 100,
   autoDecompose: false,
-  escalateOnHighComplexity: true,
+  escalateOnHighComplexity: false,
   complexityThreshold: 6,
   turnsWarningRatio: 0.8,
   tiers: DEFAULT_COMPLEXITY_TIERS,
 };
 
 /**
- * Result of pre-claim complexity check
+ * Result of pre-claim complexity check (logging-only mode)
  */
 export interface ComplexityCheckResult {
   shouldProceed: boolean;
@@ -447,8 +452,12 @@ export interface ComplexityCheckResult {
 }
 
 /**
- * Run pre-claim complexity check on a task before claiming it.
- * Returns whether the task should proceed or be handled differently.
+ * Run pre-claim complexity check on a task (LOGGING-ONLY MODE).
+ *
+ * This no longer gates task execution. It estimates complexity and logs
+ * the prediction for data collection, then always returns shouldProceed: true.
+ * The logged data (predicted score, predicted turns) will be compared against
+ * actual turns consumed to build better adaptive budgeting in the future.
  */
 async function runPreClaimComplexityCheck(
   task: Task,
@@ -458,62 +467,38 @@ async function runPreClaimComplexityCheck(
   appendLog: (msg: string) => void
 ): Promise<ComplexityCheckResult> {
   // Guard: Skip tasks that are being decomposed or have already been decomposed.
-  // This prevents workers from creating duplicate escalations for tasks that are
-  // mid-decomposition or have already been broken into subtasks.
   if (task.decomposition_status === 'in_progress' || task.decomposition_status === 'completed') {
     appendLog(`[Complexity] Skipping task ${task.id} - decomposition_status is '${task.decomposition_status}'`);
     return {
       shouldProceed: false,
       estimate: null,
       action: 'skipped',
-      reason: `Task is ${task.decomposition_status === 'in_progress' ? 'currently being decomposed' : 'already decomposed into subtasks'}. Skipping to prevent duplicate escalations.`,
+      reason: `Task is ${task.decomposition_status === 'in_progress' ? 'currently being decomposed' : 'already decomposed into subtasks'}.`,
     };
   }
 
-  // Guard: Skip subtasks that were created FROM decomposition.
-  // These are the children of a decomposed parent — they've already been broken down
-  // to a manageable size. Re-checking complexity creates an infinite escalation loop
-  // where every subtask gets flagged, escalated, and the worker pauses.
-  if (task.decomposed_from_task_id) {
-    appendLog(`[Complexity] Skipping subtask ${task.id} - born from decomposition of ${task.decomposed_from_task_id}`);
+  // Skip estimation if task already has a recorded complexity score
+  if (task.complexity_score !== null && task.complexity_score !== undefined) {
+    appendLog(`[Complexity] Already estimated: score=${task.complexity_score}, turns=${task.estimated_turns ?? 'unknown'}`);
     return {
       shouldProceed: true,
-      estimate: null,
+      estimate: {
+        complexity_score: task.complexity_score,
+        estimated_turns: task.estimated_turns ?? config.maxTurns,
+        confidence: 'high' as const,
+        reasoning: 'Using pre-existing complexity estimate',
+        risk_factors: [],
+        recommendations: [],
+      },
       action: 'proceed',
-      reason: `Task is a subtask from decomposition (parent: ${task.decomposed_from_task_id}). Skipping complexity check to prevent escalation loop.`,
+      reason: `Task has existing complexity score (${task.complexity_score}). Logging only — no gating.`,
     };
   }
 
-  // Skip re-estimation if task already has complexity score below threshold
-  if (task.complexity_score !== null && task.complexity_score !== undefined) {
-    const existingScore = task.complexity_score;
-    const existingTurns = task.estimated_turns ?? config.maxTurns;
-
-    appendLog(`[Complexity] Using existing estimate: score=${existingScore}, turns=${existingTurns}`);
-
-    if (existingScore < config.complexityThreshold && existingTurns <= config.maxTurns) {
-      return {
-        shouldProceed: true,
-        estimate: {
-          complexity_score: existingScore,
-          estimated_turns: existingTurns,
-          confidence: 'high' as const,
-          reasoning: 'Using pre-existing complexity estimate',
-          risk_factors: [],
-          recommendations: [],
-        },
-        action: 'proceed',
-        reason: `Task has existing complexity score (${existingScore}) below threshold (${config.complexityThreshold})`,
-      };
-    }
-    // If existing score is high, still re-estimate to be safe (user may have changed task)
-    appendLog(`[Complexity] Existing score ${existingScore} >= threshold ${config.complexityThreshold}, re-estimating...`);
-  }
-
-  appendLog(`[Complexity] Estimating complexity for task: ${task.title}`);
+  appendLog(`[Complexity] Estimating complexity for task: ${task.title} (logging only)`);
 
   try {
-    // Estimate task complexity
+    // Estimate task complexity (for data collection)
     const estimate = await estimateTaskComplexity(
       {
         task,
@@ -527,266 +512,24 @@ async function runPreClaimComplexityCheck(
       }
     );
 
-    appendLog(`[Complexity] Score: ${estimate.complexity_score}/10, Estimated turns: ${estimate.estimated_turns}`);
+    appendLog(`[Complexity] Score: ${estimate.complexity_score}/10, Estimated turns: ${estimate.estimated_turns} (logged, not gating)`);
 
-    // Assess turn limit risk (for logging)
+    // Log risk assessment for data collection
     const riskAssessment = assessTurnLimitRisk(estimate, config.maxTurns);
-    appendLog(`[Complexity] Risk level: ${riskAssessment.riskLevel}`);
+    appendLog(`[Complexity] Risk level: ${riskAssessment.riskLevel} (informational)`);
 
-    // --- Tiered complexity handling ---
-    if (config.tiers && config.tiers.length > 0) {
-      const score = estimate.complexity_score;
-      const tier = config.tiers.find(t => score >= t.minScore && score <= t.maxScore);
-      const tierAction = tier?.action || 'proceed';
-
-      appendLog(`[Complexity] Score ${score}: tier action = ${tierAction}`);
-
-      switch (tierAction) {
-        case 'proceed':
-          return {
-            shouldProceed: true,
-            estimate,
-            action: 'proceed',
-            reason: `Task complexity (${score}) within normal range (tier: proceed)`,
-          };
-
-        case 'proceed_extended': {
-          const multiplier = tier?.turnMultiplier || 2;
-          const extendedTurns = Math.floor(config.maxTurns * multiplier);
-          appendLog(`[Complexity] Score ${score}: proceeding with extended turn budget (${extendedTurns} turns)`);
-          return {
-            shouldProceed: true,
-            estimate,
-            action: 'proceed_extended',
-            effectiveMaxTurns: extendedTurns,
-            reason: `Task complexity (${score}) warrants extended turn budget: ${extendedTurns} turns (${multiplier}x)`,
-          };
-        }
-
-        case 'decompose': {
-          appendLog(`[Complexity] Score ${score}: auto-decomposing before starting...`);
-          const decompositionResult = await autoDecomposeIfNeeded(
-            task,
-            intent,
-            null, // approach
-            {
-              minComplexityToDecompose: 1, // Force decomposition
-              maxTurnsPerSubtask: Math.floor(config.maxTurns / 2),
-              maxSubtasks: 6,
-              workerMaxTurns: config.maxTurns,
-            }
-          );
-
-          if (decompositionResult && decompositionResult.success) {
-            appendLog(`[Complexity] Score ${score}: auto-decomposed into ${decompositionResult.createdTaskIds.length} subtasks`);
-            return {
-              shouldProceed: false,
-              estimate,
-              action: 'decomposed',
-              decompositionResult,
-              reason: `Task complexity (${score}) triggered auto-decomposition into ${decompositionResult.createdTaskIds.length} subtasks.`,
-            };
-          }
-
-          // Decomposition failed at score 8-9: fall back to proceed_extended rather than escalating
-          const fallbackTurns = Math.floor(config.maxTurns * 2);
-          appendLog(`[Complexity] Decomposition failed for score ${score}, falling back to extended turns (${fallbackTurns})`);
-          return {
-            shouldProceed: true,
-            estimate,
-            action: 'proceed_extended',
-            effectiveMaxTurns: fallbackTurns,
-            reason: `Decomposition failed for complexity ${score}. Falling back to extended turn budget (${fallbackTurns} turns).`,
-          };
-        }
-
-        case 'escalate': {
-          // Score 10 only — create escalation for human decision
-          const pendingEscalations = homr.getPendingEscalations(outcomeId);
-          const existingEscalation = pendingEscalations.find(
-            esc => esc.trigger_task_id === task.id && esc.trigger_type === 'blocking_decision'
-          );
-
-          if (existingEscalation) {
-            appendLog(`[Complexity] Found existing escalation ${existingEscalation.id} for task ${task.id}`);
-            return {
-              shouldProceed: false,
-              estimate,
-              action: 'escalated',
-              escalationId: existingEscalation.id,
-              reason: `Task already has pending complexity escalation ${existingEscalation.id}.`,
-            };
-          }
-
-          appendLog(`[Complexity] Score ${score}: escalating to human (maximum complexity)`);
-
-          const currentMaxTurns = Math.max(task.max_attempts || config.maxTurns, config.maxTurns);
-          const increasedMaxTurns = Math.max(currentMaxTurns * 2, currentMaxTurns + 5);
-
-          const ambiguity: homr.HomrAmbiguitySignal = {
-            detected: true,
-            type: 'blocking_decision',
-            description: `Task "${task.title}" has maximum complexity (${score}/10) and is estimated to require ${estimate.estimated_turns} turns. This exceeds what auto-handling can manage.`,
-            evidence: [
-              `Complexity score: ${score}/10`,
-              `Estimated turns: ${estimate.estimated_turns}`,
-              `Worker max turns: ${currentMaxTurns}`,
-              `Risk level: ${riskAssessment.riskLevel}`,
-              ...estimate.risk_factors.map(f => `Risk factor: ${f}`),
-            ],
-            affectedTasks: [task.id],
-            suggestedQuestion: 'This task has maximum complexity (10/10). How should we proceed?',
-            options: [
-              {
-                id: 'break_into_subtasks',
-                label: 'Break Into Subtasks',
-                description: 'Decompose this task into smaller, more manageable pieces',
-                implications: 'Creates new subtasks that replace this task.',
-              },
-              {
-                id: 'increase_turn_limit',
-                label: 'Increase Turn Limit',
-                description: 'Double the turn limit and attempt this task as-is',
-                implications: `Worker will have ${increasedMaxTurns} turns instead of ${currentMaxTurns}.`,
-              },
-              {
-                id: 'proceed_anyway',
-                label: 'Proceed Anyway',
-                description: 'Attempt the task with current limits, accepting high failure risk',
-                implications: 'Task will likely hit turn limit and fail.',
-              },
-              {
-                id: 'skip_task',
-                label: 'Skip This Task',
-                description: 'Mark this task as skipped and continue with other work',
-                implications: 'Task will not be attempted.',
-              },
-            ],
-          };
-
-          try {
-            const escalationId = await homr.createEscalation(outcomeId, ambiguity, task);
-            appendLog(`[Complexity] Escalation created: ${escalationId}`);
-            return {
-              shouldProceed: false,
-              estimate,
-              action: 'escalated',
-              escalationId,
-              reason: `Maximum complexity (${score}/10). Escalation ${escalationId} created for human decision.`,
-            };
-          } catch (escalationError) {
-            appendLog(`[Complexity] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'unknown'}`);
-            // Fall through to skip
-          }
-          break;
-        }
-      }
-    } else {
-      // --- Legacy path: single-threshold behavior (for backwards compatibility) ---
-      if (!riskAssessment.atRisk && estimate.complexity_score < config.complexityThreshold) {
-        return {
-          shouldProceed: true,
-          estimate,
-          action: 'proceed',
-          reason: `Task complexity (${estimate.complexity_score}) and estimated turns (${estimate.estimated_turns}) are within acceptable limits`,
-        };
-      }
-
-      appendLog(`[Complexity] Task may exceed turn limit. Risk: ${riskAssessment.message}`);
-
-      if (config.autoDecompose) {
-        appendLog(`[Complexity] Auto-decomposing high-complexity task...`);
-        const decompositionResult = await autoDecomposeIfNeeded(
-          task, intent, null,
-          {
-            minComplexityToDecompose: config.complexityThreshold,
-            maxTurnsPerSubtask: Math.floor(config.maxTurns / 2),
-            maxSubtasks: 6,
-            workerMaxTurns: config.maxTurns,
-          }
-        );
-
-        if (decompositionResult && decompositionResult.success) {
-          appendLog(`[Complexity] Task decomposed into ${decompositionResult.createdTaskIds.length} subtasks`);
-          return {
-            shouldProceed: false,
-            estimate,
-            action: 'decomposed',
-            decompositionResult,
-            reason: `Task was too complex (${estimate.complexity_score}/10). Decomposed into ${decompositionResult.createdTaskIds.length} subtasks.`,
-          };
-        }
-        appendLog(`[Complexity] Auto-decomposition failed: ${decompositionResult?.error || decompositionResult?.reasoning || 'unknown'}`);
-      }
-
-      if (config.escalateOnHighComplexity) {
-        const pendingEscalations = homr.getPendingEscalations(outcomeId);
-        const existingEscalation = pendingEscalations.find(
-          esc => esc.trigger_task_id === task.id && esc.trigger_type === 'blocking_decision'
-        );
-
-        if (existingEscalation) {
-          return {
-            shouldProceed: false,
-            estimate,
-            action: 'escalated',
-            escalationId: existingEscalation.id,
-            reason: `Task already has pending complexity escalation ${existingEscalation.id}.`,
-          };
-        }
-
-        const effectiveMaxTurns = Math.max(task.max_attempts || config.maxTurns, config.maxTurns);
-        const increasedMaxTurns = Math.max(effectiveMaxTurns * 2, effectiveMaxTurns + 5);
-
-        const ambiguity: homr.HomrAmbiguitySignal = {
-          detected: true,
-          type: 'blocking_decision',
-          description: `Task "${task.title}" has high complexity (${estimate.complexity_score}/10) and is estimated to require ${estimate.estimated_turns} turns, which exceeds the worker's ${effectiveMaxTurns} turn limit.`,
-          evidence: [
-            `Complexity score: ${estimate.complexity_score}/10`,
-            `Estimated turns: ${estimate.estimated_turns}`,
-            `Worker max turns: ${effectiveMaxTurns}`,
-            `Risk level: ${riskAssessment.riskLevel}`,
-            ...estimate.risk_factors.map(f => `Risk factor: ${f}`),
-          ],
-          affectedTasks: [task.id],
-          suggestedQuestion: 'This task is too complex for the current turn limit. How should we proceed?',
-          options: [
-            { id: 'break_into_subtasks', label: 'Break Into Subtasks', description: 'Decompose this task into smaller, more manageable pieces', implications: 'Creates new subtasks that replace this task.' },
-            { id: 'increase_turn_limit', label: 'Increase Turn Limit', description: 'Double the turn limit and attempt this task as-is', implications: `Worker will have ${increasedMaxTurns} turns instead of ${effectiveMaxTurns}.` },
-            { id: 'proceed_anyway', label: 'Proceed Anyway', description: 'Attempt the task with current limits, accepting the risk of failure', implications: 'Task may hit turn limit and fail.' },
-            { id: 'skip_task', label: 'Skip This Task', description: 'Mark this task as skipped and continue with other work', implications: 'Task will not be attempted.' },
-          ],
-        };
-
-        try {
-          const escalationId = await homr.createEscalation(outcomeId, ambiguity, task);
-          return {
-            shouldProceed: false,
-            estimate,
-            action: 'escalated',
-            escalationId,
-            reason: `Task complexity too high. Created escalation ${escalationId} for human decision.`,
-          };
-        } catch (escalationError) {
-          appendLog(`[Complexity] Failed to create escalation: ${escalationError instanceof Error ? escalationError.message : 'unknown'}`);
-        }
-      }
-    }
-
-    // If all else fails, skip the task
-    appendLog(`[Complexity] Skipping high-complexity task`);
+    // Always proceed — complexity is logged but does not gate execution
     return {
-      shouldProceed: false,
+      shouldProceed: true,
       estimate,
-      action: 'skipped',
-      reason: `Task complexity too high (${estimate.complexity_score}/10, ${estimate.estimated_turns} estimated turns) and no action could be taken.`,
+      action: 'proceed',
+      reason: `Complexity logged: score=${estimate.complexity_score}/10, turns=${estimate.estimated_turns}. No gating — generous turn budget applied.`,
     };
 
   } catch (error) {
     appendLog(`[Complexity] Estimation failed: ${error instanceof Error ? error.message : 'unknown'}`);
 
-    // On error, proceed with caution (let the task run)
+    // On error, proceed (no gating)
     return {
       shouldProceed: true,
       estimate: null,
@@ -1357,7 +1100,7 @@ export async function startRalphWorker(
     circuitBreakerThreshold = 3,
     enableComplexityCheck = true,
     autoDecompose = false,
-    maxTurns = 40,
+    maxTurns = getDefaultTurnBudget(),
   } = config;
 
   // Build complexity check config
@@ -1694,7 +1437,51 @@ export async function startRalphWorker(
           logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
           getEventBus().emit({ type: 'task.claimed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
-          // Pre-claim complexity check
+          // Safety intent check — blocks execution if prompt injection or malicious content detected
+          try {
+            appendLog(`[Safety] Running pre-execution safety check...`);
+            const safetyResult = await runSafetyCheck(task, outcomeId, intent);
+
+            if (!safetyResult.safe) {
+              appendLog(`[Safety] BLOCKED: ${safetyResult.summary} (severity: ${safetyResult.severity})`);
+              for (const issue of safetyResult.issues) {
+                appendLog(`[Safety]   - [${issue.type}] ${issue.description}`);
+              }
+
+              // Release the task
+              releaseTask(task.id);
+
+              // Create HOMR escalation for human review
+              const safetySignal = buildSafetyEscalationSignal(task, safetyResult);
+              try {
+                const escalationId = await homr.createEscalation(outcomeId, safetySignal, task);
+                appendLog(`[Safety] Escalation created: ${escalationId}`);
+              } catch (escError) {
+                appendLog(`[Safety] Failed to create escalation: ${escError instanceof Error ? escError.message : 'unknown'}`);
+              }
+
+              createProgressEntry({
+                outcome_id: outcomeId,
+                worker_id: workerId,
+                iteration,
+                content: `Safety check BLOCKED: ${task.title} — ${safetyResult.summary}`,
+              });
+
+              workerState.running = false;
+              exitReason = 'safety_blocked';
+              break;
+            }
+
+            appendLog(`[Safety] Passed (${safetyResult.summary})`);
+          } catch (safetyError) {
+            // Safety check failure should not block the task — log and continue
+            appendLog(`[Safety] Check failed (non-blocking): ${safetyError instanceof Error ? safetyError.message : 'unknown'}`);
+          }
+
+          // If safety check paused us, break out
+          if (!workerState.running) break;
+
+          // Complexity check (logging only — no gating)
           if (enableComplexityCheck) {
             const complexityResult = await runPreClaimComplexityCheck(
               task,
@@ -1704,47 +1491,14 @@ export async function startRalphWorker(
               appendLog
             );
 
+            // Only case where we don't proceed: task is mid-decomposition
             if (!complexityResult.shouldProceed) {
-              appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
-
-              // Release the task since we won't run it
+              appendLog(`[Complexity] Skipping decomposed task: ${complexityResult.reason}`);
               releaseTask(task.id);
-
-              // Record progress entry
-              createProgressEntry({
-                outcome_id: outcomeId,
-                worker_id: workerId,
-                iteration,
-                content: `Complexity check: ${complexityResult.action} - ${task.title}`,
-              });
-
-              // If decomposed, the new subtasks will be picked up in the next iteration
-              if (complexityResult.action === 'decomposed') {
-                appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
-                continue; // Move to next iteration to pick up subtasks
-              }
-
-              // If escalated, worker should pause and wait for human decision
-              if (complexityResult.action === 'escalated') {
-                appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
-                workerState.running = false;
-                exitReason = 'complexity_escalation';
-                break;
-              }
-
-              // If skipped for other reasons, continue to next task
               continue;
             }
 
-            // Handle proceed_extended: set effective max turns on task
-            if (complexityResult.action === 'proceed_extended' && complexityResult.effectiveMaxTurns) {
-              appendLog(`[Complexity] Setting extended turn budget: ${complexityResult.effectiveMaxTurns} turns`);
-              updateTaskDb(task.id, { max_attempts: complexityResult.effectiveMaxTurns });
-              // Refresh local task reference so max_attempts picks up the new value
-              task.max_attempts = complexityResult.effectiveMaxTurns;
-            }
-
-            // Store estimate on task for future reference
+            // Store estimate on task for future data collection
             if (complexityResult.estimate) {
               updateTaskDb(task.id, {
                 complexity_score: complexityResult.estimate.complexity_score,
@@ -3051,7 +2805,7 @@ export interface WorkerLoopOptions {
   maxIterations?: number;         // Override max iterations
   enableComplexityCheck?: boolean; // Enable pre-claim complexity check (default: true)
   autoDecompose?: boolean;         // Auto-decompose high-complexity tasks (default: false)
-  maxTurns?: number;               // Worker's max turns per task (default: 40)
+  maxTurns?: number;               // Worker's max turns per task (default: 100)
 }
 
 /**
@@ -3071,14 +2825,14 @@ export async function runWorkerLoop(
     maxIterations = 50,
     enableComplexityCheck = true,
     autoDecompose = false,
-    maxTurns = 40,
+    maxTurns = getDefaultTurnBudget(),
   } = options;
 
-  // Build complexity check config
+  // Build complexity check config (logging-only mode)
   const complexityCheckConfig: ComplexityCheckConfig = {
     maxTurns,
-    autoDecompose,
-    escalateOnHighComplexity: true,
+    autoDecompose: false,
+    escalateOnHighComplexity: false,
     complexityThreshold: 6,
     turnsWarningRatio: 0.8,
     tiers: DEFAULT_COMPLEXITY_TIERS,
@@ -3175,7 +2929,32 @@ export async function runWorkerLoop(
     logTaskClaimed(outcomeId, outcome.name, task.title, workerName);
     getEventBus().emit({ type: 'task.claimed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
 
-    // Pre-claim complexity check
+    // Safety intent check — blocks execution if prompt injection or malicious content detected
+    try {
+      appendLog(`[Safety] Running pre-execution safety check...`);
+      const safetyResult = await runSafetyCheck(task, outcomeId, intent);
+
+      if (!safetyResult.safe) {
+        appendLog(`[Safety] BLOCKED: ${safetyResult.summary} (severity: ${safetyResult.severity})`);
+
+        releaseTask(task.id);
+
+        const safetySignal = buildSafetyEscalationSignal(task, safetyResult);
+        try {
+          await homr.createEscalation(outcomeId, safetySignal, task);
+        } catch (escError) {
+          appendLog(`[Safety] Failed to create escalation: ${escError instanceof Error ? escError.message : 'unknown'}`);
+        }
+
+        break; // Stop the worker loop — safety issue requires human review
+      }
+
+      appendLog(`[Safety] Passed (${safetyResult.summary})`);
+    } catch (safetyError) {
+      appendLog(`[Safety] Check failed (non-blocking): ${safetyError instanceof Error ? safetyError.message : 'unknown'}`);
+    }
+
+    // Complexity check (logging only — no gating)
     if (enableComplexityCheck) {
       const complexityResult = await runPreClaimComplexityCheck(
         task,
@@ -3185,36 +2964,14 @@ export async function runWorkerLoop(
         appendLog
       );
 
+      // Only case where we don't proceed: task is mid-decomposition
       if (!complexityResult.shouldProceed) {
-        appendLog(`[Complexity] Task will not proceed: ${complexityResult.reason}`);
-
-        // Release the task since we won't run it
+        appendLog(`[Complexity] Skipping decomposed task: ${complexityResult.reason}`);
         releaseTask(task.id);
-
-        // If decomposed, the new subtasks will be picked up in the next iteration
-        if (complexityResult.action === 'decomposed') {
-          appendLog(`[Complexity] Task decomposed. Subtasks: ${complexityResult.decompositionResult?.createdTaskIds.join(', ')}`);
-          continue; // Move to next iteration to pick up subtasks
-        }
-
-        // If escalated, worker loop should stop and wait for human decision
-        if (complexityResult.action === 'escalated') {
-          appendLog(`[Complexity] Worker pausing for human decision on task complexity`);
-          break;
-        }
-
-        // If skipped for other reasons, continue to next task
         continue;
       }
 
-      // Handle proceed_extended: set effective max turns on task
-      if (complexityResult.action === 'proceed_extended' && complexityResult.effectiveMaxTurns) {
-        appendLog(`[Complexity] Setting extended turn budget: ${complexityResult.effectiveMaxTurns} turns`);
-        updateTaskDb(task.id, { max_attempts: complexityResult.effectiveMaxTurns });
-        task.max_attempts = complexityResult.effectiveMaxTurns;
-      }
-
-      // Store estimate on task for future reference
+      // Store estimate on task for future data collection
       if (complexityResult.estimate) {
         updateTaskDb(task.id, {
           complexity_score: complexityResult.estimate.complexity_score,

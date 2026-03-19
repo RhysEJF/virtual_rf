@@ -108,8 +108,8 @@ showSubcommand.action(async (taskId: string, options: OutputOptions) => {
       console.log(`Completed:   ${chalk.white(formatRelativeTime(task.completed_at))}`);
     }
 
-    if (task.attempts > 0) {
-      console.log(`Attempts:    ${chalk.white(`${task.attempts}/${task.max_attempts}`)}`);
+    if (task.attempts > 0 || task.max_attempts !== 3) {
+      console.log(`Turn Budget: ${chalk.white(`${task.attempts}/${task.max_attempts}`)}`);
     }
 
     if (task.from_review) {
@@ -197,6 +197,7 @@ interface AddOptions extends OutputOptions {
   priority?: string;
   dependsOn?: string;
   gate?: string[];
+  turnBudget?: string;
   metricCommand?: string;
   metricBaseline?: string;
   optimizationBudget?: string;
@@ -215,6 +216,7 @@ const addSubcommand = new Command('add')
     prev.push(val);
     return prev;
   }, [] as string[])
+  .option('--turn-budget <n>', 'Max worker turns/attempts (10-500, default 3)')
   .option('--metric-command <cmd>', 'Enable evolve mode with this metric command (shell command that outputs a number)')
   .option('--metric-baseline <n>', 'Known baseline metric value')
   .option('--optimization-budget <n>', 'Max optimization iterations (default 5)')
@@ -226,7 +228,7 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
   const outcomeId = resolveOutcomeId(rawOutcomeId);
   try {
     // Prepare task data
-    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }>; metric_command?: string; metric_baseline?: number; optimization_budget?: number; metric_direction?: string } = {
+    const taskData: { title: string; description?: string; priority?: number; depends_on?: string[]; gates?: Array<{ type: string; label: string }>; max_attempts?: number; metric_command?: string; metric_baseline?: number; optimization_budget?: number; metric_direction?: string } = {
       title,
     };
 
@@ -267,6 +269,15 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
         gates.push({ type, label });
       }
       taskData.gates = gates;
+    }
+
+    if (options.turnBudget) {
+      const turnBudget = parseInt(options.turnBudget, 10);
+      if (isNaN(turnBudget) || turnBudget < 10 || turnBudget > 500) {
+        console.error(chalk.red('Error:'), 'Turn budget must be a number between 10 and 500');
+        process.exit(1);
+      }
+      taskData.max_attempts = turnBudget;
     }
 
     if (options.metricCommand) {
@@ -320,6 +331,9 @@ addSubcommand.action(async (rawOutcomeId: string, title: string, options: AddOpt
     if (taskData.gates && taskData.gates.length > 0) {
       console.log(`  Gates: ${chalk.yellow(taskData.gates.map(g => `${g.type}:${g.label}`).join(', '))}`);
     }
+    if (taskData.max_attempts) {
+      console.log(`  Turn Budget: ${chalk.white(String(taskData.max_attempts))}`);
+    }
     if (taskData.metric_command) {
       console.log(`  Evolve:   ${chalk.magenta('enabled')}`);
       console.log(`    Metric:    ${chalk.gray(taskData.metric_command)}`);
@@ -359,6 +373,7 @@ interface UpdateOptions extends OutputOptions {
   optimize?: boolean;
   optimizeDescription?: boolean;
   skill?: string;
+  turnBudget?: string;
   metricCommand?: string;
   metricBaseline?: string;
   optimizationBudget?: string;
@@ -391,6 +406,7 @@ const updateSubcommand = new Command('update')
   .option('--optimize', 'Optimize description via Claude (use with --description)')
   .option('--optimize-description', 'Re-optimize existing description via Claude')
   .option('--skill <name>', 'Inject a skill as methodology guidance for optimization')
+  .option('--turn-budget <n>', 'Set max worker turns/attempts (10-500)')
   .option('--metric-command <cmd>', 'Set evolve mode metric command (shell command that outputs a number)')
   .option('--metric-baseline <n>', 'Set baseline metric value')
   .option('--optimization-budget <n>', 'Set max optimization iterations')
@@ -402,7 +418,7 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
   try {
     const validStatuses = ['pending', 'completed', 'failed'];
     const hasEvolveUpdate = options.metricCommand !== undefined || options.metricBaseline !== undefined || options.optimizationBudget !== undefined || options.metricDirection !== undefined;
-    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize) || options.priority !== undefined || options.dependsOn !== undefined || hasEvolveUpdate;
+    const hasBasicUpdate = options.status || options.title || (options.description && !options.optimize) || options.priority !== undefined || options.dependsOn !== undefined || options.turnBudget !== undefined || hasEvolveUpdate;
     const hasOptimizeDescription = (options.description && options.optimize) || options.optimizeDescription;
 
     // Validate at least one option is provided
@@ -450,6 +466,14 @@ updateSubcommand.action(async (taskId: string, options: UpdateOptions) => {
           // Set dependencies
           updatePayload.depends_on = options.dependsOn.split(',').map(id => id.trim()).filter(id => id.length > 0);
         }
+      }
+      if (options.turnBudget !== undefined) {
+        const turnBudget = parseInt(options.turnBudget, 10);
+        if (isNaN(turnBudget) || turnBudget < 10 || turnBudget > 500) {
+          console.error(chalk.red('Error:'), 'Turn budget must be a number between 10 and 500');
+          process.exit(1);
+        }
+        updatePayload.max_attempts = turnBudget;
       }
       if (options.metricCommand !== undefined) {
         updatePayload.metric_command = options.metricCommand || null;

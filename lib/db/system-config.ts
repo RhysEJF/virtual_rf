@@ -187,3 +187,25 @@ export function getMaxAutoRetries(): number {
 export function setMaxAutoRetries(value: number): void {
   setConfig('max_auto_retries', String(value));
 }
+
+/**
+ * Get the default turn budget for worker tasks (max turns per Claude CLI invocation).
+ * Returns 100 if not configured.
+ */
+export function getDefaultTurnBudget(): number {
+  const value = getConfig('default_turn_budget');
+  if (value !== null) {
+    const parsed = parseInt(value, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 100; // Default
+}
+
+/**
+ * Set the default turn budget for worker tasks.
+ */
+export function setDefaultTurnBudget(value: number): void {
+  setConfig('default_turn_budget', String(value));
+}

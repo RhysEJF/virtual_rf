@@ -141,6 +141,10 @@ export function ExpandableTaskCard({
   const [overrideSamples, setOverrideSamples] = useState('');
   const [overrideDirection, setOverrideDirection] = useState<'higher' | 'lower' | ''>('');
 
+  // Turn budget state
+  const [turnBudget, setTurnBudget] = useState(task.max_attempts.toString());
+  const [savingTurnBudget, setSavingTurnBudget] = useState(false);
+
   // Gate satisfy modal state
   const [satisfyingGate, setSatisfyingGate] = useState<TaskGate | null>(null);
 
@@ -284,6 +288,11 @@ export function ExpandableTaskCard({
     }
   }, [expanded, fetchCapabilities]);
 
+  // Sync turn budget when task prop changes
+  useEffect(() => {
+    setTurnBudget(task.max_attempts.toString());
+  }, [task.max_attempts]);
+
   // Add skill to task
   const handleAddSkill = async (skillName: string) => {
     const currentSkills = skills.map(s => s.name);
@@ -374,6 +383,31 @@ export function ExpandableTaskCard({
       console.error('Failed to save:', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Save turn budget on blur
+  const handleTurnBudgetBlur = async (): Promise<void> => {
+    const parsed = parseInt(turnBudget, 10);
+    const clamped = Math.max(10, Math.min(500, isNaN(parsed) ? task.max_attempts : parsed));
+    setTurnBudget(clamped.toString());
+    if (clamped === task.max_attempts) return;
+    setSavingTurnBudget(true);
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_attempts: clamped }),
+      });
+      const data = await response.json();
+      if (response.ok && data.task && onUpdate) {
+        onUpdate(data.task);
+      }
+    } catch (err) {
+      console.error('Failed to save turn budget:', err);
+      setTurnBudget(task.max_attempts.toString());
+    } finally {
+      setSavingTurnBudget(false);
     }
   };
 
@@ -731,19 +765,32 @@ export function ExpandableTaskCard({
                   C{task.complexity_score}{task.estimated_turns ? `/${task.estimated_turns}t` : ''}
                 </span>
               )}
-              {/* Attempt count badge */}
-              {(task.attempt_count ?? 0) > 0 && (
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    (task.attempt_count ?? 0) >= task.max_attempts
-                      ? 'bg-status-error/10 text-status-error'
-                      : 'bg-status-warning/10 text-status-warning'
-                  }`}
-                  title={`${task.attempt_count}/${task.max_attempts} attempts`}
-                >
-                  {task.attempt_count}/{task.max_attempts}
-                </span>
-              )}
+              {/* Turn budget */}
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 ${
+                  (task.attempt_count ?? 0) >= task.max_attempts
+                    ? 'bg-status-error/10 text-status-error'
+                    : (task.attempt_count ?? 0) > 0
+                      ? 'bg-status-warning/10 text-status-warning'
+                      : 'bg-bg-tertiary text-text-tertiary'
+                }`}
+                title="Turn Budget — attempts used / budget"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {(task.attempt_count ?? 0) > 0 && <>{task.attempt_count}/</>}
+                <input
+                  type="number"
+                  min={10}
+                  max={500}
+                  value={turnBudget}
+                  onChange={(e) => setTurnBudget(e.target.value)}
+                  onBlur={handleTurnBudgetBlur}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  className="w-[3.5ch] bg-transparent text-center text-[10px] font-inherit outline-none border-b border-dashed border-current/30 focus:border-current/60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  title={`Turn budget (10–500)${savingTurnBudget ? ' — saving...' : ''}`}
+                />
+                {(task.attempt_count ?? 0) === 0 && <span className="opacity-60">t</span>}
+              </span>
               {isBlocked && (
                 <Badge variant="warning" className="text-[10px]" title={`Blocked by ${blockedByIds.length} task(s)`}>
                   Blocked ({blockedByIds.length})

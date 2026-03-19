@@ -448,14 +448,19 @@ kill -9 <PID>
 - [x] ImprovementPreviewModal supports background polling and close-while-running
 
 ### Worker Resilience (Complete)
+- [x] **Safety intent check** — pre-execution scan for prompt injection, destructive commands, data exfiltration (`lib/ralph/safety-check.ts`)
+  - Two-layer defense: fast heuristic regex patterns + Claude semantic analysis
+  - Blocks task and creates HOMR escalation if adversarial content detected
+  - Worker pauses with `safety_blocked` exit reason until human reviews
 - [x] Circuit breaker pattern - auto-pause after consecutive failures (`lib/ralph/worker.ts`)
-- [x] Task complexity estimation before claiming (`lib/agents/task-complexity-estimator.ts`)
+- [x] Task complexity estimation — logging-only mode for data collection (`lib/agents/task-complexity-estimator.ts`)
+  - Estimates complexity score and turns, records on task for future adaptive budgeting
+  - No longer gates execution — generous turn budget (default 100) replaces tiered gating
+- [x] **Configurable turn budget** — per-task (`--turn-budget` CLI flag, editable in UI) or system-wide (`default_turn_budget` config)
 - [x] Auto-decomposition for high-complexity tasks (`lib/agents/task-decomposer.ts`)
 - [x] Failure pattern categorization (timeout, permission, syntax, runtime)
-- [x] Turn limit risk assessment to prevent mid-task failures
 - [x] Turn exhaustion detection — release tasks to pending instead of failing (`detectTurnExhaustion`)
 - [x] Turn exhaustion auto-decomposition — decompose remaining work into subtasks (`decomposeRemainingWork`)
-- [x] Tiered complexity handling — graduated auto-response for scores 0-10 (`ComplexityTier`)
 - [x] Rate-limit exit detection — pauses worker instead of failing tasks
 - [x] Self-healing restart loop — exponential backoff recovery for infrastructure failures
 - [x] Atomic decomposition lock — prevents duplicate subtask creation via SQL UPDATE WHERE
@@ -682,6 +687,7 @@ kill -9 <PID>
 - `lib/ralph/evolve-loop.ts` - Hill-climbing optimization loop
 - `lib/ralph/verification.ts` - Deterministic task verification
 - `lib/ralph/teaching-errors.ts` - Retry context from previous attempts
+- `lib/ralph/safety-check.ts` - Pre-execution safety intent check (prompt injection, destructive commands)
 - `lib/evolve/recipe-parser.ts` - Parse eval recipes from markdown
 - `lib/evolve/eval-generator.ts` - Generate eval.sh scripts from recipes
 - `lib/evolve/eval-manager.ts` - Three-level eval scanning (app/user/outcome)

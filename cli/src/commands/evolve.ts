@@ -19,6 +19,7 @@ interface EvolveSetupOptions {
   artifact?: string;
   direction?: string;
   budget?: string;
+  plateauThreshold?: string;
   mode?: string;
   command?: string;
   samples?: string;
@@ -63,6 +64,7 @@ command
   .option('--artifact <file>', 'Artifact file to optimize')
   .option('--direction <dir>', 'Optimization direction (higher|lower)')
   .option('--budget <n>', 'Max iterations')
+  .option('--plateau-threshold <n>', 'Stop after N consecutive non-improvements (0 to disable, default 3)')
   .option('--mode <mode>', 'Eval mode (judge|command)')
   .option('--command <cmd>', 'Raw command (for mode=command)')
   .option('--samples <n>', 'Multi-sample count')
@@ -76,6 +78,7 @@ command
         if (options.budget) overrides.budget = parseInt(options.budget, 10);
         if (options.samples) overrides.samples = parseInt(options.samples, 10);
         if (options.direction) overrides.direction = options.direction;
+        if (options.plateauThreshold) overrides.plateau_threshold = parseInt(options.plateauThreshold, 10);
 
         const response = await api.post<EvolveActivateResponse>(`/tasks/${taskId}/evolve`, {
           recipe_name: options.eval,
@@ -133,6 +136,7 @@ command
         lines.push(`- direction: ${options.direction || 'higher'}`);
         lines.push(`- budget: ${options.budget || '5'}`);
         lines.push(`- samples: ${options.samples || '1'}`);
+        if (options.plateauThreshold) lines.push(`- plateau_threshold: ${options.plateauThreshold}`);
         if (options.context) {
           lines.push('');
           lines.push('## Context');
@@ -182,15 +186,43 @@ command
     }
   });
 
+interface Experiment {
+  id: number;
+  task_id: string;
+  outcome_id: string;
+  iteration: number;
+  metric_value: number | null;
+  change_summary: string | null;
+  kept: number;
+  status: 'accepted' | 'rejected' | 'crash';
+  duration_seconds: number | null;
+}
+
 // Subcommand: flow evolve show <task-id>
 command
   .command('show <task-id>')
-  .description('Show evolve mode configuration for a task')
+  .description('Show evolve mode configuration and experiment history for a task')
   .option('--json', 'Output as JSON')
   .action(async (taskId: string, options: EvolveShowOptions) => {
     try {
       const response = await api.get<TaskResponse>(`/tasks/${taskId}`);
       const task = response.task;
+
+      // Fetch experiments
+      let experiments: Experiment[] = [];
+      try {
+        const expResponse = await api.get<{ experiments: Experiment[] }>(`/outcomes/${task.outcome_id}/experiments?task_id=${taskId}`);
+        experiments = expResponse.experiments || [];
+      } catch { /* experiments endpoint may fail for non-evolve tasks */ }
+
+      // Parse overrides for plateau_threshold
+      let plateauThreshold: number | undefined;
+      if (task.eval_overrides) {
+        try {
+          const overrides = JSON.parse(task.eval_overrides);
+          if (overrides.plateau_threshold !== undefined) plateauThreshold = overrides.plateau_threshold;
+        } catch { /* ignore parse errors */ }
+      }
 
       if (options.json) {
         console.log(JSON.stringify({
@@ -199,6 +231,13 @@ command
           optimization_budget: task.optimization_budget,
           metric_direction: task.metric_direction,
           eval_recipe_name: task.eval_recipe_name,
+          plateau_threshold: plateauThreshold ?? 3,
+          experiments: experiments.map(e => ({
+            iteration: e.iteration,
+            metric_value: e.metric_value,
+            status: e.status,
+            change_summary: e.change_summary,
+          })),
         }, null, 2));
         return;
       }
@@ -215,9 +254,34 @@ command
       console.log(`  Direction: ${task.metric_direction || 'lower'} is better`);
       console.log(`  Baseline:  ${task.metric_baseline ?? chalk.gray('(auto-detected)')}`);
       console.log(`  Budget:    ${task.optimization_budget || 5} iterations`);
+      console.log(`  Plateau:   ${plateauThreshold ?? 3} consecutive non-improvements${plateauThreshold === 0 ? ' (disabled)' : ''}`);
       if (task.eval_recipe_name) {
         console.log(`  Recipe:    ${chalk.cyan(task.eval_recipe_name)}`);
       }
+
+      if (experiments.length > 0) {
+        const accepted = experiments.filter(e => e.status === 'accepted').length;
+        const rejected = experiments.filter(e => e.status === 'rejected').length;
+        const crashed = experiments.filter(e => e.status === 'crash').length;
+
+        console.log();
+        console.log(chalk.bold('Experiments'), chalk.gray(`(${experiments.length} total)`));
+        console.log(`  ${chalk.green(`${accepted} accepted`)}  ${chalk.red(`${rejected} rejected`)}  ${crashed > 0 ? chalk.yellow(`${crashed} crashed`) : ''}`);
+        console.log();
+
+        for (const exp of experiments) {
+          const statusIcon = exp.status === 'accepted' ? chalk.green('✓')
+            : exp.status === 'crash' ? chalk.yellow('✗')
+            : chalk.red('✗');
+          const statusLabel = exp.status === 'accepted' ? chalk.green('kept')
+            : exp.status === 'crash' ? chalk.yellow('crash')
+            : chalk.red('reverted');
+          const metricStr = exp.metric_value !== null ? String(exp.metric_value) : chalk.gray('null');
+          const summary = exp.change_summary ? chalk.gray(` — ${exp.change_summary.slice(0, 60)}`) : '';
+          console.log(`  ${statusIcon} #${exp.iteration} [${statusLabel}] metric=${metricStr}${summary}`);
+        }
+      }
+
       console.log();
     } catch (err) {
       if (err instanceof ApiError) {

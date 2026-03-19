@@ -316,7 +316,7 @@ lsof -i :3000
 kill -9 <PID>
 ```
 
-## Current Progress (Updated 2026-03-12)
+## Current Progress (Updated 2026-03-19)
 
 ### Core System (Complete)
 - [x] Project setup (Next.js 14, TypeScript, Tailwind)
@@ -606,11 +606,11 @@ kill -9 <PID>
 - [x] Hill-climbing optimization loop (`lib/ralph/evolve-loop.ts`)
 - [x] `metric_command`, `metric_baseline`, `optimization_budget`, `metric_direction` columns on tasks
 - [x] `metric_direction` supports `'lower'` (default) and `'higher'` optimization semantics
-- [x] Experiments table tracking iterations, metric values, kept/reverted status
-- [x] Auto git init in workspace for rollback capability
-- [x] Git revert on regression, keep on improvement
-- [x] Plateau detection — stops after 3 consecutive non-improvements
-- [x] Previous experiment context injected into each iteration
+- [x] Experiments table tracking iterations, metric values, kept/reverted/crash status
+- [x] Branch-based rollback — each iteration on `evolve/iteration-N` branch, merge to main on improvement, discard on rejection
+- [x] Crash vs rejection separation — null metrics are crashes (separate counter, stop after 5 consecutive), worse metrics are rejections
+- [x] Configurable plateau threshold — `plateau_threshold` in recipe scoring or `eval_overrides`, default 3, set 0 to disable
+- [x] Richer experiment context — structured "Current Best State" + "Failed Approaches (DO NOT REPEAT)" sections
 - [x] Worker auto-detects evolve mode when `metric_command` is set
 - [x] Optimize-task skill with GEPA methodology (`~/flow-data/skills/evolve/optimize-task.md`)
 - [x] Skill evolution skill (`~/flow-data/skills/evolve/skill-evolution.md`)
@@ -636,12 +636,18 @@ kill -9 <PID>
 - [x] CLI: `flow evolve setup|show` — evolve management commands
 - [x] CLI: `flow evals`, `flow eval` — eval listing and detail commands
 - [x] Converse tools: listEvals, setupEvolve (`lib/converse/tools/evolve.ts`)
-- [x] Worker recipe regeneration + criteria injection into CLAUDE.md before evolve loop
+- [x] Worker recipe regeneration + criteria injection into CLAUDE.md before evolve loop (weights/examples stripped for scoring isolation)
 - [x] `eval_overrides` JSON column on tasks — task-scoped recipe setting overrides (budget, samples, direction, criteria weights)
 - [x] `applyOverrides()` in recipe-parser — merges overrides onto base recipe before eval generation
 - [x] UI settings panel on Use Eval and Create New tabs — editable direction/budget/samples per-task
 - [x] CLI: `flow evolve setup --eval <name> --budget N --samples N --direction higher` override flags
 - [x] Pre-filled editable recipe template in Create New tab (not just placeholder)
+- [x] **Evolve hardening** — scoring isolation, state boundary enforcement, simplicity criterion
+- [x] Scoring isolation — eval.sh hidden at `.evolve/_scoring/`, `.gitignore`'d, agent sees criteria without weights
+- [x] State boundary enforcement — `validateStateBoundary()` auto-rejects iterations that modify protected files or out-of-scope files
+- [x] Simplicity criterion + scoring boundary + allowed files sections in worker CLAUDE.md
+- [x] `status` column on experiments (`accepted`/`rejected`/`crash`) with DB migration + backfill
+- [x] `plateau_threshold` field in `EvolveRecipe.scoring` + `applyOverrides()` support
 
 ### Not Yet Built
 - [ ] Research agent (for "research" classification)

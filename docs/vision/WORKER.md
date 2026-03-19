@@ -205,14 +205,18 @@ Tasks can enter an optimization loop that iteratively improves a measurable metr
 2. **metric_baseline** — Starting score; improvements must beat this to be kept. Auto-measured if not provided.
 3. **metric_direction** — Whether `lower` or `higher` values are better (default: `lower`). Supports both optimization directions (e.g., `lower` for bundle size/latency, `higher` for test coverage/scores).
 4. **optimization_budget** — Maximum number of improvement attempts (default: 5).
-5. **experiments table** — Each attempt is recorded as an experiment with before/after scores, the change attempted, and outcome (kept/reverted).
-6. **Auto git init** — The workspace is git-initialized at evolve start so each attempt can be committed and reverted cleanly.
-7. **Git revert on regression** — If a change makes the metric worse (wrong direction), the commit is reverted automatically.
-8. **Plateau detection** — After 3 consecutive non-improvements, the loop exits even if budget remains.
+5. **experiments table** — Each attempt is recorded with before/after scores, the change attempted, and status (`accepted`, `rejected`, or `crash`).
+6. **Branch-based rollback** — Each iteration runs on a `evolve/iteration-N` branch. Improvements merge to main via `--no-ff`; rejections discard the branch. No revert commits clutter the history.
+7. **Crash vs. rejection separation** — A null metric (broken eval command) is a "crash" — it doesn't count toward plateau detection and triggers a separate crash threshold (5 consecutive crashes stops the loop). A valid-but-worse metric is a "rejection" and counts toward plateau.
+8. **Plateau detection** — After N consecutive non-improvements (configurable via `plateau_threshold`, default 3), the loop exits even if budget remains. Set to 0 to disable.
+9. **Scoring isolation** — Eval scripts are written to `.evolve/_scoring/eval.sh` (hidden from the agent via `.gitignore`). Criteria weights and calibration examples are stripped from the worker's context. A "Scoring Boundary" notice tells the agent not to read or modify `.evolve/`.
+10. **State boundary enforcement** — After each iteration, a `git diff main...HEAD` check validates that the agent only modified allowed files. Protected files (`.evolve/`, `CLAUDE.md`, `.gitignore`) and files outside the artifact scope are auto-rejected.
+11. **Simplicity criterion** — The worker CLAUDE.md includes a "Simplicity Rule" encouraging removal of complexity and discouraging marginal improvements that add substantial code.
+12. **Richer experiment context** — Previous experiments are presented as structured "Current Best State" (kept changes) and "Failed Approaches (DO NOT REPEAT)" (reverted changes with crash/rejection labels).
 
 Evolve mode is implemented in `lib/ralph/evolve-loop.ts` and integrates with the standard worker lifecycle. The `optimize-task.md` skill (in `~/flow-data/skills/evolve/`) provides GEPA methodology instructions to workers. The `skill-evolution.md` skill provides a framework for iteratively improving skill files themselves.
 
-**Eval Recipe System:** Tasks can be configured via **eval recipes** — structured markdown documents that define what to optimize and how to judge it. Recipes are parsed by `lib/evolve/recipe-parser.ts`, and `lib/evolve/eval-generator.ts` auto-generates eval scripts (command mode for numeric metrics, judge mode via Claude CLI for qualitative criteria). Evals are a first-class resource type (alongside skills and tools), scanned at three levels: app (`evals/`), user (`~/flow-data/evals/`), and outcome workspace. The worker injects recipe criteria into the CLAUDE.md before entering the evolve loop, and can regenerate recipes on the fly.
+**Eval Recipe System:** Tasks can be configured via **eval recipes** — structured markdown documents that define what to optimize and how to judge it. Recipes are parsed by `lib/evolve/recipe-parser.ts`, and `lib/evolve/eval-generator.ts` auto-generates eval scripts (command mode for numeric metrics, judge mode via Claude CLI for qualitative criteria). Evals are a first-class resource type (alongside skills and tools), scanned at three levels: app (`evals/`), user (`~/flow-data/evals/`), and outcome workspace. The worker injects recipe criteria (without weights or calibration examples) into the CLAUDE.md before entering the evolve loop, and can regenerate recipes on the fly. The `plateau_threshold` field in recipe scoring allows per-recipe plateau sensitivity.
 
 **CLI support:**
 - `flow task add <outcome-id> "title" --metric-command "cmd" --metric-direction higher --optimization-budget 10`

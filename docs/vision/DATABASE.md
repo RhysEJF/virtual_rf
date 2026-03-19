@@ -154,11 +154,12 @@ The `experiments` table records hill-climbing optimization attempts for tasks ru
 | **metric_command** | Shell command used to measure |
 | **baseline_value** | Baseline metric value before optimization began |
 | **change_summary** | What the worker changed |
-| **git_sha** | Commit SHA for this attempt (reverted if regression) |
+| **git_sha** | Commit SHA for this attempt |
 | **kept** | Boolean — was this experiment kept (1) or reverted (0) |
+| **status** | `accepted` (kept), `rejected` (worse metric), or `crash` (null metric — eval command failed). Crashes don't count toward plateau detection. |
 | **duration_seconds** | Time spent on this iteration |
 
-Tasks table evolve columns: `metric_command` (TEXT), `metric_baseline` (REAL), `optimization_budget` (INTEGER), `metric_direction` (TEXT, default `'lower'` — supports `'lower'` or `'higher'`), `eval_recipe_name` (TEXT — links task to an eval recipe).
+Tasks table evolve columns: `metric_command` (TEXT), `metric_baseline` (REAL), `optimization_budget` (INTEGER), `metric_direction` (TEXT, default `'lower'` — supports `'lower'` or `'higher'`), `eval_recipe_name` (TEXT — links task to an eval recipe), `eval_overrides` (TEXT — JSON overrides for recipe settings including `plateau_threshold`).
 
 ### Task Proliferation Guards
 

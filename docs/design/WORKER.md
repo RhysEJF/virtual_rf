@@ -629,12 +629,25 @@ function getCheckpoints(taskId: string): TaskCheckpoint[]
 Runs iterative optimization on a task that has `metric_command` set.
 
 ```typescript
+interface EvolveTask {
+  id: string;
+  outcome_id: string;
+  title: string;
+  description: string;
+  metric_command: string;
+  metric_baseline: number | null;
+  optimization_budget: number;
+  metric_direction: 'lower' | 'higher';
+  plateau_threshold?: number;          // Override default 3; set 0 to disable
+  artifact_file?: string;              // From recipe; enables state boundary enforcement
+}
+
 interface EvolveResult {
   iterations: number;
   bestValue: number | null;
   baselineValue: number | null;
   improvement: number;
-  stopped: 'budget_exhausted' | 'plateau_detected' | 'error';
+  stopped: 'budget_exhausted' | 'plateau_detected' | 'crash_threshold' | 'error';
 }
 
 function runEvolveLoop(
@@ -644,20 +657,27 @@ function runEvolveLoop(
 ): Promise<EvolveResult>
 ```
 
-### Loop Flow
+### Loop Flow (Branch-Based Rollback)
 
 ```
-1. initGitIfNeeded(workspacePath)       — git init + initial commit if not a repo
-2. Measure baseline via metric_command  — store on task if not set
-3. For each iteration up to optimization_budget:
-   a. Build context string from prior experiments
-   b. Call executeIteration() (spawns Claude CLI)
-   c. git add -A && git commit
-   d. Run metric_command → get new score
-   e. If improved: recordExperiment(kept=true), update bestValue
-      If regression: git revert HEAD, recordExperiment(kept=false)
-   f. If 3 consecutive non-improvements → plateau_detected, stop
-4. Emit experiment.completed event after each iteration
+1. initGitIfNeeded(workspacePath)       — git init -b main + initial commit if not a repo
+2. ensureOnMain(workspacePath)          — switch to main if on another branch
+3. Measure baseline via metric_command  — store on task if not set
+4. For each iteration up to optimization_budget:
+   a. ensureOnMain(workspacePath)
+   b. createProposalBranch(workspacePath, iteration)  — evolve/iteration-N
+   c. buildExperimentContext(taskId, direction)        — structured kept/failed context
+   d. Call executeIteration() (spawns Claude CLI on the proposal branch)
+   e. git add -A && git commit (on the proposal branch)
+   f. validateStateBoundary()  — check no protected/out-of-scope files modified
+      If violations → discardProposalBranch, record as rejected, continue
+   g. Run metric_command → get new score
+   h. If null (crash): discardProposalBranch, record status='crash', increment crashCounter
+      If worse (rejection): discardProposalBranch, record status='rejected'
+      If improved: mergeProposalToMain (--no-ff), record status='accepted'
+   i. Stop conditions: plateau_threshold non-improvements, 5 consecutive crashes, budget
+5. finally: ensureOnMain(workspacePath)  — always return to main on exit
+6. Emit experiment.completed event (with status field) after each iteration
 ```
 
 ### `lib/db/experiments.ts`
@@ -674,6 +694,7 @@ interface Experiment {
   change_summary: string | null;
   git_sha: string | null;
   kept: number;                    // 1=kept, 0=reverted
+  status: 'accepted' | 'rejected' | 'crash';  // Crash = null metric (eval broke)
   duration_seconds: number | null;
   created_at: string;
 }
@@ -689,9 +710,21 @@ function getBestExperiment(taskId: string): Experiment | null
 When a task has `eval_recipe_name` set, the worker:
 1. Loads the recipe via `lib/evolve/eval-manager.ts` (scans app/user/outcome levels)
 2. Parses it with `lib/evolve/recipe-parser.ts` into a typed `EvolveRecipe`
-3. Generates an eval script via `lib/evolve/eval-generator.ts` (command mode for numeric metrics, judge mode via Claude CLI for qualitative criteria)
-4. Injects recipe criteria into the worker's CLAUDE.md before entering the evolve loop
-5. Can regenerate recipes on the fly if the task context changes
+3. Generates an eval script at `.evolve/_scoring/eval.sh` via `lib/evolve/eval-generator.ts` (hidden from agent; `.gitignore`'d)
+4. Injects recipe criteria (without weights or calibration examples) into the worker's CLAUDE.md
+5. Passes `plateau_threshold` and `artifact_file` from recipe to EvolveTask
+6. Can regenerate recipes on the fly if the task context changes
+
+### Worker CLAUDE.md Evolve Sections
+
+The evolve iteration template includes these sections (in order):
+- **Evolve Mode header** — Iteration N of budget, optimization goal
+- **Previous Experiments** — Structured "Current Best State" + "Failed Approaches (DO NOT REPEAT)"
+- **What the metric evaluates** — Criteria names and descriptions (no weights)
+- **Simplicity Rule** — Prefer simpler solutions; removing code while maintaining metric is excellent
+- **Scoring Boundary** — Do not read/modify `.evolve/`; scoring is hidden
+- **Allowed Files** — Only `artifact_file` + `state/`; do not modify protected files
+- **Evolve Instructions** — One focused change per iteration, summary to progress.txt
 
 ### API
 

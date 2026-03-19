@@ -11,6 +11,7 @@ export interface Experiment {
   change_summary: string | null;
   git_sha: string | null;
   kept: number;
+  status: 'accepted' | 'rejected' | 'crash';
   duration_seconds: number | null;
   created_at: string;
 }
@@ -25,14 +26,16 @@ export interface RecordExperimentInput {
   changeSummary?: string;
   gitSha?: string;
   kept: boolean;
+  status?: 'accepted' | 'rejected' | 'crash';
   durationSeconds?: number;
 }
 
 export function recordExperiment(input: RecordExperimentInput): Experiment {
   const db = getDb();
+  const status = input.status || (input.kept ? 'accepted' : 'rejected');
   const result = db.prepare(`
-    INSERT INTO experiments (task_id, outcome_id, iteration, metric_value, metric_command, baseline_value, change_summary, git_sha, kept, duration_seconds)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO experiments (task_id, outcome_id, iteration, metric_value, metric_command, baseline_value, change_summary, git_sha, kept, status, duration_seconds)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.taskId,
     input.outcomeId,
@@ -43,6 +46,7 @@ export function recordExperiment(input: RecordExperimentInput): Experiment {
     input.changeSummary || null,
     input.gitSha || null,
     input.kept ? 1 : 0,
+    status,
     input.durationSeconds || null
   );
 

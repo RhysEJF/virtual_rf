@@ -91,7 +91,7 @@ export interface ExperimentCompletedEvent extends FlowEvent {
   type: 'experiment.completed';
   outcomeId: string;
   taskId: string;
-  data: { iteration: number; metricValue: number | null; kept: boolean; changeSummary: string | null };
+  data: { iteration: number; metricValue: number | null; kept: boolean; changeSummary: string | null; status?: 'accepted' | 'rejected' | 'crash' };
 }
 
 export type FlowEventType =

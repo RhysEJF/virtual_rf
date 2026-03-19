@@ -115,7 +115,7 @@ export async function POST(
 
     // Update task with evolve settings (using overridden values)
     const updated = updateTask(task.id, {
-      metric_command: 'bash eval.sh',
+      metric_command: 'bash .evolve/_scoring/eval.sh',
       metric_direction: finalRecipe.scoring.direction,
       optimization_budget: finalRecipe.scoring.budget,
       eval_recipe_name: safeRecipeName,

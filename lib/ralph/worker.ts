@@ -75,6 +75,7 @@ import { recordAttempt, getAttemptCount } from '../db/attempts';
 import { saveCheckpoint, getLatestCheckpoint as _getLatestCheckpoint } from '../db/checkpoints';
 import { runVerification } from './verification';
 import { buildTeachingContext } from './teaching-errors';
+import { runSafetyCheck, buildSafetyEscalationSignal } from './safety-check';
 import { getDiscoveriesForTask } from '../db/homr';
 
 // ============================================================================
@@ -91,7 +92,7 @@ export interface RalphConfig {
   // Pre-claim complexity check options
   enableComplexityCheck?: boolean; // Default true - check task complexity before claiming
   autoDecompose?: boolean; // Default false - auto-decompose high-complexity tasks
-  maxTurns?: number; // Default 40 - worker's max turns per task
+  maxTurns?: number; // Default 100 - worker's max turns per task
   selfHeal?: boolean; // Default true - auto-restart on infrastructure failures
   selfHealConfig?: Partial<SelfHealConfig>;
 }
@@ -105,6 +106,7 @@ type WorkerExitReason =
   | 'all_tasks_complete'    // No more work
   | 'gate_reached'          // Only gated tasks remain
   | 'complexity_escalation' // Human decision needed
+  | 'safety_blocked'        // Safety check flagged adversarial content
   | 'circuit_breaker'       // Repeated failures, human review
   | 'homr_paused'           // HOMR observer paused for review
   | 'critical_error'        // Task reported critical/blocked error
@@ -1774,6 +1776,7 @@ export async function startRalphWorker(
 
             // If task has an eval recipe, regenerate eval.sh before running
             let recipeContext = '';
+            let resolvedRecipe: import('../evolve/recipe-parser').EvolveRecipe | null = null;
             if (task.eval_recipe_name) {
               try {
                 const { parseRecipe } = await import('../evolve/recipe-parser');
@@ -1796,17 +1799,15 @@ export async function startRalphWorker(
                           appendLog(`[Evolve] Warning: could not apply eval overrides: ${e}`);
                         }
                       }
+                      resolvedRecipe = finalRecipe;
                       writeEvalToWorkspace(finalRecipe, taskWorkspace);
                       appendLog(`[Evolve] Regenerated eval.sh from recipe: ${task.eval_recipe_name}`);
-                      // Build criteria context for worker CLAUDE.md
+                      // Build criteria context — strip weights and calibration examples (18a scoring isolation)
                       if (finalRecipe.criteria.length > 0) {
-                        recipeContext = '\n### Eval Criteria (what the judge scores on)\n' +
-                          finalRecipe.criteria.map(c => `- **${c.name}** (weight ${c.weight}): ${c.description}`).join('\n');
+                        recipeContext = '\n### What the metric evaluates\n' +
+                          finalRecipe.criteria.map(c => `- **${c.name}**: ${c.description}`).join('\n');
                       }
-                      if (finalRecipe.examples.length > 0) {
-                        recipeContext += '\n\n### Calibration Examples\n' +
-                          finalRecipe.examples.map(e => `- "${e.label}" → ${e.score}: ${e.reasoning}`).join('\n');
-                      }
+                      // Calibration examples intentionally omitted — agent should not see judge internals
                     }
                   }
                 }
@@ -1827,11 +1828,27 @@ export async function startRalphWorker(
                   metric_baseline: task.metric_baseline,
                   optimization_budget: task.optimization_budget || 5,
                   metric_direction: (task.metric_direction as 'lower' | 'higher') || 'lower',
+                  plateau_threshold: resolvedRecipe?.scoring.plateau_threshold,
+                  artifact_file: resolvedRecipe?.artifact.file,
                 },
                 taskWorkspace, // Use task-level workspace to avoid git conflicts with concurrent workers
                 async (evolveTask, iter, previousExperiments, wsPath) => {
                   // Write evolve CLAUDE.md with iteration context
                   const evolveClaudeMd = join(taskWorkspace, 'CLAUDE.md');
+                  const direction = task.metric_direction === 'higher' ? 'higher' : 'lower';
+                  const isJudgeMode = resolvedRecipe?.scoring.mode === 'judge';
+
+                  // Build metric info — hide command path for judge-mode evals (18a)
+                  const metricInfo = isJudgeMode
+                    ? `**Optimization goal:** ${direction === 'higher' ? 'Increase' : 'Decrease'} the metric value (${direction} is better)`
+                    : `**Metric command:** \`${evolveTask.metric_command}\`\n**Optimization goal:** ${direction === 'higher' ? 'Increase' : 'Decrease'} the metric value (${direction} is better)`;
+
+                  // Build allowed files section (18f)
+                  const artifactFile = resolvedRecipe?.artifact.file;
+                  const allowedFilesSection = artifactFile
+                    ? `You may ONLY modify: \`${artifactFile}\` and files in \`state/\`.`
+                    : '';
+
                   const evolveInstructions = generateTaskInstructions(
                     outcome.name,
                     intent,
@@ -1844,15 +1861,33 @@ export async function startRalphWorker(
                   ) + `
 ## Evolve Mode — Iteration ${iter} of ${evolveTask.optimization_budget}
 
-**Metric command:** \`${evolveTask.metric_command}\`
-**Optimization goal:** ${task.metric_direction === 'higher' ? 'Increase' : 'Decrease'} the metric value (${task.metric_direction === 'higher' ? 'higher' : 'lower'} is better)
+${metricInfo}
 
-${previousExperiments ? `### Previous Experiments\n${previousExperiments}\n` : ''}
+${previousExperiments ? `${previousExperiments}\n` : ''}
 ${recipeContext ? `${recipeContext}\n` : ''}
+## Simplicity Rule
+
+All else being equal, simpler is better.
+- A marginal improvement that adds substantial complexity is NOT worth it.
+- Removing code/text while maintaining or improving the metric is an EXCELLENT outcome.
+- If you run out of ideas, try simplifying what is already there.
+- Do not add complexity unless the metric improvement clearly justifies it.
+
+## Scoring Boundary
+
+The scoring system is hidden. Do NOT read, modify, or recreate files in .evolve/.
+Focus on genuinely improving the artifact. The metric measures your changes automatically.
+
+## Allowed Files
+
+${allowedFilesSection}
+Do NOT modify: .evolve/, .gitignore, CLAUDE.md, or progress.txt.
+Changes outside these boundaries will be automatically rejected.
+
 ## Evolve Instructions
 
-1. Analyze the metric command to understand what you are optimizing
-2. Make ONE focused, targeted change that you hypothesize will ${task.metric_direction === 'higher' ? 'increase' : 'reduce'} the metric value
+1. ${isJudgeMode ? 'Focus on genuinely improving the artifact' : 'Analyze the metric command to understand what you are optimizing'}
+2. Make ONE focused, targeted change that you hypothesize will ${direction === 'higher' ? 'increase' : 'reduce'} the metric value
 3. Do NOT make sweeping changes — one hypothesis per iteration
 4. Do NOT repeat approaches that have already been tried and reverted
 5. After making your change, write a ONE-LINE summary of what you changed and why to progress.txt

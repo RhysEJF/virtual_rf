@@ -647,6 +647,15 @@ function runMigrations(database: Database.Database): void {
   database.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_task ON experiments(task_id)`);
   database.exec(`CREATE INDEX IF NOT EXISTS idx_experiments_outcome ON experiments(outcome_id)`);
 
+  // Add status column to experiments table (crash vs rejection separation)
+  const experimentsCols = database.prepare(`PRAGMA table_info(experiments)`).all() as { name: string }[];
+  if (!experimentsCols.some(c => c.name === 'status')) {
+    database.exec("ALTER TABLE experiments ADD COLUMN status TEXT NOT NULL DEFAULT 'accepted'");
+    // Backfill existing rows: kept=1 → accepted, kept=0 → rejected
+    database.exec("UPDATE experiments SET status = CASE WHEN kept = 1 THEN 'accepted' ELSE 'rejected' END");
+    console.log('[DB Migration] Added status column to experiments (crash vs rejection)');
+  }
+
   // Add evolve mode columns to tasks table (check existence before adding)
   const tasksColsEvolve = database.prepare(`PRAGMA table_info(tasks)`).all() as { name: string }[];
   const evolveColumns = [

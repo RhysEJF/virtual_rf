@@ -7,8 +7,8 @@
  * - judge: LLM-as-judge scoring via Claude CLI
  */
 
-import { writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
-import { join, dirname } from 'path';
+import { writeFileSync, readFileSync, mkdirSync, existsSync, chmodSync, unlinkSync } from 'fs';
+import { join } from 'path';
 import type { EvolveRecipe } from './recipe-parser';
 
 /**
@@ -22,20 +22,32 @@ export function generateEvalScript(recipe: EvolveRecipe): string {
 }
 
 /**
- * Write eval.sh to a workspace directory. Returns the file path.
+ * Write eval.sh to a workspace's hidden scoring directory.
+ * The .evolve/_scoring/ path keeps eval internals out of the agent's view.
+ * Returns the file path.
  */
 export function writeEvalToWorkspace(recipe: EvolveRecipe, workspacePath: string): string {
   const script = generateEvalScript(recipe);
-  const evalPath = join(workspacePath, 'eval.sh');
-
-  // Ensure directory exists
-  const dir = dirname(evalPath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  const scoringDir = join(workspacePath, '.evolve', '_scoring');
+  mkdirSync(scoringDir, { recursive: true });
+  const evalPath = join(scoringDir, 'eval.sh');
 
   writeFileSync(evalPath, script, 'utf-8');
   chmodSync(evalPath, 0o755);
+
+  // Ensure .gitignore hides .evolve/
+  const gitignorePath = join(workspacePath, '.gitignore');
+  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+  if (!existing.includes('.evolve/')) {
+    writeFileSync(gitignorePath, (existing.trimEnd() + '\n.evolve/\n').trimStart());
+  }
+
+  // Clean up legacy eval.sh at workspace root
+  const legacyPath = join(workspacePath, 'eval.sh');
+  if (existsSync(legacyPath)) {
+    unlinkSync(legacyPath);
+  }
+
   return evalPath;
 }
 

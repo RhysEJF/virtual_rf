@@ -18,6 +18,7 @@ export interface EvolveRecipe {
     direction: 'higher' | 'lower';
     budget: number;
     samples: number;
+    plateau_threshold?: number;
   };
   criteria: Array<{ name: string; weight: number; description: string }>;
   examples: Array<{ label: string; score: number; reasoning: string }>;
@@ -115,7 +116,15 @@ function parseScoring(markdown: string): EvolveRecipe['scoring'] | null {
   const samplesStr = extractField(section, 'samples');
   const samples = samplesStr ? parseInt(samplesStr, 10) : 1;
 
-  return { mode, command, direction, budget: isNaN(budget) ? 5 : budget, samples: isNaN(samples) ? 1 : samples };
+  const plateauStr = extractField(section, 'plateau_threshold');
+  const plateauThreshold = plateauStr ? parseInt(plateauStr, 10) : undefined;
+
+  return {
+    mode, command, direction,
+    budget: isNaN(budget) ? 5 : budget,
+    samples: isNaN(samples) ? 1 : samples,
+    plateau_threshold: plateauThreshold !== undefined && !isNaN(plateauThreshold) ? plateauThreshold : undefined,
+  };
 }
 
 function parseCriteria(markdown: string): EvolveRecipe['criteria'] {
@@ -226,6 +235,9 @@ export function applyOverrides(recipe: EvolveRecipe, overrides: Record<string, u
   }
   if (overrides.command !== undefined) {
     merged.scoring = { ...merged.scoring, command: overrides.command as string };
+  }
+  if (overrides.plateau_threshold !== undefined) {
+    merged.scoring = { ...merged.scoring, plateau_threshold: Number(overrides.plateau_threshold) };
   }
   if (Array.isArray(overrides.criteria)) {
     merged.criteria = (overrides.criteria as Array<{ name: string; weight: number; description?: string }>).map(c => ({

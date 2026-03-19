@@ -587,6 +587,62 @@ Possible approaches (not yet decided):
 
 ---
 
+### 18. Evolve Mode Hardening — Darwin Derby / Autoresearch Patterns
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-19 |
+| **Source** | Darwin Derby (kousun12/darwin-derby), Karpathy's autoresearch, blog post analysis |
+| **Category** | Feature hardening |
+| **Builds on** | Idea #7 (Evolve Mode) — already implemented |
+
+**Problem:**
+Evolve mode has the right loop structure (propose → measure → keep/revert) but is missing **trust boundaries** that make the optimization credible. The biggest issue: evolve agents can read `eval.sh`, see the full judge prompt, criteria weights, and calibration examples, then optimize for prompt-pleasing output rather than genuinely better work. Secondary issues: git history cluttered with revert commits, minimal experiment context for agents, no distinction between crashes and rejections, and an aggressive plateau threshold.
+
+**Research brief:** [`docs/research/darwin-derby-evolve.md`](./research/darwin-derby-evolve.md)
+
+**Sub-ideas (ranked by impact):**
+
+#### 18a. Scoring Isolation — HIGH IMPACT, Medium effort
+Hide eval.sh from the agent during evolve iterations. Before each iteration, move eval.sh and recipe files to a hidden `.evolve/_scoring/` directory. Restore only for the scoring step. Agent sees metric name, direction, and criteria names — never weights, judge prompts, or calibration examples. Borrowed from Derby's physical scoring directory hiding (`shutil.move` to `.derby/_scoring/`, restore in `finally` block).
+- **Files:** `lib/ralph/evolve-loop.ts` (move/restore around `executeIteration`), `lib/evolve/eval-generator.ts`, `lib/ralph/worker.ts` (CLAUDE.md template)
+
+#### 18b. Richer Experiment Context — HIGH IMPACT, Low effort
+Replace flat experiment string (`Iteration N: value=X, kept=Y, change: Z`) with two structured sections: **Current Best State** (value, which iteration, sequential list of kept changes) and **Failed Approaches** (reverted attempts with scores and descriptions). Consider generating `leaderboard.md` and `history.md` files in workspace. All data already exists in the experiments table — purely a presentation change.
+- **Files:** `lib/ralph/evolve-loop.ts` (prevContext building), `lib/ralph/worker.ts` (CLAUDE.md template)
+
+#### 18c. Branch-Based Rollback — HIGH IMPACT, Medium effort
+Use proposal branches instead of commit-then-revert on main. Each iteration: `git checkout -b evolve/iteration-N` → agent works → score → merge to main if improved, delete branch if not. Main only shows improvements. Eliminates revert commit clutter. Safer — if scoring crashes, main is untouched.
+- **Files:** `lib/ralph/evolve-loop.ts` (replace commit/revert with branch/merge pattern)
+
+#### 18d. Crash vs. Rejection Separation — MEDIUM IMPACT, Low effort
+Metric command returning `null` (crash) is different from returning a worse number (rejection). Add separate `consecutiveCrashes` counter. Stop on 5 consecutive crashes (eval is broken). Keep plateau threshold for rejections only. Add `status: 'accepted' | 'rejected' | 'crash'` to experiment records.
+- **Files:** `lib/ralph/evolve-loop.ts`, `lib/db/experiments.ts`
+
+#### 18e. Simplicity Criterion for Evolve — MEDIUM IMPACT, Low effort
+Add Karpathy's simplicity rule to evolve CLAUDE.md: "A marginal improvement that adds substantial complexity is not worth it. Removing something while maintaining or improving the metric is an excellent outcome." Prevents complexity bloat across iterations. Note: Idea #14 covers this for general workers — this is specifically for the evolve template where complexity accumulation is a known failure mode.
+- **Files:** `lib/ralph/worker.ts` (CLAUDE.md evolve template)
+
+#### 18f. State Boundary Enforcement — MEDIUM IMPACT, Low-Medium effort
+After each iteration, validate git diff — only allow modifications to the artifact file and `state/` directory. Auto-reject proposals that touch eval.sh, `.evolve/`, `.gitignore`, or CLAUDE.md. Borrowed from Derby's `state/` prefix check.
+- **Files:** `lib/ralph/evolve-loop.ts` (validation between iteration and scoring)
+
+#### 18g. Configurable Plateau Threshold — LOW IMPACT, Low effort
+`PLATEAU_THRESHOLD = 3` is hardcoded. Both Derby and autoresearch have NO plateau detection. Add `plateau_threshold` to recipe scoring section and `eval_overrides`. Default 3 for command-mode, consider 5-7 for judge-mode (higher variance). Allow `0` to disable.
+- **Files:** `lib/ralph/evolve-loop.ts`, `lib/evolve/recipe-parser.ts`
+
+#### 18h. Multi-Agent Parallel Proposals — LOW IMPACT (future), High effort
+Derby's differentiator: many agents propose simultaneously, evaluator processes serially. Each agent on its own branch. Requires rethinking worker spawning for evolve tasks. Not for now — land 18a-18g first.
+
+**Value:** Takes evolve mode from "neat hill-climbing demo" to "production-grade optimization system." Scoring isolation alone makes judge-mode evals trustworthy. Richer context + branch rollback improve both agent decision-making and auditability.
+
+**Effort:** Medium overall (18b/18d/18e/18g are quick wins; 18a/18c/18f are medium; 18h is future)
+
+**References:** [darwin-derby-evolve.md](./research/darwin-derby-evolve.md), [github.com/kousun12/darwin-derby](https://github.com/kousun12/darwin-derby), [github.com/karpathy/autoresearch](https://github.com/karpathy/autoresearch), [Blog: Welcome to the Darwin Derby](https://robc.substack.com/p/welcome-to-the-darwin-derby)
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

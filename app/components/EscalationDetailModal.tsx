@@ -8,6 +8,7 @@
  * - Options presented
  * - Answer given (if any)
  * - Which tasks were affected
+ * - Investigation context (attempts, checkpoint, observations, worker output)
  */
 
 import { useState, useEffect } from 'react';
@@ -27,6 +28,42 @@ interface QuestionOption {
   label: string;
   description: string;
   implications: string;
+}
+
+interface AttemptSummary {
+  attemptNumber: number;
+  approachSummary: string | null;
+  failureReason: string | null;
+  errorOutput: string | null;
+  filesModified: string[];
+  durationSeconds: number | null;
+  createdAt: string;
+}
+
+interface CheckpointSummary {
+  progressSummary: string | null;
+  remainingWork: string | null;
+  filesModified: string[];
+  gitSha: string | null;
+  createdAt: string;
+}
+
+interface ObservationSummary {
+  alignmentScore: number;
+  quality: string;
+  onTrack: boolean;
+  summary: string;
+  drift: Array<{ type: string; description: string; severity: string }>;
+  discoveries: Array<{ type: string; content: string }>;
+  issues: Array<{ type: string; description: string; severity: string }>;
+  createdAt: number;
+}
+
+interface InvestigationContext {
+  attempts: AttemptSummary[];
+  checkpoint: CheckpointSummary | null;
+  observations: ObservationSummary[];
+  lastWorkerOutput: string | null;
 }
 
 interface EscalationDetail {
@@ -54,6 +91,7 @@ interface EscalationDetail {
     answeredAt: number;
   };
   resolutionTimeMs: number | null;
+  investigation?: InvestigationContext;
 }
 
 interface Props {
@@ -117,6 +155,41 @@ function getTaskStatusVariant(status: string): 'warning' | 'success' | 'default'
   }
 }
 
+function getFailureReasonColor(reason: string): string {
+  if (reason.includes('timeout') || reason.includes('turn_limit')) return 'text-status-warning';
+  if (reason.includes('permission')) return 'text-status-error';
+  if (reason.includes('syntax') || reason.includes('runtime')) return 'text-status-error';
+  return 'text-text-secondary';
+}
+
+function CollapsibleSection({ title, defaultOpen = false, badge, children }: {
+  title: string;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+}): JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors text-left"
+        onClick={() => setOpen(!open)}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`text-text-tertiary text-xs transition-transform ${open ? 'rotate-90' : ''}`}>&#9654;</span>
+          <span className="text-sm font-medium text-text-primary">{title}</span>
+          {badge}
+        </div>
+      </button>
+      {open && (
+        <div className="p-3 border-t border-border">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EscalationDetailModal({ escalationId, onClose }: Props): JSX.Element {
   const [data, setData] = useState<EscalationDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,6 +226,8 @@ export function EscalationDetailModal({ escalationId, onClose }: Props): JSX.Ele
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  const inv = data?.investigation;
+
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -162,7 +237,7 @@ export function EscalationDetailModal({ escalationId, onClose }: Props): JSX.Ele
     >
       <div className="bg-bg-primary rounded-lg border border-border max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-bg-primary border-b border-border p-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-bg-primary border-b border-border p-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-semibold text-text-primary">
             Escalation Detail
           </h2>
@@ -296,6 +371,179 @@ export function EscalationDetailModal({ escalationId, onClose }: Props): JSX.Ele
                       ))}
                     </ul>
                   </Card>
+                </div>
+              )}
+
+              {/* ============================================================ */}
+              {/* Investigation Context */}
+              {/* ============================================================ */}
+              {inv && (inv.attempts.length > 0 || inv.checkpoint || inv.observations.length > 0 || inv.lastWorkerOutput) && (
+                <div>
+                  <h3 className="font-medium text-text-primary mb-3">Investigation Context</h3>
+                  <div className="space-y-2">
+
+                    {/* Attempt History */}
+                    {inv.attempts.length > 0 && (
+                      <CollapsibleSection
+                        title="Attempt History"
+                        defaultOpen={true}
+                        badge={<Badge variant="default" size="sm">{inv.attempts.length}</Badge>}
+                      >
+                        <div className="space-y-3">
+                          {inv.attempts.map((attempt) => (
+                            <div key={attempt.attemptNumber} className="border-l-2 border-border pl-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-medium text-text-secondary">
+                                  Attempt {attempt.attemptNumber}
+                                </span>
+                                {attempt.failureReason && (
+                                  <Badge variant="error" size="sm">{attempt.failureReason}</Badge>
+                                )}
+                                {attempt.durationSeconds !== null && (
+                                  <span className="text-xs text-text-tertiary">
+                                    {attempt.durationSeconds}s
+                                  </span>
+                                )}
+                              </div>
+                              {attempt.approachSummary && (
+                                <p className="text-sm text-text-secondary mb-1">{attempt.approachSummary}</p>
+                              )}
+                              {attempt.errorOutput && (
+                                <pre className="text-xs text-status-error bg-status-error/5 p-2 rounded mt-1 overflow-x-auto max-h-32 overflow-y-auto font-mono whitespace-pre-wrap">
+                                  {attempt.errorOutput}
+                                </pre>
+                              )}
+                              {attempt.filesModified.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {attempt.filesModified.map((f, i) => (
+                                    <span key={i} className="text-[10px] bg-bg-tertiary px-1.5 py-0.5 rounded text-text-tertiary font-mono">
+                                      {f}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+                    )}
+
+                    {/* Worker Progress / Checkpoint */}
+                    {(inv.checkpoint || inv.lastWorkerOutput) && (
+                      <CollapsibleSection title="Worker Progress">
+                        {inv.checkpoint && (
+                          <div className="space-y-2 mb-3">
+                            {inv.checkpoint.progressSummary && (
+                              <div>
+                                <span className="text-xs text-text-tertiary uppercase tracking-wide">Got this far</span>
+                                <p className="text-sm text-text-primary mt-1">{inv.checkpoint.progressSummary}</p>
+                              </div>
+                            )}
+                            {inv.checkpoint.remainingWork && (
+                              <div>
+                                <span className="text-xs text-text-tertiary uppercase tracking-wide">Remaining work</span>
+                                <p className="text-sm text-text-secondary mt-1">{inv.checkpoint.remainingWork}</p>
+                              </div>
+                            )}
+                            {inv.checkpoint.filesModified.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {inv.checkpoint.filesModified.map((f, i) => (
+                                  <span key={i} className="text-[10px] bg-bg-tertiary px-1.5 py-0.5 rounded text-text-tertiary font-mono">
+                                    {f}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {inv.checkpoint.gitSha && (
+                              <span className="text-[10px] text-text-tertiary font-mono">
+                                git: {inv.checkpoint.gitSha.slice(0, 8)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {inv.lastWorkerOutput && (
+                          <div>
+                            <span className="text-xs text-text-tertiary uppercase tracking-wide">Last Worker Output</span>
+                            <pre className="text-xs text-text-secondary bg-bg-secondary p-2 rounded mt-1 overflow-x-auto max-h-48 overflow-y-auto font-mono whitespace-pre-wrap">
+                              {inv.lastWorkerOutput}
+                            </pre>
+                          </div>
+                        )}
+                      </CollapsibleSection>
+                    )}
+
+                    {/* Observer Findings */}
+                    {inv.observations.length > 0 && (
+                      <CollapsibleSection
+                        title="Observer Findings"
+                        badge={<Badge variant="default" size="sm">{inv.observations.length}</Badge>}
+                      >
+                        <div className="space-y-3">
+                          {inv.observations.map((obs, i) => (
+                            <div key={i} className="border-l-2 border-border pl-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-text-tertiary">Alignment:</span>
+                                  <span className={`text-xs font-medium ${
+                                    obs.alignmentScore >= 70 ? 'text-status-success' :
+                                    obs.alignmentScore >= 40 ? 'text-status-warning' :
+                                    'text-status-error'
+                                  }`}>
+                                    {obs.alignmentScore}%
+                                  </span>
+                                </div>
+                                <Badge
+                                  variant={obs.quality === 'good' ? 'success' : obs.quality === 'needs_work' ? 'warning' : 'error'}
+                                  size="sm"
+                                >
+                                  {obs.quality}
+                                </Badge>
+                                {!obs.onTrack && (
+                                  <Badge variant="error" size="sm">Off Track</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-text-secondary">{obs.summary}</p>
+
+                              {obs.drift.length > 0 && (
+                                <div className="mt-1">
+                                  <span className="text-[10px] text-text-tertiary uppercase">Drift:</span>
+                                  {obs.drift.map((d, j) => (
+                                    <p key={j} className="text-xs text-status-warning ml-2">
+                                      [{d.severity}] {d.description}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+
+                              {obs.issues.length > 0 && (
+                                <div className="mt-1">
+                                  <span className="text-[10px] text-text-tertiary uppercase">Issues:</span>
+                                  {obs.issues.map((iss, j) => (
+                                    <p key={j} className={`text-xs ml-2 ${
+                                      iss.severity === 'high' ? 'text-status-error' : 'text-status-warning'
+                                    }`}>
+                                      [{iss.type}] {iss.description}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+
+                              {obs.discoveries.length > 0 && (
+                                <div className="mt-1">
+                                  <span className="text-[10px] text-text-tertiary uppercase">Discoveries:</span>
+                                  {obs.discoveries.map((d, j) => (
+                                    <p key={j} className="text-xs text-accent ml-2">
+                                      [{d.type}] {d.content}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+                    )}
+                  </div>
                 </div>
               )}
 

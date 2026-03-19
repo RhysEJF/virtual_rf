@@ -378,8 +378,15 @@ export function ExpandableTaskCard({
   };
 
   // Delete task
-  const handleDelete = async () => {
-    if (!confirm('Delete this task?')) return;
+  const handleDelete = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (task.status === 'running' || task.status === 'claimed') {
+      alert(`Cannot delete a ${task.status} task — stop the worker first.`);
+      return;
+    }
+
+    if (!confirm('Delete this task and all its subtasks?')) return;
 
     setDeleting(true);
     try {
@@ -389,6 +396,9 @@ export function ExpandableTaskCard({
 
       if (response.ok && onDelete) {
         onDelete(task.id);
+      } else if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        alert(body?.error || `Failed to delete task (${response.status})`);
       }
     } catch (err) {
       console.error('Failed to delete:', err);
@@ -754,6 +764,19 @@ export function ExpandableTaskCard({
             </div>
           </div>
         </button>
+        {onDelete && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="p-1.5 text-text-tertiary hover:text-status-error transition-colors shrink-0"
+            title="Delete task"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Expanded Content */}
@@ -1298,17 +1321,6 @@ export function ExpandableTaskCard({
                 </>
               )}
             </div>
-            {onDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="text-status-error hover:text-status-error/80"
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </Button>
-            )}
           </div>
         </div>
       )}

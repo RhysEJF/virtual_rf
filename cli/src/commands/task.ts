@@ -919,12 +919,87 @@ Examples:
   $ flow task update tsk_abc123 --optimize-description --skill task-refiner
 `);
 
+// Delete task: flow task delete <task-id> [options]
+interface DeleteOptions extends OutputOptions {
+  force?: boolean;
+}
+
+const deleteSubcommand = new Command('delete')
+  .description('Delete a task and its subtasks')
+  .argument('<task-id>', 'Task ID to delete')
+  .option('--force', 'Skip confirmation prompt');
+
+addOutputFlags(deleteSubcommand);
+
+deleteSubcommand.addHelpText('after', `
+Examples:
+  $ flow task delete tsk_abc123              Delete with confirmation
+  $ flow task delete tsk_abc123 --force      Delete without confirmation
+`);
+
+deleteSubcommand.action(async (taskId: string, options: DeleteOptions) => {
+  try {
+    // Fetch task first to show details
+    const { task } = await api.tasks.get(taskId);
+
+    if (!options.force && !options.json && !options.quiet) {
+      console.log();
+      console.log(`  ${chalk.bold('Task:')} ${task.title}`);
+      console.log(`  ${chalk.bold('ID:')} ${chalk.cyan(task.id)}`);
+      console.log(`  ${chalk.bold('Status:')} ${formatTaskStatus(task.status)}`);
+      console.log();
+
+      const readline = await import('readline');
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise<string>((resolve) => {
+        rl.question(chalk.yellow('Delete this task? (y/N) '), resolve);
+      });
+      rl.close();
+
+      if (answer.toLowerCase() !== 'y') {
+        console.log(chalk.gray('Cancelled.'));
+        return;
+      }
+    }
+
+    const result = await api.tasks.delete(taskId);
+
+    if (options.json) {
+      handleOutput(result, options);
+      return;
+    }
+
+    if (!options.quiet) {
+      console.log(chalk.green('Deleted:'), task.title);
+    }
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      console.error(chalk.red('Error:'), 'Could not connect to Flow API');
+      console.error(chalk.gray('Make sure the server is running (npm run dev)'));
+      process.exit(1);
+    }
+    if (error instanceof ApiError) {
+      if (error.status === 404) {
+        console.error(chalk.red('Error:'), `Task not found: ${taskId}`);
+      } else if (error.status === 409) {
+        const msg = (error.body as { error?: string })?.error || 'Cannot delete this task';
+        console.error(chalk.red('Error:'), msg);
+      } else {
+        console.error(chalk.red('API Error:'), error.message);
+      }
+      process.exit(1);
+    }
+    throw error;
+  }
+});
+
 // Register subcommands
 taskCommand.addCommand(showSubcommand);
 taskCommand.addCommand(addSubcommand);
 taskCommand.addCommand(updateSubcommand);
 taskCommand.addCommand(optimizeSubcommand);
 taskCommand.addCommand(retrySubcommand);
+taskCommand.addCommand(deleteSubcommand);
 
 // Also support direct task ID as argument: flow task <id>
 // This is the default action when no subcommand is provided

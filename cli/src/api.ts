@@ -899,6 +899,11 @@ export const api = {
     update(id: string, input: Partial<Task>): Promise<TaskResponse> {
       return api.patch<TaskResponse>(`/tasks/${id}`, input);
     },
+
+    // Delete task
+    delete(id: string): Promise<{ success: boolean }> {
+      return api.delete<{ success: boolean }>(`/tasks/${id}`);
+    },
   },
 
   skills: {

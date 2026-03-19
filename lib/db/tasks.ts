@@ -1290,13 +1290,53 @@ export function deleteTask(id: string): boolean {
   const db = getDb();
   const task = getTaskById(id);
 
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  if (!task) return false;
 
-  if (result.changes > 0 && task) {
-    touchOutcome(task.outcome_id);
+  // Guard: cannot delete running or claimed tasks
+  if (task.status === 'running' || task.status === 'claimed') {
+    throw new Error(`Cannot delete task with status "${task.status}" — stop the worker first`);
   }
 
-  return result.changes > 0;
+  transaction(() => {
+    // Recursively delete subtasks
+    const subtasks = db.prepare(
+      'SELECT id, status FROM tasks WHERE decomposed_from_task_id = ?'
+    ).all(id) as { id: string; status: string }[];
+
+    for (const sub of subtasks) {
+      if (sub.status === 'running' || sub.status === 'claimed') {
+        throw new Error(`Cannot delete: subtask ${sub.id} has status "${sub.status}"`);
+      }
+      deleteTask(sub.id);
+    }
+
+    // Clean up related records
+    db.prepare('DELETE FROM task_attempts WHERE task_id = ?').run(id);
+    db.prepare('DELETE FROM task_checkpoints WHERE task_id = ?').run(id);
+    db.prepare('DELETE FROM experiments WHERE task_id = ?').run(id);
+
+    // Remove this task ID from other tasks' depends_on arrays (same outcome)
+    const siblings = db.prepare(
+      'SELECT id, depends_on FROM tasks WHERE outcome_id = ? AND depends_on IS NOT NULL'
+    ).all(task.outcome_id) as { id: string; depends_on: string }[];
+
+    for (const sib of siblings) {
+      const deps = parseDependsOnInternal(sib.depends_on);
+      if (deps.includes(id)) {
+        const newDeps = deps.filter(d => d !== id);
+        db.prepare('UPDATE tasks SET depends_on = ? WHERE id = ?').run(
+          newDeps.length > 0 ? JSON.stringify(newDeps) : null,
+          sib.id
+        );
+      }
+    }
+
+    // Delete the task itself
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  });
+
+  touchOutcome(task.outcome_id);
+  return true;
 }
 
 // ============================================================================

@@ -170,6 +170,13 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to delete task';
+    if (message.includes('Cannot delete')) {
+      return NextResponse.json(
+        { error: message },
+        { status: 409 }
+      );
+    }
     console.error('Error deleting task:', error);
     return NextResponse.json(
       { error: 'Failed to delete task' },

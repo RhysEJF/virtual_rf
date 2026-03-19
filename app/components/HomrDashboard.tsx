@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { EscalationAlert } from './homr/EscalationAlert';
+import { EscalationDetailModal } from './EscalationDetailModal';
 import { OutcomeRetro } from './OutcomeRetro';
 import { useToast } from '../hooks/useToast';
 
@@ -33,6 +34,7 @@ interface HomrStats {
     type: string;
     summary: string;
     createdAt: number;
+    details?: Record<string, unknown>;
   }>;
 }
 
@@ -120,6 +122,7 @@ export function HomrDashboard({
     confidenceThreshold: 0.8,
   });
   const [savingAutoResolve, setSavingAutoResolve] = useState(false);
+  const [viewingEscalationId, setViewingEscalationId] = useState<string | null>(null);
 
   const fetchAutoResolveConfig = useCallback(async () => {
     try {
@@ -386,12 +389,28 @@ export function HomrDashboard({
               )}
             </div>
             <div className="space-y-2">
-              {stats.recentActivity.slice(0, 5).map((activity) => (
-                <div key={activity.id} className="text-sm">
-                  <p className="text-text-secondary">{activity.summary}</p>
-                  <p className="text-xs text-text-tertiary">{formatRelativeTime(activity.createdAt)}</p>
-                </div>
-              ))}
+              {stats.recentActivity.slice(0, 5).map((activity) => {
+                const escalationId = activity.details && typeof activity.details.escalationId === 'string'
+                  ? activity.details.escalationId
+                  : null;
+                const isClickable = escalationId !== null;
+
+                return (
+                  <div
+                    key={activity.id}
+                    className={`text-sm ${isClickable ? 'cursor-pointer hover:bg-bg-secondary rounded p-1 -m-1 transition-colors' : ''}`}
+                    onClick={isClickable ? () => setViewingEscalationId(escalationId) : undefined}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-text-secondary flex-1">{activity.summary}</p>
+                      {isClickable && (
+                        <span className="text-[10px] text-accent shrink-0 mt-0.5">Details</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-text-tertiary">{formatRelativeTime(activity.createdAt)}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -399,6 +418,14 @@ export function HomrDashboard({
         {/* Outcome Retro - Analyze escalations for this outcome */}
         <OutcomeRetro outcomeId={outcomeId} />
       </div>
+
+      {/* Escalation Detail Modal */}
+      {viewingEscalationId && (
+        <EscalationDetailModal
+          escalationId={viewingEscalationId}
+          onClose={() => setViewingEscalationId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/app/components/ui/Button';
 
 interface TaskSkillStatus {
@@ -36,6 +37,16 @@ export function TaskSkillsSection({
   onAddSkill,
   onRemoveSkill,
 }: TaskSkillsSectionProps): JSX.Element {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const unassigned = availableSkills.filter(s => !skills.some(sk => sk.name === s.name));
+  const filtered = searchQuery
+    ? unassigned.filter(s =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.category.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : unassigned;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -46,29 +57,47 @@ export function TaskSkillsSection({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setShowSkillDropdown(!showSkillDropdown)}
+            onClick={() => {
+              const opening = !showSkillDropdown;
+              setShowSkillDropdown(opening);
+              if (!opening) setSearchQuery('');
+            }}
             className="text-xs h-6 px-2"
           >
             + Add Skill
           </Button>
           {showSkillDropdown && (
-            <div className="absolute right-0 top-full mt-1 w-64 bg-bg-primary border border-border rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-              {availableSkills
-                .filter(s => !skills.some(sk => sk.name === s.name))
-                .map((skill) => (
+            <div className="absolute right-0 top-full mt-1 w-64 bg-bg-primary border border-border rounded-lg shadow-lg z-10">
+              <div className="border-b border-border p-2 sticky top-0 bg-bg-primary rounded-t-lg">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search skills..."
+                  autoFocus
+                  className="w-full text-sm px-2 py-1 bg-bg-secondary border border-border rounded text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent"
+                />
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {filtered.map((skill) => (
                   <button
                     key={skill.id}
-                    onClick={() => onAddSkill(skill.name)}
+                    onClick={() => {
+                      onAddSkill(skill.name);
+                      setSearchQuery('');
+                    }}
                     className="w-full text-left px-3 py-2 hover:bg-bg-secondary text-sm"
                   >
                     <span className="text-text-primary">{skill.name}</span>
                     <span className="text-text-tertiary text-xs ml-2">({skill.category})</span>
                   </button>
-                ))
-              }
-              {availableSkills.filter(s => !skills.some(sk => sk.name === s.name)).length === 0 && (
-                <p className="px-3 py-2 text-text-tertiary text-sm">No more skills available</p>
-              )}
+                ))}
+                {filtered.length === 0 && (
+                  <p className="px-3 py-2 text-text-tertiary text-sm">
+                    {searchQuery ? 'No matching skills' : 'No more skills available'}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

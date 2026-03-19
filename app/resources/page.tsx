@@ -68,7 +68,18 @@ interface OutputFile {
   createdAt: number;
 }
 
-type TabType = 'skills' | 'tools' | 'documents' | 'files';
+interface EvalItem {
+  id: string;
+  name: string;
+  source: 'app' | 'user' | 'outcome';
+  outcomeId?: string;
+  path: string;
+  description: string;
+  mode: 'judge' | 'command' | 'unknown';
+  direction: 'higher' | 'lower';
+}
+
+type TabType = 'skills' | 'tools' | 'evals' | 'documents' | 'files';
 
 export default function ResourcesPage(): JSX.Element {
   return (
@@ -106,9 +117,20 @@ function ResourcesPageContent(): JSX.Element {
   const [documents, setDocuments] = useState<Record<string, Document[]>>({});
   const [documentsLoading, setDocumentsLoading] = useState(true);
 
+  // Evals state
+  const [evals, setEvals] = useState<EvalItem[]>([]);
+  const [evalsLoading, setEvalsLoading] = useState(true);
+
   // Files/Outputs state
   const [files, setFiles] = useState<Record<string, OutputFile[]>>({});
   const [filesLoading, setFilesLoading] = useState(true);
+
+  // Add Skill modal state
+  const [showAddSkill, setShowAddSkill] = useState(false);
+  const [newSkillCategory, setNewSkillCategory] = useState('general');
+  const [newSkillName, setNewSkillName] = useState('');
+  const [newSkillDescription, setNewSkillDescription] = useState('');
+  const [addingSkill, setAddingSkill] = useState(false);
 
   // Update URL when tab changes
   const handleTabChange = (tab: TabType) => {
@@ -162,6 +184,19 @@ function ResourcesPageContent(): JSX.Element {
     }
   }, []);
 
+  // Fetch evals
+  const fetchEvals = useCallback(async () => {
+    try {
+      const res = await fetch('/api/evals');
+      const data = await res.json();
+      setEvals(data.evals || []);
+    } catch (error) {
+      console.error('Failed to fetch evals:', error);
+    } finally {
+      setEvalsLoading(false);
+    }
+  }, []);
+
   // Fetch output files from all outcomes
   const fetchFiles = useCallback(async () => {
     try {
@@ -197,6 +232,39 @@ function ResourcesPageContent(): JSX.Element {
     }
   };
 
+  // Add a new skill
+  const addSkill = async () => {
+    if (!newSkillName.trim()) return;
+    setAddingSkill(true);
+    try {
+      const response = await fetch('/api/skills/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: newSkillCategory.trim() || 'general',
+          name: newSkillName.trim(),
+          description: newSkillDescription.trim() || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({ type: 'success', message: `Skill "${newSkillName}" created` });
+        setShowAddSkill(false);
+        setNewSkillName('');
+        setNewSkillDescription('');
+        setNewSkillCategory('general');
+        fetchSkills();
+      } else {
+        toast({ type: 'error', message: data.error || 'Failed to create skill' });
+      }
+    } catch (error) {
+      console.error('Failed to create skill:', error);
+      toast({ type: 'error', message: 'Failed to create skill' });
+    } finally {
+      setAddingSkill(false);
+    }
+  };
+
   // Fetch skill content for modal
   const fetchSkillContent = async (skill: Skill | OutcomeSkill, isOutcome: boolean) => {
     setSelectedSkill(skill);
@@ -222,14 +290,16 @@ function ResourcesPageContent(): JSX.Element {
   useEffect(() => {
     fetchSkills();
     fetchTools();
+    fetchEvals();
     fetchDocuments();
     fetchFiles();
-  }, [fetchSkills, fetchTools, fetchDocuments, fetchFiles]);
+  }, [fetchSkills, fetchTools, fetchEvals, fetchDocuments, fetchFiles]);
 
   // Calculate stats
   const totalGlobalSkills = Object.values(skills).flat().length;
   const totalOutcomeSkills = Object.values(outcomeSkills).flat().length;
   const totalTools = Object.values(tools).flat().length;
+  const totalEvals = evals.length;
   const totalDocuments = Object.values(documents).flat().length;
   const totalFiles = Object.values(files).flat().length;
 
@@ -254,7 +324,7 @@ function ResourcesPageContent(): JSX.Element {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <Card
           padding="md"
           hover
@@ -275,6 +345,17 @@ function ResourcesPageContent(): JSX.Element {
           <CardContent>
             <div className="text-2xl font-semibold text-text-primary">{totalTools}</div>
             <div className="text-sm text-text-secondary">Tools</div>
+          </CardContent>
+        </Card>
+        <Card
+          padding="md"
+          hover
+          onClick={() => handleTabChange('evals')}
+          className={`cursor-pointer ${activeTab === 'evals' ? 'border-accent' : ''}`}
+        >
+          <CardContent>
+            <div className="text-2xl font-semibold text-text-primary">{totalEvals}</div>
+            <div className="text-sm text-text-secondary">Evals</div>
           </CardContent>
         </Card>
         <Card
@@ -303,7 +384,7 @@ function ResourcesPageContent(): JSX.Element {
 
       {/* Main Tabs */}
       <div className="flex gap-2 mb-6 border-b border-border">
-        {(['skills', 'tools', 'documents', 'files'] as TabType[]).map((tab) => (
+        {(['skills', 'tools', 'evals', 'documents', 'files'] as TabType[]).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTabChange(tab)}
@@ -345,9 +426,14 @@ function ResourcesPageContent(): JSX.Element {
                 Outcome ({totalOutcomeSkills})
               </button>
             </div>
-            <Button variant="secondary" size="sm" onClick={syncSkills} disabled={syncing}>
-              {syncing ? 'Syncing...' : 'Sync Skills'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" onClick={() => setShowAddSkill(true)}>
+                + Add Skill
+              </Button>
+              <Button variant="secondary" size="sm" onClick={syncSkills} disabled={syncing}>
+                {syncing ? 'Syncing...' : 'Sync Skills'}
+              </Button>
+            </div>
           </div>
 
           {skillsLoading ? (
@@ -499,6 +585,58 @@ function ResourcesPageContent(): JSX.Element {
         </div>
       )}
 
+      {activeTab === 'evals' && (
+        <div>
+          {evalsLoading ? (
+            <p className="text-text-tertiary">Loading evals...</p>
+          ) : evals.length === 0 ? (
+            <Card padding="lg" className="text-center">
+              <CardContent>
+                <p className="text-text-secondary mb-2">No evals found</p>
+                <p className="text-text-tertiary text-sm">
+                  Eval recipes define what to optimize and how to judge it. Add .md files to ~/flow-data/evals/ or evals/.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div>
+              {/* Group by source */}
+              {(['app', 'user', 'outcome'] as const).map((source) => {
+                const sourceEvals = evals.filter(e => e.source === source);
+                if (sourceEvals.length === 0) return null;
+                return (
+                  <div key={source} className="mb-6">
+                    <h3 className="text-sm font-medium text-text-secondary uppercase tracking-wide mb-3">
+                      {source === 'app' ? 'App Evals' : source === 'user' ? 'User Evals' : 'Outcome Evals'}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {sourceEvals.map((ev) => (
+                        <Card key={ev.id} padding="sm" hover className="cursor-pointer">
+                          <CardContent>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-text-primary font-medium">{ev.name}</span>
+                              <Badge variant={ev.mode === 'judge' ? 'warning' : 'info'} className="text-[10px]">
+                                {ev.mode}
+                              </Badge>
+                              <Badge className="text-[10px]">
+                                {ev.direction === 'higher' ? 'higher' : 'lower'}
+                              </Badge>
+                            </div>
+                            {ev.description && (
+                              <p className="text-text-tertiary text-sm truncate">{ev.description}</p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'documents' && (
         <div>
           {documentsLoading ? (
@@ -576,6 +714,61 @@ function ResourcesPageContent(): JSX.Element {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Add Skill Modal */}
+      {showAddSkill && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddSkill(false)}>
+          <div className="bg-bg-primary border border-border rounded-lg p-6 w-full max-w-md shadow-lg" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-text-primary mb-4">Add Skill</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={newSkillName}
+                  onChange={e => setNewSkillName(e.target.value)}
+                  placeholder="e.g. Market Intelligence"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-bg-secondary text-text-primary text-sm focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Category</label>
+                <input
+                  type="text"
+                  value={newSkillCategory}
+                  onChange={e => setNewSkillCategory(e.target.value)}
+                  placeholder="e.g. research, development"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-bg-secondary text-text-primary text-sm focus:outline-none focus:border-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Description</label>
+                <input
+                  type="text"
+                  value={newSkillDescription}
+                  onChange={e => setNewSkillDescription(e.target.value)}
+                  placeholder="Brief description of what this skill does"
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-bg-secondary text-text-primary text-sm focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <Button variant="secondary" size="sm" onClick={() => setShowAddSkill(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={addSkill}
+                disabled={!newSkillName.trim() || addingSkill}
+              >
+                {addingSkill ? 'Creating...' : 'Create Skill'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

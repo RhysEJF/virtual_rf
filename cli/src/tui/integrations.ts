@@ -271,19 +271,25 @@ export function mergeIntegrationCommands(integrations: Integration[]): CommandCo
     // Read per-integration command config (include/exclude)
     const excludedCommands = getExcludedCommands(integration);
 
+    // Read renames
+    const renames = getCommandRenames(integration);
+
     for (const cmd of integration.commands) {
       // Skip excluded commands
       if (excludedCommands.has(cmd.name)) continue;
 
-      activeCommands.add(cmd.name);
-      const targetPath = join(COMMANDS_DIR, `${cmd.name}.md`);
+      // Apply rename if configured
+      const finalName = renames.get(cmd.name) || cmd.name;
+
+      activeCommands.add(finalName);
+      const targetPath = join(COMMANDS_DIR, `${finalName}.md`);
 
       // Check for conflicts
-      const existingOwner = registry.commands[cmd.name];
+      const existingOwner = registry.commands[finalName];
       if (existingOwner && existingOwner !== integration.name) {
         // Another integration already owns this command
         conflicts.push({
-          commandName: cmd.name,
+          commandName: finalName,
           existingIntegration: existingOwner,
           newIntegration: integration.name,
         });
@@ -295,7 +301,7 @@ export function mergeIntegrationCommands(integrations: Integration[]): CommandCo
       try {
         const content = readFileSync(cmd.sourcePath, 'utf-8');
         writeFileSync(targetPath, content, 'utf-8');
-        registry.commands[cmd.name] = integration.name;
+        registry.commands[finalName] = integration.name;
       } catch {
         // Skip unreadable files
       }
@@ -354,6 +360,79 @@ function getExcludedCommands(integration: Integration): Set<string> {
   }
 
   return new Set();
+}
+
+/**
+ * Get command renames for an integration.
+ * Reads from commands.json: { "rename": { "old-name": "new-name" } }
+ */
+function getCommandRenames(integration: Integration): Map<string, string> {
+  const configPath = join(integration.path, 'commands.json');
+  if (!existsSync(configPath)) return new Map();
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (config.rename && typeof config.rename === 'object') {
+      return new Map(Object.entries(config.rename as Record<string, string>));
+    }
+  } catch {
+    // Invalid JSON
+  }
+
+  return new Map();
+}
+
+/**
+ * Rename a command from an integration.
+ * Updates commands.json in the integration directory.
+ */
+export function renameCommand(integrationName: string, oldName: string, newName: string): boolean {
+  const intPath = join(INTEGRATIONS_DIR, integrationName);
+  if (!existsSync(intPath)) return false;
+
+  const configPath = join(intPath, 'commands.json');
+  let config: { include?: string[]; exclude?: string[]; rename?: Record<string, string> } = {};
+
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      config = {};
+    }
+  }
+
+  if (!config.rename) config.rename = {};
+  config.rename[oldName] = newName;
+
+  // Remove from exclude if it was excluded
+  if (config.exclude) {
+    config.exclude = config.exclude.filter(n => n !== oldName);
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  return true;
+}
+
+/**
+ * Remove a rename for a command (revert to original name).
+ */
+export function unreNameCommand(integrationName: string, commandName: string): boolean {
+  const intPath = join(INTEGRATIONS_DIR, integrationName);
+  const configPath = join(intPath, 'commands.json');
+  if (!existsSync(configPath)) return false;
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (config.rename && config.rename[commandName]) {
+      delete config.rename[commandName];
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+      return true;
+    }
+  } catch {
+    // Invalid JSON
+  }
+
+  return false;
 }
 
 /**

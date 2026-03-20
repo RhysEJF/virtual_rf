@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand, grantCommand, revokeCommand, integrateCommand, integrationsCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand, grantCommand, revokeCommand, integrateCommand, integrationsCommand, commandsCommand } from './commands/index.js';
 import { FlowTUI } from './tui/app.js';
 
 const program = new Command();
@@ -70,6 +70,7 @@ program.addCommand(grantCommand);
 program.addCommand(revokeCommand);
 program.addCommand(integrateCommand);
 program.addCommand(integrationsCommand);
+program.addCommand(commandsCommand);
 
 // Command group definitions for --help-all
 const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [
@@ -99,7 +100,7 @@ const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [
   },
   {
     label: 'Integrations',
-    commands: ['integrate', 'integrations', 'grant', 'revoke', 'telegram', 'serve', 'server', 'capability'],
+    commands: ['integrate', 'integrations', 'commands', 'grant', 'revoke', 'telegram', 'serve', 'server', 'capability'],
   },
   {
     label: 'Interactive',

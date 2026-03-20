@@ -315,71 +315,68 @@ IMPORTANT rules for the JSON:
     console.log(chalk.bold('  MCP Server Detected'));
     console.log();
 
-    // Check if mcp_safety_scan is available
-    let hasSafetyScanner = false;
-    try {
-      execSync('which mcp_safety_scan', { stdio: 'pipe' });
-      hasSafetyScanner = true;
-    } catch {
-      // not installed
-    }
+    const runScan = await prompt(`  ${chalk.yellow('⚠')} Run safety scan before installing? ${chalk.cyan('[y/n]')}: `);
 
-    if (hasSafetyScanner && process.env.OPENAI_API_KEY) {
-      const runScan = await prompt(`  ${chalk.yellow('⚠')} Run safety scan before installing? ${chalk.cyan('[y/n]')}: `);
+    if (runScan.toLowerCase() === 'y') {
+      console.log();
+      console.log(chalk.yellow('  Scanning MCP server for vulnerabilities...'));
+      console.log();
 
-      if (runScan.toLowerCase() === 'y') {
-        console.log();
-        console.log(chalk.yellow('  Scanning MCP server for vulnerabilities...'));
-        console.log();
+      const mcpConfigStr = JSON.stringify(plan.mcpConfig, null, 2);
+      const scanPrompt = `You are a security auditor. Analyze this MCP server configuration for potential risks.
 
-        // Write temp config for the scanner
-        const tmpConfig = join(homedir(), '.flow-mcp-scan-tmp.json');
-        try {
-          writeFileSync(tmpConfig, JSON.stringify(plan.mcpConfig, null, 2), 'utf-8');
+MCP Config:
+${mcpConfigStr}
 
-          const scanOutput = execSync(`mcp_safety_scan --config ${tmpConfig}`, {
+Integration skill description:
+${plan.skillContent.slice(0, 1500)}
+
+Analyze for:
+1. **Data exfiltration risk** — Can this server send data to external services? What data could leak?
+2. **Destructive capabilities** — Can it delete files, modify system settings, or cause damage?
+3. **Credential exposure** — Does it require secrets that could be misused? Are env vars properly scoped?
+4. **Scope creep** — Does it have broader access than needed for its stated purpose?
+5. **Command injection** — Could tool inputs be used to execute arbitrary commands?
+
+For each risk found, rate as HIGH/MEDIUM/LOW and explain why.
+
+End with a one-line RECOMMENDATION: SAFE / CAUTION / DANGEROUS
+
+Be concise. Output plain text, no markdown fences.`;
+
+      try {
+        const scanResult = execSync(
+          `claude -p ${JSON.stringify(scanPrompt)} --output-format text --dangerously-skip-permissions`,
+          {
             stdio: ['pipe', 'pipe', 'pipe'],
             timeout: 120000,
-            env: { ...process.env },
-          }).toString().trim();
+            maxBuffer: 1024 * 1024,
+            env: { ...process.env, CLAUDECODE: undefined },
+          }
+        ).toString().trim();
 
-          // Display scan results
-          console.log(chalk.bold('  Safety Scan Results:'));
-          console.log();
-          for (const line of scanOutput.split('\n').slice(0, 30)) {
+        // Display scan results
+        console.log(chalk.bold('  Safety Scan Results:'));
+        console.log();
+        for (const line of scanResult.split('\n')) {
+          // Color-code risk levels
+          if (line.includes('HIGH')) {
+            console.log(`  ${chalk.red(line)}`);
+          } else if (line.includes('DANGEROUS')) {
+            console.log(`  ${chalk.red.bold(line)}`);
+          } else if (line.includes('MEDIUM') || line.includes('CAUTION')) {
+            console.log(`  ${chalk.yellow(line)}`);
+          } else if (line.includes('LOW') || line.includes('SAFE')) {
+            console.log(`  ${chalk.green(line)}`);
+          } else {
             console.log(`  ${line}`);
           }
-          if (scanOutput.split('\n').length > 30) {
-            console.log(chalk.gray('  ... (truncated)'));
-          }
-          console.log();
-        } catch (scanError) {
-          const err = scanError as { stdout?: Buffer; stderr?: Buffer };
-          const stdout = err.stdout?.toString()?.trim() || '';
-          const stderr = err.stderr?.toString()?.trim() || '';
-          if (stdout) {
-            console.log(chalk.bold('  Safety Scan Results:'));
-            console.log();
-            for (const line of stdout.split('\n').slice(0, 30)) {
-              console.log(`  ${line}`);
-            }
-            console.log();
-          } else {
-            console.log(chalk.yellow('  Safety scan encountered an error.'));
-            if (stderr) console.log(chalk.gray(`  ${stderr.slice(0, 200)}`));
-            console.log();
-          }
-        } finally {
-          try { unlinkSync(tmpConfig); } catch { /* */ }
         }
+        console.log();
+      } catch {
+        console.log(chalk.yellow('  Safety scan failed. Proceeding without scan.'));
+        console.log();
       }
-    } else if (hasSafetyScanner) {
-      console.log(chalk.gray('  Safety scan available but OPENAI_API_KEY not set. Skipping.'));
-      console.log();
-    } else {
-      console.log(chalk.gray('  Tip: Install mcp_safety_scan for automatic security scanning.'));
-      console.log(chalk.gray('  pipx install -e ~/mcpSafetyScanner'));
-      console.log();
     }
   }
 

@@ -73,6 +73,7 @@ export interface Outcome {
   work_branch: string | null;
   auto_commit: boolean;
   create_pr_on_complete: boolean;
+  granted_integrations: string;
 }
 
 export interface OutcomeWithCounts extends Outcome {
@@ -699,6 +700,7 @@ export interface UpdateOutcomeInput {
   work_branch?: string | null;
   auto_commit?: boolean;
   create_pr_on_complete?: boolean;
+  granted_integrations?: string;
 }
 
 // ============================================================================

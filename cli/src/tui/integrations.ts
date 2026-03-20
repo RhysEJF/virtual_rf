@@ -169,12 +169,13 @@ function bootstrapFlowCli(): void {
     if (raw.startsWith('---')) {
       skillContent = raw;
     } else {
-      skillContent = `---\nname: Flow CLI\ndescription: Manage AI workforce through the Flow CLI\n---\n\n${raw}`;
+      skillContent = `---\nname: Flow CLI\ndescription: Manage AI workforce through the Flow CLI\nworker_access: always\n---\n\n${raw}`;
     }
   } else {
     skillContent = `---
 name: Flow CLI
 description: Manage AI workforce through the Flow CLI
+worker_access: always
 ---
 
 # Flow CLI Skill
@@ -220,6 +221,7 @@ function bootstrapFlowTools(): void {
     writeFileSync(skillPath, `---
 name: Flow Tools
 description: Meta-skills for building and auditing Flow integrations
+worker_access: never
 ---
 
 # Flow Tools — Integration Builder & Auditor

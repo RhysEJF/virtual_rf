@@ -133,6 +133,8 @@ export interface Outcome {
   auto_resolve_threshold: number;   // Confidence threshold for auto-resolution (0.0-1.0)
   // Workspace isolation
   isolation_mode: IsolationMode;    // 'workspace' = isolated, 'codebase' = can modify main
+  // Integration access control
+  granted_integrations: string;     // JSON array of integration names workers can use
 }
 
 export interface DesignDoc {

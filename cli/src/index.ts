@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand, grantCommand, revokeCommand } from './commands/index.js';
 import { FlowTUI } from './tui/app.js';
 
 const program = new Command();
@@ -66,6 +66,8 @@ program.addCommand(healthCommand);
 program.addCommand(evolveCommand);
 program.addCommand(evalsCommand);
 program.addCommand(evalCommand);
+program.addCommand(grantCommand);
+program.addCommand(revokeCommand);
 
 // Command group definitions for --help-all
 const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [

@@ -123,6 +123,7 @@ function mapOutcomeRow(row: Outcome): Outcome {
     parent_id: row.parent_id || null,
     depth: row.depth ?? 0,
     isolation_mode: (row.isolation_mode || 'workspace') as IsolationMode,
+    granted_integrations: row.granted_integrations || '[]',
   };
 }
 
@@ -296,6 +297,8 @@ export interface UpdateOutcomeInput {
   auto_resolve_threshold?: number;
   // Workspace isolation
   isolation_mode?: IsolationMode;
+  // Integration access control
+  granted_integrations?: string;
 }
 
 export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | null {

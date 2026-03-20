@@ -693,6 +693,13 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE task_attempts ADD COLUMN progress_entry_id INTEGER');
     console.log('[DB Migration] Added progress_entry_id column to task_attempts');
   }
+
+  // Add granted_integrations column to outcomes for integration access control
+  const outcomesColsGrants = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  if (!outcomesColsGrants.some(c => c.name === 'granted_integrations')) {
+    database.exec("ALTER TABLE outcomes ADD COLUMN granted_integrations TEXT DEFAULT '[]'");
+    console.log('[DB Migration] Added granted_integrations column to outcomes');
+  }
 }
 
 /**

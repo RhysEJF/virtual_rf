@@ -648,7 +648,8 @@ function generateTaskInstructions(
   outcomeId?: string,
   gitConfig?: GitConfig,
   isolationMode?: IsolationMode,
-  workspacePath?: string
+  workspacePath?: string,
+  grantedIntegrations?: string
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
@@ -742,6 +743,17 @@ Your current working directory is a **task-specific** subdirectory. Other tasks 
 `;
   }
 
+  // Build integration skills section (only granted integrations)
+  let integrationSkills = '';
+  if (grantedIntegrations) {
+    try {
+      const { buildWorkerIntegrationSkills } = require('../integrations/grants');
+      integrationSkills = buildWorkerIntegrationSkills(grantedIntegrations);
+    } catch {
+      // Integrations module not available — skip silently
+    }
+  }
+
   // Build teaching context from previous attempts and checkpoints
   const teachingContext = buildTeachingContext(task.id);
 
@@ -752,7 +764,7 @@ ${intentSummary}
 
 ---
 ${isolationInstructions}${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
-${designDocSection ? `${designDocSection}\n---\n` : ''}${teachingContext ? `${teachingContext}\n---\n` : ''}## Your Current Task
+${designDocSection ? `${designDocSection}\n---\n` : ''}${integrationSkills ? `${integrationSkills}\n---\n` : ''}${teachingContext ? `${teachingContext}\n---\n` : ''}## Your Current Task
 
 **ID:** ${task.id}
 **Title:** ${task.title}
@@ -1629,7 +1641,8 @@ export async function startRalphWorker(
                     outcomeId,
                     gitConfig,
                     outcome.isolation_mode || 'workspace',
-                    wsPath
+                    wsPath,
+                    outcome.granted_integrations
                   ) + `
 ## Evolve Mode — Iteration ${iter} of ${evolveTask.optimization_budget}
 
@@ -1767,7 +1780,8 @@ The system will automatically measure the metric and keep or revert your change.
             outcomeId,
             gitConfig,
             outcome.isolation_mode || 'workspace',
-            outcomeWorkspace
+            outcomeWorkspace,
+            outcome.granted_integrations
           ));
 
           const progressPath = join(taskWorkspace, 'progress.txt');
@@ -3063,7 +3077,8 @@ export async function runWorkerLoop(
         outcomeId,
         gitConfig,
         outcome.isolation_mode || 'workspace',
-        outcomeWorkspace
+        outcomeWorkspace,
+        outcome.granted_integrations
       )
     );
 

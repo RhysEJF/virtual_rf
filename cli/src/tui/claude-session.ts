@@ -16,6 +16,7 @@ import {
   bootstrapDefaultIntegrations,
   mergeIntegrationPermissions,
   mergeMcpConfigs,
+  mergeIntegrationCommands,
   buildClaudeMd,
 } from './integrations.js';
 
@@ -156,6 +157,9 @@ function ensureWorkspace(): { workspacePath: string } {
 
   // Merge MCP configs (writes to .claude/mcp_servers.json if any exist)
   mergeMcpConfigs(integrations);
+
+  // Merge slash commands from integrations (copies .md files to .claude/commands/)
+  mergeIntegrationCommands(integrations);
 
   // Build and write CLAUDE.md from all active integration skills
   const claudeMd = buildClaudeMd(integrations);

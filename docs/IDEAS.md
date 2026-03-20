@@ -746,6 +746,64 @@ Under rare timing races, workers can stop early and report "all tasks complete" 
 
 ---
 
+### 23. Contextual Continuity Engine
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-20 |
+| **Source** | Sidecar TUI analysis — "every session starts from zero" insight |
+| **Category** | Major UX innovation |
+| **Research** | [sidecar.md](./research/sidecar.md) |
+
+**Problem:**
+Flow has 30+ knowledge sources (HOMR discoveries, memories, task attempts, worker outputs, session history, events, experiments) but the TUI starts with absolutely none of it. Every conversation begins from zero. The Claude agent receives integration skills and nothing else — no idea what the user was doing yesterday, what workers discovered, which tasks failed, or what needs attention. Users must manually re-establish context every session.
+
+**Proposed Solution:**
+A **Contextual Continuity Engine** that automatically gathers and injects relevant context before the first keystroke. Two surfaces:
+
+1. **Visual briefing** (replaces static welcome screen):
+   ```
+   ✦ F L O W
+
+   Welcome back. Here's where things stand:
+
+   ▶ Worker building "auth middleware" completed — 3/3 tests passing
+   ⚠ "Generate thumbnails" hit rate limit — paused, ready to resume
+   ◆ HOMR discovered: 4 tasks using deprecated API pattern
+
+   Last session (2h ago): You were debugging the git integration.
+   Active outcome: CLI Conversational Mode (8 tasks, 5 done)
+   ```
+
+2. **Agent context injection** (prepended to CLAUDE.md as `## Continuity Context`):
+   - Last session summary (auto-generated on session close)
+   - Active outcomes + task status counts
+   - Recent worker completions and failures
+   - HOMR discoveries and unresolved escalations
+   - Recent git state (branch, last commits)
+   - Items needing attention (paused workers, failed tasks, pending gates)
+
+**What makes this radical:**
+Every AI CLI tool today is either stateless (fresh start) or stateful (resume same session). Flow would be neither — it starts a *new* conversation that's *already informed*. Like meeting a colleague who prepped for the meeting vs. a stranger. The more you use Flow, the smarter the briefing gets.
+
+**Implementation:**
+- New module: `cli/src/tui/context.ts` — gathers from: recent sessions (`.sessions/`), `flow` CLI calls (outcomes, tasks, workers), git state, HOMR alerts
+- Modify `buildClaudeMd()` in `integrations.ts` to accept and inject a continuity section
+- Modify `showWelcome()` in `app.ts` to render the visual briefing
+- Auto-summarize sessions on exit (one Claude call: "summarize this conversation in one sentence")
+- Store summaries in `.sessions/` alongside full transcripts
+
+**Key design decision:** Context gathering must work without the Flow web server running. Use direct `flow` CLI calls (which read the DB directly) or fallback to git/filesystem reads.
+
+**Value:** Makes the TUI the primary beneficiary of Flow's entire intelligence stack. Every feature already built (HOMR, memories, events, attempts, evolve experiments) suddenly has a consumer in the conversational interface. Compounds over time — the more you use Flow, the better the briefing.
+
+**Effort:** Medium
+
+**References:** [sidecar.md](./research/sidecar.md), `cli/src/tui/sessions.ts` (session persistence), `cli/src/tui/integrations.ts` (`buildClaudeMd()`), `lib/db/homr.ts`, `lib/events/bus.ts`
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

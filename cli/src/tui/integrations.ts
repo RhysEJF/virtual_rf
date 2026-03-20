@@ -19,6 +19,15 @@ import { homedir } from 'os';
 // Types
 // ============================================================================
 
+export interface IntegrationCommand {
+  /** Command name without extension (e.g., 'plan', 'work') */
+  name: string;
+  /** Full path to the source .md file */
+  sourcePath: string;
+  /** Which integration provides this command */
+  integrationName: string;
+}
+
 export interface Integration {
   name: string;
   displayName: string;
@@ -26,6 +35,8 @@ export interface Integration {
   skillContent: string;
   permissions: string[];
   mcpConfig?: Record<string, unknown>;
+  /** Slash commands this integration provides */
+  commands: IntegrationCommand[];
   disabled: boolean;
   path: string;
   isRemote: boolean;
@@ -35,6 +46,8 @@ interface Frontmatter {
   name?: string;
   description?: string;
   version?: string;
+  /** Path to directory containing .claude/commands/ or commands/ */
+  commands_source?: string;
   [key: string]: string | undefined;
 }
 
@@ -123,6 +136,9 @@ export function scanIntegrations(): Integration[] {
     // Check if remote (has .git directory)
     const isRemote = existsSync(join(intPath, '.git'));
 
+    // Discover commands
+    const commands = discoverCommands(entry.name, intPath, frontmatter);
+
     integrations.push({
       name: entry.name,
       displayName: frontmatter.name || entry.name,
@@ -130,6 +146,7 @@ export function scanIntegrations(): Integration[] {
       skillContent: content,
       permissions,
       mcpConfig,
+      commands,
       disabled,
       path: intPath,
       isRemote,
@@ -137,6 +154,264 @@ export function scanIntegrations(): Integration[] {
   }
 
   return integrations;
+}
+
+// ============================================================================
+// Command Discovery
+// ============================================================================
+
+/**
+ * Discover slash commands from an integration.
+ *
+ * Commands can come from two sources (checked in order):
+ *   1. commands/ directory inside the integration folder
+ *   2. commands_source frontmatter → {path}/.claude/commands/
+ *
+ * Each .md file in the commands directory becomes a slash command.
+ */
+function discoverCommands(integrationName: string, intPath: string, frontmatter: Frontmatter): IntegrationCommand[] {
+  const commands: IntegrationCommand[] = [];
+  const commandDirs: string[] = [];
+
+  // Source 1: commands/ directory in the integration itself
+  const localCommandsDir = join(intPath, 'commands');
+  if (existsSync(localCommandsDir)) {
+    commandDirs.push(localCommandsDir);
+  }
+
+  // Source 2: commands_source frontmatter (resolve ~ to homedir)
+  if (frontmatter.commands_source) {
+    const sourcePath = frontmatter.commands_source.replace(/^~/, homedir());
+    const claudeCommandsDir = join(sourcePath, '.claude', 'commands');
+    const directCommandsDir = join(sourcePath, 'commands');
+
+    if (existsSync(claudeCommandsDir)) {
+      commandDirs.push(claudeCommandsDir);
+    } else if (existsSync(directCommandsDir)) {
+      commandDirs.push(directCommandsDir);
+    }
+  }
+
+  for (const dir of commandDirs) {
+    try {
+      const files = readdirSync(dir).filter(f => f.endsWith('.md'));
+      for (const file of files) {
+        const name = file.replace(/\.md$/, '');
+        commands.push({
+          name,
+          sourcePath: join(dir, file),
+          integrationName,
+        });
+      }
+    } catch {
+      // Skip inaccessible directories
+    }
+  }
+
+  return commands;
+}
+
+// ============================================================================
+// Command Merging
+// ============================================================================
+
+interface CommandRegistry {
+  /** command name → integration that owns it */
+  commands: Record<string, string>;
+  /** commands explicitly excluded per integration */
+  excluded: Record<string, string[]>;
+}
+
+const COMMANDS_DIR = join(CONVERSE_WORKSPACE, '.claude', 'commands');
+const COMMAND_REGISTRY_PATH = join(CONVERSE_WORKSPACE, '.claude', 'command_registry.json');
+
+/**
+ * Read the command registry (tracks which integration owns each command).
+ */
+function readCommandRegistry(): CommandRegistry {
+  if (!existsSync(COMMAND_REGISTRY_PATH)) {
+    return { commands: {}, excluded: {} };
+  }
+  try {
+    return JSON.parse(readFileSync(COMMAND_REGISTRY_PATH, 'utf-8'));
+  } catch {
+    return { commands: {}, excluded: {} };
+  }
+}
+
+function writeCommandRegistry(registry: CommandRegistry): void {
+  mkdirSync(join(CONVERSE_WORKSPACE, '.claude'), { recursive: true });
+  writeFileSync(COMMAND_REGISTRY_PATH, JSON.stringify(registry, null, 2) + '\n', 'utf-8');
+}
+
+export interface CommandConflict {
+  commandName: string;
+  existingIntegration: string;
+  newIntegration: string;
+}
+
+/**
+ * Merge integration commands into the converse workspace.
+ *
+ * - Copies .md command files to ~/flow-data/converse-workspace/.claude/commands/
+ * - Tracks ownership in command_registry.json
+ * - Returns conflicts for duplicate command names
+ * - Respects exclusions (per-integration commands.json)
+ */
+export function mergeIntegrationCommands(integrations: Integration[]): CommandConflict[] {
+  mkdirSync(COMMANDS_DIR, { recursive: true });
+
+  const registry = readCommandRegistry();
+  const conflicts: CommandConflict[] = [];
+  const activeCommands = new Set<string>();
+
+  for (const integration of integrations) {
+    if (integration.disabled) continue;
+
+    // Read per-integration command config (include/exclude)
+    const excludedCommands = getExcludedCommands(integration);
+
+    for (const cmd of integration.commands) {
+      // Skip excluded commands
+      if (excludedCommands.has(cmd.name)) continue;
+
+      activeCommands.add(cmd.name);
+      const targetPath = join(COMMANDS_DIR, `${cmd.name}.md`);
+
+      // Check for conflicts
+      const existingOwner = registry.commands[cmd.name];
+      if (existingOwner && existingOwner !== integration.name) {
+        // Another integration already owns this command
+        conflicts.push({
+          commandName: cmd.name,
+          existingIntegration: existingOwner,
+          newIntegration: integration.name,
+        });
+        // Skip — first integration wins unless user reconfigures
+        continue;
+      }
+
+      // Copy the command file
+      try {
+        const content = readFileSync(cmd.sourcePath, 'utf-8');
+        writeFileSync(targetPath, content, 'utf-8');
+        registry.commands[cmd.name] = integration.name;
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  // Clean up commands from disabled/removed integrations
+  try {
+    const existingFiles = readdirSync(COMMANDS_DIR).filter(f => f.endsWith('.md'));
+    for (const file of existingFiles) {
+      const name = file.replace(/\.md$/, '');
+      if (!activeCommands.has(name)) {
+        // Remove orphaned command
+        try {
+          unlinkSync(join(COMMANDS_DIR, file));
+        } catch {
+          // ignore
+        }
+        delete registry.commands[name];
+      }
+    }
+  } catch {
+    // Commands dir might not exist yet
+  }
+
+  writeCommandRegistry(registry);
+  return conflicts;
+}
+
+/**
+ * Get the set of excluded command names for an integration.
+ *
+ * Reads from commands.json in the integration directory:
+ *   { "include": ["plan", "work"] }       → only include these
+ *   { "exclude": ["daily-sync"] }          → include all except these
+ */
+function getExcludedCommands(integration: Integration): Set<string> {
+  const configPath = join(integration.path, 'commands.json');
+  if (!existsSync(configPath)) return new Set();
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const allCommandNames = integration.commands.map(c => c.name);
+
+    if (Array.isArray(config.include)) {
+      // Include mode: exclude everything NOT in the include list
+      const includeSet = new Set(config.include as string[]);
+      return new Set(allCommandNames.filter(n => !includeSet.has(n)));
+    }
+
+    if (Array.isArray(config.exclude)) {
+      return new Set(config.exclude as string[]);
+    }
+  } catch {
+    // Invalid JSON
+  }
+
+  return new Set();
+}
+
+/**
+ * Exclude a specific command from an integration.
+ * Updates/creates commands.json in the integration directory.
+ */
+export function excludeCommand(integrationName: string, commandName: string): boolean {
+  const intPath = join(INTEGRATIONS_DIR, integrationName);
+  if (!existsSync(intPath)) return false;
+
+  const configPath = join(intPath, 'commands.json');
+  let config: { include?: string[]; exclude?: string[] } = {};
+
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      config = {};
+    }
+  }
+
+  if (!config.exclude) config.exclude = [];
+  if (!config.exclude.includes(commandName)) {
+    config.exclude.push(commandName);
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  return true;
+}
+
+/**
+ * Include a previously excluded command.
+ */
+export function includeCommand(integrationName: string, commandName: string): boolean {
+  const intPath = join(INTEGRATIONS_DIR, integrationName);
+  const configPath = join(intPath, 'commands.json');
+  if (!existsSync(configPath)) return false;
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    if (Array.isArray(config.exclude)) {
+      config.exclude = config.exclude.filter((n: string) => n !== commandName);
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+      return true;
+    }
+  } catch {
+    // Invalid JSON
+  }
+
+  return false;
+}
+
+/**
+ * Get a summary of all commands and their owners.
+ */
+export function getCommandRegistry(): Record<string, string> {
+  const registry = readCommandRegistry();
+  return registry.commands;
 }
 
 // ============================================================================
@@ -360,11 +635,23 @@ export function scaffoldIntegration(name: string): string {
   writeFileSync(join(intPath, 'skill.md'), `---
 name: ${name}
 description: TODO - describe what this integration does
+# commands_source: ~/path/to/source  (optional — syncs .claude/commands/ from this path)
 ---
 
 # ${name} Skill
 
 TODO: Document the commands and capabilities this integration provides.
+
+## Bringing Your Own Commands
+
+Place .md command files in the \`commands/\` directory of this integration,
+or set \`commands_source\` in frontmatter to point to a directory with \`.claude/commands/\`.
+
+To control which commands are synced, create a \`commands.json\`:
+\`\`\`json
+{ "include": ["cmd1", "cmd2"] }     // only these
+{ "exclude": ["cmd3"] }             // all except these
+\`\`\`
 `, 'utf-8');
 
   writeFileSync(

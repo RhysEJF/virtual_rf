@@ -8,6 +8,9 @@
 
 import blessed from 'blessed';
 import { execSync } from 'child_process';
+import { join } from 'path';
+import { homedir } from 'os';
+import { readFileSync, existsSync } from 'fs';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
 import {
@@ -27,8 +30,23 @@ import {
   cloneIntegration,
   disableIntegration,
   enableIntegration,
+  excludeCommand,
+  includeCommand,
   getIntegrationsDir,
+  getCommandRegistry,
 } from './integrations.js';
+import {
+  createSession,
+  appendSessionMessage,
+  listFlowSessions,
+  loadFlowSession,
+  listClaudeCodeSessions,
+  readClaudeCodeSession,
+  getGitInfo,
+  getGitDiff,
+  getGitLog,
+  SessionSummary,
+} from './sessions.js';
 
 // ============================================================================
 // Types
@@ -67,9 +85,17 @@ const SLASH_COMMANDS = [
   { cmd: '/clear new', desc: 'Clear and start new session' },
   { cmd: '/context', desc: 'Show session context' },
   { cmd: '/copy', desc: 'Copy last response to clipboard' },
+  { cmd: '/git', desc: 'Git status & recent commits' },
+  { cmd: '/git log', desc: 'Git commit history' },
+  { cmd: '/git diff', desc: 'Show current diff' },
+  { cmd: '/history', desc: 'Browse past conversations' },
+  { cmd: '/sessions', desc: 'Browse Claude Code sessions' },
   { cmd: '/settings', desc: 'View permissions' },
   { cmd: '/allow', desc: 'Add a permission' },
   { cmd: '/deny', desc: 'Block a pattern' },
+  { cmd: '/commands', desc: 'List integration commands' },
+  { cmd: '/commands exclude', desc: 'Exclude a command' },
+  { cmd: '/commands include', desc: 'Re-include a command' },
   { cmd: '/integrations', desc: 'List loaded integrations' },
   { cmd: '/integrate', desc: 'Add a new integration' },
   { cmd: '/disable', desc: 'Disable an integration' },
@@ -185,6 +211,10 @@ export class FlowTUI {
   private spinnerFrame = 0;
   private currentVerb = '';
   private verbInterval: ReturnType<typeof setInterval> | null = null;
+  /** Current session ID for persistence */
+  private currentSessionId: string | null = null;
+  /** Default git directory (the Flow repo) */
+  private gitDir: string = join(homedir(), 'flow');
 
   constructor(options: ClaudeSessionOptions = {}) {
     this.claude = new ClaudeSession(options);
@@ -548,9 +578,23 @@ export class FlowTUI {
   // Slash Command Autocomplete
   // --------------------------------------------------------------------------
 
+  /** Get all slash commands: built-in + integration commands */
+  private getAllSlashCommands(): Array<{ cmd: string; desc: string }> {
+    const all = [...SLASH_COMMANDS];
+    const registry = getCommandRegistry();
+    for (const [name, owner] of Object.entries(registry)) {
+      // Don't add if it conflicts with a built-in command
+      if (!all.some(c => c.cmd === `/${name}`)) {
+        all.push({ cmd: `/${name}`, desc: `${owner} command` });
+      }
+    }
+    return all;
+  }
+
   private cycleAutocomplete(currentInput: string): void {
     const prefix = currentInput.toLowerCase();
-    const matches = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+    const allCommands = this.getAllSlashCommands();
+    const matches = allCommands.filter(c => c.cmd.startsWith(prefix));
 
     if (matches.length === 0) return;
 
@@ -568,7 +612,8 @@ export class FlowTUI {
     if (this.state.isLoading || this.state.permissionPrompt) return;
 
     const prefix = input.toLowerCase();
-    const matches = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+    const allCommands = this.getAllSlashCommands();
+    const matches = allCommands.filter(c => c.cmd.startsWith(prefix));
 
     if (matches.length === 0) {
       this.clearAutocompleteHints();
@@ -691,6 +736,7 @@ export class FlowTUI {
         if (args.toLowerCase() === 'new') {
           this.claude.reset();
           this.state.messageCount = 0;
+          this.currentSessionId = null;
           this.showSystemMessage('{#8fbc8f-fg}\u2713{/} Started new session');
         }
         this.showWelcome();
@@ -713,6 +759,10 @@ export class FlowTUI {
         this.handleDenyCommand(args);
         break;
 
+      case '/commands':
+        this.handleCommandsCommand(args);
+        break;
+
       case '/integrations':
         this.showIntegrations();
         break;
@@ -733,13 +783,33 @@ export class FlowTUI {
         this.copyLastResponse();
         break;
 
+      case '/git':
+        this.showGitInfo(args);
+        break;
+
+      case '/history':
+        this.showHistory(args);
+        break;
+
+      case '/sessions':
+        this.showClaudeCodeSessions(args);
+        break;
+
       case '/help':
         this.showHelp();
         break;
 
-      default:
-        this.showSystemMessage(`{#d4a574-fg}Unknown command: ${cmd}{/}  Type {bold}/help{/bold} for commands.`);
+      default: {
+        // Check if this is a synced integration command — inject as instructions
+        const registry = getCommandRegistry();
+        const cmdName = cmd.slice(1); // strip leading /
+        if (registry[cmdName]) {
+          await this.executeIntegrationCommand(cmdName, args, input);
+        } else {
+          this.showSystemMessage(`{#d4a574-fg}Unknown command: ${cmd}{/}  Type {bold}/help{/bold} for commands.`);
+        }
         break;
+      }
     }
   }
 
@@ -849,10 +919,15 @@ export class FlowTUI {
         const remote = i.isRemote ? ' {#6b6b6b-fg}(git){/}' : '';
         const mcp = i.mcpConfig ? ' {#7aa2c9-fg}[MCP]{/}' : '';
         const perms = i.permissions.length > 0 ? ` {#6b6b6b-fg}(${i.permissions.length} perms){/}` : '';
+        const cmds = i.commands.length > 0 ? ` {#d4a574-fg}(${i.commands.length} cmds){/}` : '';
 
-        this.chatLog.log(`  ${status} {bold}${blessed.escape(i.displayName)}{/bold}${remote}${mcp}${perms}`);
+        this.chatLog.log(`  ${status} {bold}${blessed.escape(i.displayName)}{/bold}${remote}${mcp}${perms}${cmds}`);
         if (i.description) {
           this.chatLog.log(`    {#6b6b6b-fg}${blessed.escape(i.description)}{/}`);
+        }
+        if (i.commands.length > 0) {
+          const cmdNames = i.commands.map(c => `/${c.name}`).join(', ');
+          this.chatLog.log(`    {#6b6b6b-fg}Commands: ${cmdNames}{/}`);
         }
       }
     }
@@ -928,6 +1003,139 @@ export class FlowTUI {
   }
 
   // --------------------------------------------------------------------------
+  // Commands Management
+  // --------------------------------------------------------------------------
+
+  private handleCommandsCommand(args: string): void {
+    const parts = args.trim().split(/\s+/);
+    const subCmd = parts[0]?.toLowerCase();
+
+    if (subCmd === 'exclude') {
+      this.handleExcludeCommand(parts.slice(1).join(' '));
+      return;
+    }
+    if (subCmd === 'include') {
+      this.handleIncludeCommand(parts.slice(1).join(' '));
+      return;
+    }
+
+    // List all synced commands
+    const registry = getCommandRegistry();
+    const commandNames = Object.keys(registry).sort();
+
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Integration Commands{/bold}');
+    this.chatLog.log('');
+
+    if (commandNames.length === 0) {
+      this.chatLog.log('  {#6b6b6b-fg}No commands synced from integrations.{/}');
+      this.chatLog.log('  {#6b6b6b-fg}Add commands_source to an integration\'s skill.md frontmatter.{/}');
+    } else {
+      for (const name of commandNames) {
+        const owner = registry[name];
+        this.chatLog.log(
+          `  {#8fbc8f-fg}/${name}{/}  {#6b6b6b-fg}from ${owner}{/}`
+        );
+      }
+    }
+
+    // Also show excluded commands from integrations
+    const integrations = scanIntegrations();
+    const excluded: Array<{ cmd: string; integration: string }> = [];
+    for (const i of integrations) {
+      if (i.disabled) continue;
+      for (const cmd of i.commands) {
+        if (!registry[cmd.name]) {
+          // Command exists in integration but not in registry — might be excluded
+          excluded.push({ cmd: cmd.name, integration: i.name });
+        }
+      }
+    }
+
+    if (excluded.length > 0) {
+      this.chatLog.log('');
+      this.chatLog.log('  {bold}Excluded:{/bold}');
+      for (const e of excluded) {
+        this.chatLog.log(
+          `  {#6b6b6b-fg}/${e.cmd}{/}  {#6b6b6b-fg}from ${e.integration} (excluded){/}`
+        );
+      }
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log('  {#6b6b6b-fg}Use {bold}/commands exclude <integration> <cmd>{/bold}{#6b6b6b-fg} to exclude.{/}');
+    this.chatLog.log('  {#6b6b6b-fg}Use {bold}/commands include <integration> <cmd>{/bold}{#6b6b6b-fg} to re-include.{/}');
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private handleExcludeCommand(args: string): void {
+    const parts = args.trim().split(/\s+/);
+    if (parts.length < 2) {
+      this.showSystemMessage('{#d4a574-fg}Usage: /commands exclude <integration> <command>{/}');
+      return;
+    }
+    const [integrationName, commandName] = parts;
+    if (excludeCommand(integrationName, commandName)) {
+      this.claude.refreshIntegrations();
+      this.showSystemMessage(`{#6b6b6b-fg}\u25cb{/} Excluded /${blessed.escape(commandName)} from ${blessed.escape(integrationName)}`);
+    } else {
+      this.showSystemMessage(`{red-fg}Integration "${blessed.escape(integrationName)}" not found{/}`);
+    }
+  }
+
+  private handleIncludeCommand(args: string): void {
+    const parts = args.trim().split(/\s+/);
+    if (parts.length < 2) {
+      this.showSystemMessage('{#d4a574-fg}Usage: /commands include <integration> <command>{/}');
+      return;
+    }
+    const [integrationName, commandName] = parts;
+    if (includeCommand(integrationName, commandName)) {
+      this.claude.refreshIntegrations();
+      this.showSystemMessage(`{#8fbc8f-fg}\u25cf{/} Re-included /${blessed.escape(commandName)} from ${blessed.escape(integrationName)}`);
+    } else {
+      this.showSystemMessage(`{red-fg}Not found or not excluded{/}`);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Integration Command Execution
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute a synced integration command by reading its .md file
+   * and injecting the instructions into the message sent to Claude.
+   */
+  private async executeIntegrationCommand(cmdName: string, userArgs: string, originalInput: string): Promise<void> {
+    const commandFile = join(homedir(), 'flow-data', 'converse-workspace', '.claude', 'commands', `${cmdName}.md`);
+
+    if (!existsSync(commandFile)) {
+      this.showSystemMessage(`{red-fg}Command file not found: ${cmdName}.md{/}`);
+      return;
+    }
+
+    let instructions: string;
+    try {
+      instructions = readFileSync(commandFile, 'utf-8');
+    } catch {
+      this.showSystemMessage(`{red-fg}Could not read command: ${cmdName}{/}`);
+      return;
+    }
+
+    // Show what the user typed
+    this.appendUserMessage(originalInput);
+
+    // Build the message: command instructions + user arguments
+    const message = userArgs
+      ? `Follow these instructions:\n\n${instructions}\n\n---\n\nUser request: ${userArgs}`
+      : `Follow these instructions:\n\n${instructions}`;
+
+    // Send to Claude
+    await this.sendMessage(message);
+  }
+
+  // --------------------------------------------------------------------------
   // Claude Communication
   // --------------------------------------------------------------------------
 
@@ -997,11 +1205,23 @@ export class FlowTUI {
   private appendUserMessage(content: string): void {
     this.messages.push({ role: 'user', content, timestamp: new Date() });
     this.renderUserMessage(content);
+    this.persistMessage('user', content);
   }
 
   private appendAssistantMessage(content: string): void {
     this.messages.push({ role: 'assistant', content, timestamp: new Date() });
     this.renderAssistantMessage(content);
+    this.persistMessage('assistant', content);
+  }
+
+  private persistMessage(role: 'user' | 'assistant', content: string): void {
+    // Ensure we have a session ID (use Claude's session or generate one)
+    if (!this.currentSessionId) {
+      const claudeId = this.claude.getSessionId();
+      this.currentSessionId = claudeId || `flow_${Date.now()}`;
+      createSession(this.currentSessionId);
+    }
+    appendSessionMessage(this.currentSessionId, role, content);
   }
 
   // --------------------------------------------------------------------------
@@ -1054,19 +1274,39 @@ export class FlowTUI {
 
   private showHelp(): void {
     this.chatLog.log('');
-    this.chatLog.log('  {bold}Commands{/bold}');
+    this.chatLog.log('  {bold}Context{/bold}');
+    this.chatLog.log('');
+    this.chatLog.log('  {#8fbc8f-fg}/git{/}                Git status & recent commits');
+    this.chatLog.log('  {#8fbc8f-fg}/git log{/}            Full commit history');
+    this.chatLog.log('  {#8fbc8f-fg}/git diff{/}           Show current diff');
+    this.chatLog.log('  {#8fbc8f-fg}/history{/}            Browse past conversations');
+    this.chatLog.log('  {#8fbc8f-fg}/history <n>{/}        View conversation transcript');
+    this.chatLog.log('  {#8fbc8f-fg}/sessions{/}           Browse Claude Code sessions');
+    this.chatLog.log('  {#8fbc8f-fg}/sessions <n>{/}       View session transcript');
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Session{/bold}');
     this.chatLog.log('');
     this.chatLog.log('  {#8fbc8f-fg}/clear{/}              Clear the chat');
     this.chatLog.log('  {#8fbc8f-fg}/clear new{/}          Clear and start new session');
     this.chatLog.log('  {#8fbc8f-fg}/context{/}            Show session context');
     this.chatLog.log('  {#8fbc8f-fg}/copy{/}               Copy last response to clipboard');
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Integrations & Commands{/bold}');
+    this.chatLog.log('');
+    this.chatLog.log('  {#8fbc8f-fg}/commands{/}                          List synced commands');
+    this.chatLog.log('  {#8fbc8f-fg}/commands exclude <int> <cmd>{/}      Exclude a command');
+    this.chatLog.log('  {#8fbc8f-fg}/commands include <int> <cmd>{/}      Re-include a command');
+    this.chatLog.log('  {#8fbc8f-fg}/integrations{/}                      List loaded integrations');
+    this.chatLog.log('  {#8fbc8f-fg}/integrate <name>{/}                  Add a new integration');
+    this.chatLog.log('  {#8fbc8f-fg}/disable <name>{/}                    Disable an integration');
+    this.chatLog.log('  {#8fbc8f-fg}/enable <name>{/}                     Re-enable an integration');
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Permissions{/bold}');
+    this.chatLog.log('');
     this.chatLog.log('  {#8fbc8f-fg}/settings{/}           View permissions');
     this.chatLog.log('  {#8fbc8f-fg}/allow "pattern"{/}    Add a permission');
     this.chatLog.log('  {#8fbc8f-fg}/deny "pattern"{/}     Block a pattern');
-    this.chatLog.log('  {#8fbc8f-fg}/integrations{/}       List loaded integrations');
-    this.chatLog.log('  {#8fbc8f-fg}/integrate <name>{/}   Add a new integration');
-    this.chatLog.log('  {#8fbc8f-fg}/disable <name>{/}     Disable an integration');
-    this.chatLog.log('  {#8fbc8f-fg}/enable <name>{/}      Re-enable an integration');
+    this.chatLog.log('');
     this.chatLog.log('  {#8fbc8f-fg}/help{/}               Show this help');
     this.chatLog.log('  {#8fbc8f-fg}/exit{/}               Exit');
     this.chatLog.log('');
@@ -1092,6 +1332,310 @@ export class FlowTUI {
     this.chatLog.log(`  {#6b6b6b-fg}Engine:{/}    Claude Code CLI`);
     this.chatLog.log('');
     this.screen.render();
+  }
+
+  // --------------------------------------------------------------------------
+  // Git Commands
+  // --------------------------------------------------------------------------
+
+  private showGitInfo(args: string): void {
+    const subCmd = args.split(' ')[0]?.toLowerCase();
+
+    if (subCmd === 'log') {
+      this.showGitLog();
+      return;
+    }
+    if (subCmd === 'diff') {
+      this.showGitDiffView();
+      return;
+    }
+
+    // Default: status + short log
+    const cwd = this.resolveGitDir();
+    const info = getGitInfo(cwd, { includeDiff: false });
+
+    if (!info) {
+      this.showSystemMessage(`{red-fg}Not a git repository: ${blessed.escape(cwd.replace(homedir(), '~'))}{/}`);
+      return;
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log(`  {bold}Git Status{/bold}  {#6b6b6b-fg}${blessed.escape(cwd.replace(homedir(), '~'))}{/}`);
+    this.chatLog.log('');
+    this.chatLog.log(`  {#8fbc8f-fg}Branch:{/} ${blessed.escape(info.branch)}${info.aheadBehind ? `  {#6b6b6b-fg}(${info.aheadBehind}){/}` : ''}`);
+    this.chatLog.log('');
+
+    if (info.status) {
+      this.chatLog.log('  {bold}Changes:{/bold}');
+      for (const line of info.status.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const code = trimmed.slice(0, 2);
+        const file = trimmed.slice(3);
+        let color = '#e0e0e0';
+        if (code.includes('M')) color = '#d4a574';
+        else if (code.includes('A') || code.includes('?')) color = '#8fbc8f';
+        else if (code.includes('D')) color = '#c97070';
+        this.chatLog.log(`    {#6b6b6b-fg}${blessed.escape(code)}{/} {${color}-fg}${blessed.escape(file)}{/}`);
+      }
+    } else {
+      this.chatLog.log('  {#8fbc8f-fg}Working tree clean{/}');
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Recent Commits:{/bold}');
+    if (info.log) {
+      for (const line of info.log.split('\n').slice(0, 10)) {
+        const [hash, ...rest] = line.split(' ');
+        this.chatLog.log(`    {#6b6b6b-fg}${blessed.escape(hash)}{/} ${blessed.escape(rest.join(' '))}`);
+      }
+    } else {
+      this.chatLog.log('    {#6b6b6b-fg}No commits{/}');
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log('  {#6b6b6b-fg}Use {bold}/git log{/bold}{#6b6b6b-fg} for full history, {bold}/git diff{/bold}{#6b6b6b-fg} for changes{/}');
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private showGitLog(): void {
+    const cwd = this.resolveGitDir();
+    const log = getGitLog(cwd, 25);
+
+    if (!log) {
+      this.showSystemMessage(`{red-fg}No git log available for ${blessed.escape(cwd.replace(homedir(), '~'))}{/}`);
+      return;
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log(`  {bold}Git Log{/bold}  {#6b6b6b-fg}${blessed.escape(cwd.replace(homedir(), '~'))}{/}`);
+    this.chatLog.log('');
+    for (const line of log.split('\n')) {
+      this.chatLog.log(`    ${blessed.escape(line)}`);
+    }
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private showGitDiffView(): void {
+    const cwd = this.resolveGitDir();
+    const diff = getGitDiff(cwd);
+
+    if (!diff) {
+      this.showSystemMessage('{#8fbc8f-fg}No changes to show{/}');
+      return;
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log(`  {bold}Git Diff{/bold}  {#6b6b6b-fg}${blessed.escape(cwd.replace(homedir(), '~'))}{/}`);
+    this.chatLog.log('');
+
+    for (const line of diff.split('\n')) {
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        this.chatLog.log(`  {#8fbc8f-fg}${blessed.escape(line)}{/}`);
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        this.chatLog.log(`  {#c97070-fg}${blessed.escape(line)}{/}`);
+      } else if (line.startsWith('@@')) {
+        this.chatLog.log(`  {#7ca8cf-fg}${blessed.escape(line)}{/}`);
+      } else if (line.startsWith('===')) {
+        this.chatLog.log(`  {bold}${blessed.escape(line)}{/bold}`);
+      } else {
+        this.chatLog.log(`  ${blessed.escape(line)}`);
+      }
+    }
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private resolveGitDir(): string {
+    return this.gitDir;
+  }
+
+  // --------------------------------------------------------------------------
+  // History & Sessions
+  // --------------------------------------------------------------------------
+
+  private showHistory(args: string): void {
+    const trimmed = args.trim();
+
+    // If a number, show that session
+    if (trimmed && /^\d+$/.test(trimmed)) {
+      const sessions = listFlowSessions(20);
+      const idx = parseInt(trimmed, 10) - 1;
+      if (idx < 0 || idx >= sessions.length) {
+        this.showSystemMessage(`{red-fg}Session ${trimmed} not found. Use /history to see available sessions.{/}`);
+        return;
+      }
+      this.showSessionTranscript(sessions[idx]);
+      return;
+    }
+
+    // If a session ID, load directly
+    if (trimmed && !trimmed.startsWith('-')) {
+      const record = loadFlowSession(trimmed);
+      if (record) {
+        this.showFlowSessionTranscript(record);
+        return;
+      }
+      this.showSystemMessage(`{red-fg}Session "${blessed.escape(trimmed)}" not found{/}`);
+      return;
+    }
+
+    // List recent sessions
+    const sessions = listFlowSessions(15);
+
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Recent Conversations{/bold}');
+    this.chatLog.log('');
+
+    if (sessions.length === 0) {
+      this.chatLog.log('  {#6b6b6b-fg}No saved conversations yet. Your conversations are saved automatically.{/}');
+    } else {
+      for (let i = 0; i < sessions.length; i++) {
+        const s = sessions[i];
+        const date = this.formatRelativeDate(s.timestamp);
+        const msgs = s.messageCount > 0 ? `${s.messageCount} msgs` : '';
+        this.chatLog.log(
+          `  {#8fbc8f-fg}${String(i + 1).padStart(2)}{/}  {#6b6b6b-fg}${date}{/}  ${msgs ? `{#6b6b6b-fg}(${msgs}){/}  ` : ''}${blessed.escape(s.firstMessage)}`
+        );
+      }
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log('  {#6b6b6b-fg}Use {bold}/history <n>{/bold}{#6b6b6b-fg} to view a conversation{/}');
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private showClaudeCodeSessions(args: string): void {
+    const trimmed = args.trim();
+
+    // If a number, view that session
+    if (trimmed && /^\d+$/.test(trimmed)) {
+      const sessions = listClaudeCodeSessions(20);
+      const idx = parseInt(trimmed, 10) - 1;
+      if (idx < 0 || idx >= sessions.length) {
+        this.showSystemMessage(`{red-fg}Session ${trimmed} not found{/}`);
+        return;
+      }
+      this.showClaudeCodeSessionTranscript(sessions[idx]);
+      return;
+    }
+
+    // List Claude Code sessions
+    const sessions = listClaudeCodeSessions(15);
+
+    this.chatLog.log('');
+    this.chatLog.log('  {bold}Claude Code Sessions{/bold}');
+    this.chatLog.log('');
+
+    if (sessions.length === 0) {
+      this.chatLog.log('  {#6b6b6b-fg}No Claude Code sessions found at ~/.claude/projects/{/}');
+    } else {
+      for (let i = 0; i < sessions.length; i++) {
+        const s = sessions[i];
+        const date = this.formatRelativeDate(s.timestamp);
+        this.chatLog.log(
+          `  {#d4a574-fg}${String(i + 1).padStart(2)}{/}  {#6b6b6b-fg}${date}{/}  ${blessed.escape(s.firstMessage)}`
+        );
+      }
+    }
+
+    this.chatLog.log('');
+    this.chatLog.log('  {#6b6b6b-fg}Use {bold}/sessions <n>{/bold}{#6b6b6b-fg} to view a session transcript{/}');
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private showSessionTranscript(summary: SessionSummary): void {
+    if (summary.source === 'flow') {
+      const record = loadFlowSession(summary.id);
+      if (!record) {
+        this.showSystemMessage('{red-fg}Could not load session{/}');
+        return;
+      }
+      this.showFlowSessionTranscript(record);
+    } else {
+      this.showClaudeCodeSessionTranscript(summary);
+    }
+  }
+
+  private showFlowSessionTranscript(record: { id: string; startedAt: string; messages: Array<{ role: string; content: string; timestamp: string }> }): void {
+    this.chatLog.log('');
+    this.chatLog.log(`  {bold}Session{/bold}  {#6b6b6b-fg}${record.id}{/}`);
+    this.chatLog.log(`  {#6b6b6b-fg}Started: ${new Date(record.startedAt).toLocaleString()}{/}`);
+    this.chatLog.log(`  {#2a2a2a-fg}${'─'.repeat(Math.max(20, (this.screen.width as number) - 12))}{/}`);
+    this.chatLog.log('');
+
+    for (const msg of record.messages) {
+      if (msg.role === 'user') {
+        this.chatLog.log(`  {#8fbc8f-fg}\u2503{/} {bold}You{/bold}`);
+        for (const line of msg.content.split('\n')) {
+          this.chatLog.log(`  {#8fbc8f-fg}\u2503{/} ${blessed.escape(line)}`);
+        }
+      } else if (msg.role === 'assistant') {
+        this.chatLog.log(`  {#d4a574-fg}\u2503{/} {bold}{#d4a574-fg}Flow{/}`);
+        const preview = msg.content.length > 300 ? msg.content.slice(0, 297) + '...' : msg.content;
+        for (const line of preview.split('\n')) {
+          this.chatLog.log(`  {#d4a574-fg}\u2503{/}  ${blessed.escape(line)}`);
+        }
+      }
+      this.chatLog.log('');
+    }
+
+    this.chatLog.log(`  {#2a2a2a-fg}${'─'.repeat(Math.max(20, (this.screen.width as number) - 12))}{/}`);
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private showClaudeCodeSessionTranscript(summary: SessionSummary): void {
+    const messages = readClaudeCodeSession(summary.filePath);
+
+    this.chatLog.log('');
+    this.chatLog.log(`  {bold}Claude Code Session{/bold}  {#6b6b6b-fg}${summary.id.slice(0, 20)}...{/}`);
+    this.chatLog.log(`  {#6b6b6b-fg}${summary.timestamp.toLocaleString()}{/}`);
+    this.chatLog.log(`  {#2a2a2a-fg}${'─'.repeat(Math.max(20, (this.screen.width as number) - 12))}{/}`);
+    this.chatLog.log('');
+
+    if (messages.length === 0) {
+      this.chatLog.log('  {#6b6b6b-fg}(no readable messages){/}');
+    } else {
+      for (const msg of messages) {
+        if (msg.role === 'user') {
+          this.chatLog.log(`  {#8fbc8f-fg}\u2503{/} {bold}You{/bold}`);
+          const preview = msg.content.length > 200 ? msg.content.slice(0, 197) + '...' : msg.content;
+          for (const line of preview.split('\n')) {
+            this.chatLog.log(`  {#8fbc8f-fg}\u2503{/} ${blessed.escape(line)}`);
+          }
+        } else if (msg.role === 'assistant') {
+          this.chatLog.log(`  {#7ca8cf-fg}\u2503{/} {bold}{#7ca8cf-fg}Claude{/}`);
+          const preview = msg.content.length > 300 ? msg.content.slice(0, 297) + '...' : msg.content;
+          for (const line of preview.split('\n')) {
+            this.chatLog.log(`  {#7ca8cf-fg}\u2503{/}  ${blessed.escape(line)}`);
+          }
+        }
+        this.chatLog.log('');
+      }
+    }
+
+    this.chatLog.log(`  {#2a2a2a-fg}${'─'.repeat(Math.max(20, (this.screen.width as number) - 12))}{/}`);
+    this.chatLog.log('');
+    this.screen.render();
+  }
+
+  private formatRelativeDate(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
   }
 
   // --------------------------------------------------------------------------

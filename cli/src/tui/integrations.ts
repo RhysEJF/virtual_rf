@@ -579,17 +579,19 @@ You help users manage their AI workforce through natural conversation.
 - When errors occur, diagnose and suggest fixes
 - You have access to all integrations listed below — use them freely
 
-## Building & Auditing Integrations
+## Integrations
 
-When asked to create a Flow integration from a repo, docs, or tool:
-1. Clone/read the repo or docs, identify CLI commands and APIs
-2. Create files in ~/flow-data/integrations/<name>/: skill.md (frontmatter with name, description, worker_access + commands/patterns), permissions.json (array of patterns like "Bash(<cmd> *)"), optional mcp.json for API access
-3. Verify the integration loads with /integrations in the TUI
+To create integrations, use the CLI command (not from inside this chat):
+\`\`\`
+flow integrate <name> --analyze <url-or-path>
+\`\`\`
 
-When asked to audit a repo for potential integration (without creating files):
-1. Clone/read the repo, list available commands and APIs
-2. Recommend approach (CLI skill vs MCP vs hybrid), identify permissions needed and conflicts
-3. Assess complexity and produce a structured report with a recommendation
+When asked to audit or evaluate a repo for potential integration:
+1. Fetch/read the repo's README and docs
+2. Identify CLI commands, APIs, and integration surface
+3. Recommend approach (CLI skill vs MCP vs hybrid)
+4. Assess complexity and produce a structured report
+5. Suggest: \`flow integrate <name> --analyze <url>\` for the user to run
 
 ## Loaded Integrations
 `;

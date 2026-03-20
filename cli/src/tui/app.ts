@@ -497,6 +497,9 @@ export class FlowTUI {
   private showPermissionPrompt(pattern: string, originalMessage: string): void {
     this.state.permissionPrompt = { active: true, pattern, originalMessage };
 
+    // Blur input so screen-level keys (a/s/Esc) work
+    this.chatLog.focus();
+
     // Show prompt in status area
     this.statusBox.height = 4;
     this.chatLog.bottom = 9;
@@ -517,11 +520,12 @@ export class FlowTUI {
     // Add the permission permanently
     addPermission(pattern);
 
-    // Dismiss prompt UI
+    // Dismiss prompt UI and refocus input
     this.state.permissionPrompt = null;
     this.statusBox.height = 2;
     this.chatLog.bottom = 7;
     this.statusBox.setContent('');
+    this.inputBox.focus();
 
     // Remove the failed exchange from messages and re-render
     // Pop assistant response, then user message

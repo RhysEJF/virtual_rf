@@ -47,3 +47,4 @@ export { healthCommand } from './health.js';
 export { evolveCommand } from './evolve.js';
 export { evalsCommand, evalCommand } from './evals.js';
 export { grantCommand, revokeCommand } from './grant.js';
+export { integrateCommand, integrationsCommand } from './integrate.js';

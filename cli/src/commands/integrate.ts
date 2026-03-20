@@ -175,11 +175,11 @@ Return a JSON object (and ONLY the JSON, no markdown fences) with this exact str
   "workerAccess": "grant"
 }
 
-For the commands array: only include commands that would be useful as slash commands (frequently used operations). Don't include every subcommand — just the high-value ones.
-
-For permissions: list the Bash patterns needed (e.g., "Bash(gws *)" for a tool called gws).
-
-For skillContent: write actual skill documentation that teaches Claude the tool's commands, patterns, and best practices. Reference specific command syntax.`;
+IMPORTANT rules for the JSON:
+- prerequisites MUST be actual runnable shell commands (e.g., "brew install foo", "npm install -g bar"). Never include prose like "Install X (see website)". If something can't be expressed as a command, omit it.
+- commands: only include high-value frequently-used operations, not every subcommand.
+- permissions: list Bash patterns needed (e.g., "Bash(gws *)" for a tool called gws).
+- skillContent: write actual skill documentation teaching Claude the tool's commands and best practices.`;
 
   // Spawn claude for analysis
   let analysisJson: string;
@@ -289,7 +289,7 @@ For skillContent: write actual skill documentation that teaches Claude the tool'
   if (plan.prerequisites.length > 0) {
     console.log(chalk.bold('  Prerequisites (you run these after):'));
     for (const p of plan.prerequisites) {
-      console.log(`    ${chalk.gray('$')} ${p}`);
+      console.log(`    ${chalk.cyan(p)}`);
     }
     console.log();
   }
@@ -366,7 +366,7 @@ Run the appropriate command for this integration.
   if (plan.prerequisites.length > 0) {
     console.log('  Now run:');
     for (const p of plan.prerequisites) {
-      console.log(`    ${chalk.cyan('$')} ${p}`);
+      console.log(`    ${chalk.cyan(p)}`);
     }
     console.log();
   }

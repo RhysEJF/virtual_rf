@@ -35,6 +35,7 @@ export { flowLogsCommand } from './flow-logs.js';
 export { inspectCommand } from './inspect.js';
 export { flowAuditCommand } from './flow-audit.js';
 export { converseCommand } from './converse.js';
+export { converse2Command } from './converse2.js';
 export { capabilityCommand } from './capability.js';
 export { serverCommand } from './server.js';
 export { serveCommand } from './serve.js';

@@ -11,7 +11,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -186,26 +186,36 @@ IMPORTANT rules for the JSON:
 - skillContent: write actual skill documentation teaching Claude the tool's commands and best practices.
 - mcpConfig: if this is an MCP server (uses @modelcontextprotocol/sdk, stdio transport, etc.), provide the config to connect. Format: {"mcpServers":{"name":{"command":"npx","args":["-y","package-name"],"env":{"TOKEN":"YOUR_TOKEN_HERE"}}}}. Use placeholder strings for secrets. Set to null if this is a CLI tool, not an MCP server.`;
 
-  // Spawn claude for analysis
+  // Spawn claude for analysis (use stdin to avoid arg length limits)
   let analysisJson: string;
   try {
-    analysisJson = execSync(
-      `claude -p ${JSON.stringify(analysisPrompt)} --output-format text --dangerously-skip-permissions`,
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 300000,
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env, CLAUDECODE: undefined },
-      }
-    ).toString().trim();
+    const result = spawnSync('claude', ['-p', '-', '--output-format', 'text', '--dangerously-skip-permissions'], {
+      input: analysisPrompt,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 600000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env, CLAUDECODE: undefined },
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      const stderr = result.stderr?.toString()?.trim() || '';
+      const stdout = result.stdout?.toString()?.trim() || '';
+      throw Object.assign(new Error('Analysis failed'), { stderr, stdout, signal: result.signal });
+    }
+
+    analysisJson = result.stdout.toString().trim();
   } catch (error) {
-    const err = error as { stderr?: Buffer; stdout?: Buffer; status?: number; signal?: string; message?: string };
-    const stderr = err.stderr?.toString()?.trim() || '';
-    const stdout = err.stdout?.toString()?.trim() || '';
+    const err = error as { stderr?: string | Buffer; stdout?: string | Buffer; signal?: string; message?: string; code?: string };
+    const stderr = (typeof err.stderr === 'string' ? err.stderr : err.stderr?.toString())?.trim() || '';
+    const stdout = (typeof err.stdout === 'string' ? err.stdout : err.stdout?.toString())?.trim() || '';
     const signal = err.signal || '';
 
-    if (signal === 'SIGTERM') {
-      console.error(chalk.red('  Error:'), 'Analysis timed out (120s). Try a simpler repo or increase timeout.');
+    if (signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
+      console.error(chalk.red('  Error:'), 'Analysis timed out. Try a simpler target or try again later.');
     } else if (stderr.includes('rate limit') || stdout.includes('rate limit')) {
       console.error(chalk.red('  Error:'), 'Hit Claude rate limit. Wait a moment and try again.');
     } else {

@@ -135,6 +135,9 @@ interface AnalysisPlan {
   commands: Array<{ name: string; description: string }>;
   prerequisites: string[];
   workerAccess: string;
+  mcpConfig?: {
+    mcpServers: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
+  };
 }
 
 async function analyzeAndCreate(name: string, target: string): Promise<void> {
@@ -172,14 +175,16 @@ Return a JSON object (and ONLY the JSON, no markdown fences) with this exact str
   "permissions": ["Bash(toolname *)", "Read"],
   "commands": [{"name": "command-name", "description": "What it does"}],
   "prerequisites": ["brew install something", "tool auth setup"],
-  "workerAccess": "grant"
+  "workerAccess": "grant",
+  "mcpConfig": null
 }
 
 IMPORTANT rules for the JSON:
 - prerequisites MUST be actual runnable shell commands (e.g., "brew install foo", "npm install -g bar"). Never include prose like "Install X (see website)". If something can't be expressed as a command, omit it.
 - commands: only include high-value frequently-used operations, not every subcommand.
 - permissions: list Bash patterns needed (e.g., "Bash(gws *)" for a tool called gws).
-- skillContent: write actual skill documentation teaching Claude the tool's commands and best practices.`;
+- skillContent: write actual skill documentation teaching Claude the tool's commands and best practices.
+- mcpConfig: if this is an MCP server (uses @modelcontextprotocol/sdk, stdio transport, etc.), provide the config to connect. Format: {"mcpServers":{"name":{"command":"npx","args":["-y","package-name"],"env":{"TOKEN":"YOUR_TOKEN_HERE"}}}}. Use placeholder strings for secrets. Set to null if this is a CLI tool, not an MCP server.`;
 
   // Spawn claude for analysis
   let analysisJson: string;
@@ -188,16 +193,26 @@ IMPORTANT rules for the JSON:
       `claude -p ${JSON.stringify(analysisPrompt)} --output-format text --dangerously-skip-permissions`,
       {
         stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 120000,
+        timeout: 300000,
         maxBuffer: 1024 * 1024,
         env: { ...process.env, CLAUDECODE: undefined },
       }
     ).toString().trim();
   } catch (error) {
-    console.error(chalk.red('  Error:'), 'Analysis failed. Make sure claude CLI is installed.');
-    if (error instanceof Error && 'stderr' in error) {
-      const stderr = (error as { stderr: Buffer }).stderr?.toString();
-      if (stderr) console.error(chalk.gray(`  ${stderr.slice(0, 200)}`));
+    const err = error as { stderr?: Buffer; stdout?: Buffer; status?: number; signal?: string; message?: string };
+    const stderr = err.stderr?.toString()?.trim() || '';
+    const stdout = err.stdout?.toString()?.trim() || '';
+    const signal = err.signal || '';
+
+    if (signal === 'SIGTERM') {
+      console.error(chalk.red('  Error:'), 'Analysis timed out (120s). Try a simpler repo or increase timeout.');
+    } else if (stderr.includes('rate limit') || stdout.includes('rate limit')) {
+      console.error(chalk.red('  Error:'), 'Hit Claude rate limit. Wait a moment and try again.');
+    } else {
+      console.error(chalk.red('  Error:'), 'Analysis failed.');
+      if (stderr) console.error(chalk.gray(`  stderr: ${stderr.slice(0, 300)}`));
+      if (stdout) console.error(chalk.gray(`  stdout: ${stdout.slice(0, 300)}`));
+      if (!stderr && !stdout) console.error(chalk.gray(`  ${err.message || 'Unknown error'}`));
     }
     process.exit(1);
   }
@@ -294,6 +309,80 @@ IMPORTANT rules for the JSON:
     console.log();
   }
 
+  // ── MCP Safety Scan ──────────────────────────────────────────────────
+
+  if (plan.mcpConfig) {
+    console.log(chalk.bold('  MCP Server Detected'));
+    console.log();
+
+    // Check if mcp_safety_scan is available
+    let hasSafetyScanner = false;
+    try {
+      execSync('which mcp_safety_scan', { stdio: 'pipe' });
+      hasSafetyScanner = true;
+    } catch {
+      // not installed
+    }
+
+    if (hasSafetyScanner && process.env.OPENAI_API_KEY) {
+      const runScan = await prompt(`  ${chalk.yellow('⚠')} Run safety scan before installing? ${chalk.cyan('[y/n]')}: `);
+
+      if (runScan.toLowerCase() === 'y') {
+        console.log();
+        console.log(chalk.yellow('  Scanning MCP server for vulnerabilities...'));
+        console.log();
+
+        // Write temp config for the scanner
+        const tmpConfig = join(homedir(), '.flow-mcp-scan-tmp.json');
+        try {
+          writeFileSync(tmpConfig, JSON.stringify(plan.mcpConfig, null, 2), 'utf-8');
+
+          const scanOutput = execSync(`mcp_safety_scan --config ${tmpConfig}`, {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeout: 120000,
+            env: { ...process.env },
+          }).toString().trim();
+
+          // Display scan results
+          console.log(chalk.bold('  Safety Scan Results:'));
+          console.log();
+          for (const line of scanOutput.split('\n').slice(0, 30)) {
+            console.log(`  ${line}`);
+          }
+          if (scanOutput.split('\n').length > 30) {
+            console.log(chalk.gray('  ... (truncated)'));
+          }
+          console.log();
+        } catch (scanError) {
+          const err = scanError as { stdout?: Buffer; stderr?: Buffer };
+          const stdout = err.stdout?.toString()?.trim() || '';
+          const stderr = err.stderr?.toString()?.trim() || '';
+          if (stdout) {
+            console.log(chalk.bold('  Safety Scan Results:'));
+            console.log();
+            for (const line of stdout.split('\n').slice(0, 30)) {
+              console.log(`  ${line}`);
+            }
+            console.log();
+          } else {
+            console.log(chalk.yellow('  Safety scan encountered an error.'));
+            if (stderr) console.log(chalk.gray(`  ${stderr.slice(0, 200)}`));
+            console.log();
+          }
+        } finally {
+          try { unlinkSync(tmpConfig); } catch { /* */ }
+        }
+      }
+    } else if (hasSafetyScanner) {
+      console.log(chalk.gray('  Safety scan available but OPENAI_API_KEY not set. Skipping.'));
+      console.log();
+    } else {
+      console.log(chalk.gray('  Tip: Install mcp_safety_scan for automatic security scanning.'));
+      console.log(chalk.gray('  pipx install -e ~/mcpSafetyScanner'));
+      console.log();
+    }
+  }
+
   // ── Approval ──────────────────────────────────────────────────────────
 
   console.log(chalk.gray('  ─'.repeat(30)));
@@ -326,6 +415,11 @@ ${plan.skillContent}
 
   // Write permissions.json
   writeFileSync(join(intPath, 'permissions.json'), JSON.stringify(plan.permissions, null, 2) + '\n', 'utf-8');
+
+  // Write mcp.json if this is an MCP integration
+  if (plan.mcpConfig) {
+    writeFileSync(join(intPath, 'mcp.json'), JSON.stringify(plan.mcpConfig, null, 2) + '\n', 'utf-8');
+  }
 
   // Write commands if any
   const decisions = (plan as AnalysisPlan & { commandDecisions?: Array<{ name: string; action: string; newName?: string }> }).commandDecisions;

@@ -7,6 +7,7 @@
  */
 
 import blessed from 'blessed';
+import { execSync } from 'child_process';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
 import {
@@ -629,6 +630,10 @@ export class FlowTUI {
         this.handleEnableCommand(args);
         break;
 
+      case '/copy':
+        this.copyLastResponse();
+        break;
+
       case '/help':
         this.showHelp();
         break;
@@ -698,6 +703,29 @@ export class FlowTUI {
     }
     denyPermission(pattern);
     this.showSystemMessage(`{red-fg}\u2717{/} Denied: ${blessed.escape(pattern)}`);
+  }
+
+  // --------------------------------------------------------------------------
+  // Clipboard
+  // --------------------------------------------------------------------------
+
+  private copyLastResponse(): void {
+    // Find the last assistant message
+    const lastAssistant = [...this.messages].reverse().find(m => m.role === 'assistant');
+    if (!lastAssistant) {
+      this.showSystemMessage('{#6b6b6b-fg}No response to copy{/}');
+      return;
+    }
+
+    try {
+      // Use pbcopy on macOS, xclip on Linux
+      const platform = process.platform;
+      const cmd = platform === 'darwin' ? 'pbcopy' : 'xclip -selection clipboard';
+      execSync(cmd, { input: lastAssistant.content, stdio: ['pipe', 'pipe', 'pipe'] });
+      this.showSystemMessage('{#8fbc8f-fg}\u2713{/} Copied last response to clipboard');
+    } catch {
+      this.showSystemMessage('{red-fg}Could not copy to clipboard{/}');
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -932,6 +960,7 @@ export class FlowTUI {
     this.chatLog.log('  {#8fbc8f-fg}/clear{/}              Clear the chat');
     this.chatLog.log('  {#8fbc8f-fg}/clear new{/}          Clear and start new session');
     this.chatLog.log('  {#8fbc8f-fg}/context{/}            Show session context');
+    this.chatLog.log('  {#8fbc8f-fg}/copy{/}               Copy last response to clipboard');
     this.chatLog.log('  {#8fbc8f-fg}/settings{/}           View permissions');
     this.chatLog.log('  {#8fbc8f-fg}/allow "pattern"{/}    Add a permission');
     this.chatLog.log('  {#8fbc8f-fg}/deny "pattern"{/}     Block a pattern');
@@ -944,11 +973,12 @@ export class FlowTUI {
     this.chatLog.log('');
     this.chatLog.log('  {bold}Navigation{/bold}');
     this.chatLog.log('');
-    this.chatLog.log('  {#6b6b6b-fg}Tab{/}          Toggle activity log (while loading)');
-    this.chatLog.log('  {#6b6b6b-fg}PgUp/PgDn{/}    Scroll chat');
-    this.chatLog.log('  {#6b6b6b-fg}Up/Down{/}      Input history');
-    this.chatLog.log('  {#6b6b6b-fg}Enter{/}        Send message');
-    this.chatLog.log('  {#6b6b6b-fg}Esc/Ctrl+C{/}   Exit');
+    this.chatLog.log('  {#6b6b6b-fg}Tab{/}              Toggle activity log (while loading)');
+    this.chatLog.log('  {#6b6b6b-fg}PgUp/PgDn{/}        Scroll chat');
+    this.chatLog.log('  {#6b6b6b-fg}Up/Down{/}          Input history');
+    this.chatLog.log('  {#6b6b6b-fg}Enter{/}            Send message');
+    this.chatLog.log('  {#6b6b6b-fg}Shift+Select{/}     Native text selection (copy with Cmd+C)');
+    this.chatLog.log('  {#6b6b6b-fg}Esc/Ctrl+C{/}       Exit');
     this.chatLog.log('');
     this.screen.render();
   }

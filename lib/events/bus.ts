@@ -101,9 +101,10 @@ class FlowEventBus {
 
   private flush(): void {
     if (this.persistQueue.length === 0) return;
-    const batch = this.persistQueue.splice(0);
+    const batch = [...this.persistQueue];
     try {
       persistEvent(batch);
+      this.persistQueue.splice(0, batch.length);
     } catch (err) {
       console.error('[EventBus] Failed to persist events:', err);
     }

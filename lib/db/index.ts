@@ -302,7 +302,10 @@ function runMigrations(database: Database.Database): void {
     { name: 'skill_target', sql: `ALTER TABLE outcomes ADD COLUMN skill_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'tool_target', sql: `ALTER TABLE outcomes ADD COLUMN tool_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'file_target', sql: `ALTER TABLE outcomes ADD COLUMN file_target TEXT NOT NULL DEFAULT 'local'` },
+    { name: 'eval_target', sql: `ALTER TABLE outcomes ADD COLUMN eval_target TEXT NOT NULL DEFAULT 'local'` },
     { name: 'auto_save', sql: `ALTER TABLE outcomes ADD COLUMN auto_save TEXT NOT NULL DEFAULT '0'` },
+    { name: 'auto_resolve_mode', sql: `ALTER TABLE outcomes ADD COLUMN auto_resolve_mode TEXT NOT NULL DEFAULT 'manual'` },
+    { name: 'auto_resolve_threshold', sql: `ALTER TABLE outcomes ADD COLUMN auto_resolve_threshold REAL NOT NULL DEFAULT 0.8` },
   ];
   const outcomesColsRepo = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
   for (const col of repoTargetColumns) {
@@ -319,6 +322,7 @@ function runMigrations(database: Database.Database): void {
   database.exec(`UPDATE outcomes SET skill_target = 'repo' WHERE skill_target IN ('private', 'team')`);
   database.exec(`UPDATE outcomes SET tool_target = 'repo' WHERE tool_target IN ('private', 'team')`);
   database.exec(`UPDATE outcomes SET file_target = 'repo' WHERE file_target IN ('private', 'team')`);
+  database.exec(`UPDATE outcomes SET eval_target = 'repo' WHERE eval_target IN ('private', 'team')`);
   database.exec(`UPDATE outcome_items SET target_override = 'repo' WHERE target_override IN ('private', 'team')`);
 
   // Create outcome_items indexes if they don't exist
@@ -688,6 +692,13 @@ function runMigrations(database: Database.Database): void {
   if (!attemptsCols.some(c => c.name === 'progress_entry_id')) {
     database.exec('ALTER TABLE task_attempts ADD COLUMN progress_entry_id INTEGER');
     console.log('[DB Migration] Added progress_entry_id column to task_attempts');
+  }
+
+  // Add granted_integrations column to outcomes for integration access control
+  const outcomesColsGrants = database.prepare(`PRAGMA table_info(outcomes)`).all() as { name: string }[];
+  if (!outcomesColsGrants.some(c => c.name === 'granted_integrations')) {
+    database.exec("ALTER TABLE outcomes ADD COLUMN granted_integrations TEXT DEFAULT '[]'");
+    console.log('[DB Migration] Added granted_integrations column to outcomes');
   }
 }
 

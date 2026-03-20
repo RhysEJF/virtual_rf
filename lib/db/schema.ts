@@ -126,12 +126,15 @@ export interface Outcome {
   skill_target: SaveTarget;
   tool_target: SaveTarget;
   file_target: SaveTarget;
+  eval_target: SaveTarget;
   auto_save: boolean | 'inherit';   // Auto-save as workers build (or inherit from parent)
   // HOMЯ Auto-resolve settings
   auto_resolve_mode: 'manual' | 'semi-auto' | 'full-auto';  // How to handle escalations
   auto_resolve_threshold: number;   // Confidence threshold for auto-resolution (0.0-1.0)
   // Workspace isolation
   isolation_mode: IsolationMode;    // 'workspace' = isolated, 'codebase' = can modify main
+  // Integration access control
+  granted_integrations: string;     // JSON array of integration names workers can use
 }
 
 export interface DesignDoc {

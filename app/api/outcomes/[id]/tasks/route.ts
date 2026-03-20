@@ -11,6 +11,7 @@ import {
   getPendingTasks,
   createTask,
   createTasksBatch,
+  deleteTask,
   getTaskStats,
   parseGates,
   createEscalationsForPendingGates,
@@ -136,6 +137,31 @@ export async function POST(
       }));
 
       const tasks = createTasksBatch(inputs);
+
+      // Defense-in-depth: verify no created task introduces a dependency cycle.
+      // If a cycle is detected, clean up created tasks and fail the request.
+      const circularErrors: string[] = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const createdTask = tasks[i];
+        const createdDependsOn = inputs[i]?.depends_on || [];
+        if (createdDependsOn.length === 0) continue;
+
+        const circularIds = detectCircularDependencies(createdTask.id, createdDependsOn);
+        if (circularIds.length > 0) {
+          circularErrors.push(`${createdTask.id}: ${circularIds.join(', ')}`);
+        }
+      }
+
+      if (circularErrors.length > 0) {
+        for (const createdTask of tasks) {
+          deleteTask(createdTask.id);
+        }
+        return NextResponse.json(
+          { error: `Circular dependencies detected: ${circularErrors.join(' | ')}` },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json({ tasks }, { status: 201 });
     }
 
@@ -180,6 +206,18 @@ export async function POST(
       optimization_budget: body.optimization_budget,
       metric_direction: body.metric_direction,
     });
+
+    // Defense-in-depth: verify the created task did not introduce a cycle.
+    if (dependsOn.length > 0) {
+      const circularIds = detectCircularDependencies(task.id, dependsOn);
+      if (circularIds.length > 0) {
+        deleteTask(task.id);
+        return NextResponse.json(
+          { error: `Circular dependencies detected: ${circularIds.join(', ')}` },
+          { status: 400 }
+        );
+      }
+    }
 
     // Auto-create escalations for any gates
     if (body.gates && body.gates.length > 0) {

@@ -2,14 +2,21 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand } from './commands/index.js';
+import { statusCommand, listCommand, showCommand, newCommand, startCommand, stopCommand, updateCommand, archiveCommand, taskCommand, tasksCommand, homrCommand, escalationsCommand, answerCommand, dismissCommand, confirmCommand, rejectCommand, chatCommand, skillsCommand, toolsCommand, skillCommand, toolCommand, outputsCommand, filesCommand, workersCommand, workerCommand, interveneCommand, configCommand, syncCommand, retroCommand, reviewCommand, flowPauseCommand, flowResumeCommand, flowLogsCommand, inspectCommand, flowAuditCommand, converseCommand, capabilityCommand, serverCommand, serveCommand, gateCommand, telegramCommand, docsCommand, refineCommand, healthCommand, evolveCommand, evalsCommand, evalCommand, grantCommand, revokeCommand } from './commands/index.js';
+import { FlowTUI } from './tui/app.js';
 
 const program = new Command();
 
 program
   .name('flow')
-  .description('CLI for Flow - manage outcomes and workers')
-  .version('0.1.0');
+  .description('AI workforce management — just type "flow" to start')
+  .version('0.1.0')
+  .option('--yolo', 'Skip all permission checks in chat mode')
+  .action(async (options: { yolo?: boolean }) => {
+    // Bare `flow` with no subcommand → launch the TUI chat
+    const tui = new FlowTUI({ yolo: options.yolo });
+    await tui.start();
+  });
 
 // Register commands
 program.addCommand(statusCommand);
@@ -59,6 +66,8 @@ program.addCommand(healthCommand);
 program.addCommand(evolveCommand);
 program.addCommand(evalsCommand);
 program.addCommand(evalCommand);
+program.addCommand(grantCommand);
+program.addCommand(revokeCommand);
 
 // Command group definitions for --help-all
 const COMMAND_GROUPS: Array<{ label: string; commands: string[] }> = [
@@ -225,9 +234,11 @@ program.addHelpText('after', () => {
  */
 function showGroupedHelp(): void {
   console.log();
-  console.log(chalk.bold.white('  Flow') + chalk.gray(' — AI workforce management'));
+  console.log(chalk.bold.white('  Flow') + chalk.gray(' \u2014 AI workforce management'));
   console.log();
-  console.log(chalk.gray('  Usage: ') + chalk.white('flow <command> [options]'));
+  console.log(chalk.gray('  Usage: ') + chalk.white('flow') + chalk.gray('                    Start the chat interface'));
+  console.log(chalk.gray('         ') + chalk.white('flow <command> [options]') + chalk.gray('  Run a specific command'));
+  console.log(chalk.gray('         ') + chalk.white('flow --yolo') + chalk.gray('              Chat with no permission checks'));
   console.log();
 
   // Build a lookup: command name -> Command object

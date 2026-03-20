@@ -648,7 +648,8 @@ function generateTaskInstructions(
   outcomeId?: string,
   gitConfig?: GitConfig,
   isolationMode?: IsolationMode,
-  workspacePath?: string
+  workspacePath?: string,
+  grantedIntegrations?: string
 ): string {
   const intentSummary = intent?.summary || 'No specific intent defined.';
 
@@ -742,6 +743,17 @@ Your current working directory is a **task-specific** subdirectory. Other tasks 
 `;
   }
 
+  // Build integration skills section (only granted integrations)
+  let integrationSkills = '';
+  if (grantedIntegrations) {
+    try {
+      const { buildWorkerIntegrationSkills } = require('../integrations/grants');
+      integrationSkills = buildWorkerIntegrationSkills(grantedIntegrations);
+    } catch {
+      // Integrations module not available — skip silently
+    }
+  }
+
   // Build teaching context from previous attempts and checkpoints
   const teachingContext = buildTeachingContext(task.id);
 
@@ -752,7 +764,7 @@ ${intentSummary}
 
 ---
 ${isolationInstructions}${gitInstructions}${homrContext ? `\n${homrContext}` : ''}
-${designDocSection ? `${designDocSection}\n---\n` : ''}${teachingContext ? `${teachingContext}\n---\n` : ''}## Your Current Task
+${designDocSection ? `${designDocSection}\n---\n` : ''}${integrationSkills ? `${integrationSkills}\n---\n` : ''}${teachingContext ? `${teachingContext}\n---\n` : ''}## Your Current Task
 
 **ID:** ${task.id}
 **Title:** ${task.title}
@@ -1426,6 +1438,13 @@ export async function startRalphWorker(
               }
               exitReason = 'all_tasks_complete';
             } else {
+              const pendingTasks = getPendingTasks(outcomeId);
+              if (pendingTasks.length > 0) {
+                appendLog(`No claimable task right now (${pendingTasks.length} pending). Reason: ${claimResult.reason || 'unknown'}. Retrying...`);
+                await sleepMs(1500);
+                continue;
+              }
+
               appendLog(`No more pending tasks. Work complete.`);
               exitReason = 'all_tasks_complete';
             }
@@ -1449,7 +1468,9 @@ export async function startRalphWorker(
               }
 
               // Release the task
-              releaseTask(task.id);
+              if (!releaseTask(task.id)) {
+                appendLog(`[Safety] Failed to release blocked task ${task.id}`);
+              }
 
               // Create HOMR escalation for human review
               const safetySignal = buildSafetyEscalationSignal(task, safetyResult);
@@ -1494,7 +1515,9 @@ export async function startRalphWorker(
             // Only case where we don't proceed: task is mid-decomposition
             if (!complexityResult.shouldProceed) {
               appendLog(`[Complexity] Skipping decomposed task: ${complexityResult.reason}`);
-              releaseTask(task.id);
+              if (!releaseTask(task.id)) {
+                appendLog(`[Complexity] Failed to release decomposed task ${task.id}`);
+              }
               continue;
             }
 
@@ -1515,7 +1538,14 @@ export async function startRalphWorker(
           if (onProgress) onProgress({ ...progress });
 
           // Mark task as running
-          startTask(task.id);
+          const startedTask = startTask(task.id);
+          if (!startedTask) {
+            appendLog(`Failed to transition task to running: ${task.id}`);
+            if (!releaseTask(task.id)) {
+              appendLog(`Failed to release unstarted task: ${task.id}`);
+            }
+            continue;
+          }
           const taskStartTime = Date.now();
 
           // Create task workspace
@@ -1611,7 +1641,8 @@ export async function startRalphWorker(
                     outcomeId,
                     gitConfig,
                     outcome.isolation_mode || 'workspace',
-                    wsPath
+                    wsPath,
+                    outcome.granted_integrations
                   ) + `
 ## Evolve Mode — Iteration ${iter} of ${evolveTask.optimization_budget}
 
@@ -1698,7 +1729,14 @@ The system will automatically measure the metric and keep or revert your change.
 
               appendLog(`[Evolve] Completed: ${evolveResult.iterations} iterations, improvement=${evolveResult.improvement}, stopped=${evolveResult.stopped}`);
 
-              completeTask(task.id);
+              if (!completeTask(task.id)) {
+                appendLog(`[Evolve] Failed to mark task completed in DB: ${task.id}`);
+                if (!failTask(task.id)) {
+                  appendLog(`[Evolve] Failed to mark task failed after completion transition error: ${task.id}`);
+                }
+                recordFailure(outcomeId, task.id, 'Evolve completion state transition failed');
+                continue;
+              }
               progress.completedTasks++;
               logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
               getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
@@ -1724,7 +1762,9 @@ The system will automatically measure the metric and keep or revert your change.
               continue;
             } catch (evolveError) {
               appendLog(`[Evolve] Evolve loop error: ${evolveError instanceof Error ? evolveError.message : 'unknown'}`);
-              failTask(task.id);
+              if (!failTask(task.id)) {
+                appendLog(`[Evolve] Failed to transition task to failed state: ${task.id}`);
+              }
               recordFailure(outcomeId, task.id, `Evolve mode error: ${evolveError instanceof Error ? evolveError.message : 'unknown'}`);
               continue;
             }
@@ -1740,7 +1780,8 @@ The system will automatically measure the metric and keep or revert your change.
             outcomeId,
             gitConfig,
             outcome.isolation_mode || 'workspace',
-            outcomeWorkspace
+            outcomeWorkspace,
+            outcome.granted_integrations
           ));
 
           const progressPath = join(taskWorkspace, 'progress.txt');
@@ -1788,7 +1829,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
           // Rate limit: release task back to pending and pause the worker
           if (taskResult.rateLimited) {
             appendLog(`[Rate Limit] Hit subscription limit. Releasing task "${task.title}" back to pending.`);
-            releaseTask(task.id);
+            if (!releaseTask(task.id)) {
+              appendLog(`[Rate Limit] Failed to release task ${task.id} after rate limit`);
+            }
             createProgressEntry({
               outcome_id: outcomeId,
               worker_id: workerId,
@@ -1862,7 +1905,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
             if (exhaustionAttempts >= MAX_EXHAUSTION_RETRIES) {
               appendLog(`[Turn Exhaustion] Task has exhausted ${MAX_EXHAUSTION_RETRIES} retries. Failing task.`);
-              failTask(task.id);
+              if (!failTask(task.id)) {
+                appendLog(`[Turn Exhaustion] Failed to mark task failed: ${task.id}`);
+              }
               logTaskFailed(outcomeId, outcome.name, task.title, `Turn exhaustion after ${MAX_EXHAUSTION_RETRIES} attempts`);
               recordFailure(outcomeId, task.id, 'Turn exhaustion: max retries exceeded');
               createProgressEntry({
@@ -1875,7 +1920,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
               });
             } else {
               appendLog(`[Turn Exhaustion] Releasing back to pending (attempt ${exhaustionAttempts + 1}/${MAX_EXHAUSTION_RETRIES}).`);
-              releaseTask(task.id);
+              if (!releaseTask(task.id)) {
+                appendLog(`[Turn Exhaustion] Failed to release task ${task.id}`);
+              }
               const exhaustionProgressEntry = createProgressEntry({
                 outcome_id: outcomeId,
                 worker_id: workerId,
@@ -1914,13 +1961,15 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             // Run verification if task has a verify_command
             if (task.verify_command) {
               appendLog(`[Verification] Running verify command: ${task.verify_command}`);
-              const verifyResult = await runVerification(task.id, task.verify_command, outcomeWorkspace);
+              const verifyResult = await runVerification(task.id, task.verify_command, taskWorkspace);
               appendLog(`[Verification] ${verifyResult.passed ? 'PASSED' : 'FAILED'} (${verifyResult.durationMs}ms)`);
 
               if (!verifyResult.passed) {
                 // Treat verification failure as task failure — record attempt and retry
                 appendLog(`[Verification] Task will be retried: ${verifyResult.output.slice(0, 200)}`);
-                failTask(task.id);
+                if (!failTask(task.id)) {
+                  appendLog(`[Verification] Failed to transition task to failed state: ${task.id}`);
+                }
                 logTaskFailed(outcomeId, outcome.name, task.title, `Verification failed: ${verifyResult.output.slice(0, 200)}`);
                 getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: 'Verification failed' }, timestamp: new Date().toISOString() });
 
@@ -1979,7 +2028,14 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
               }
             }
 
-            completeTask(task.id);
+            if (!completeTask(task.id)) {
+              appendLog(`Failed to mark task completed in DB: ${task.id}`);
+              if (!failTask(task.id)) {
+                appendLog(`Failed to mark task failed after completion transition error: ${task.id}`);
+              }
+              recordFailure(outcomeId, task.id, 'Completion state transition failed');
+              continue;
+            }
             progress.completedTasks++;
             appendLog(`Task completed: ${task.title}`);
             logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
@@ -2049,7 +2105,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
             // If HOMЯ paused us, break out
             if (!workerState.running) break;
           } else {
-            failTask(task.id);
+            if (!failTask(task.id)) {
+              appendLog(`Failed to transition task to failed state: ${task.id}`);
+            }
             appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
             logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
             getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: taskResult.error }, timestamp: new Date().toISOString() });
@@ -2920,6 +2978,13 @@ export async function runWorkerLoop(
         continue;
       }
 
+      const pendingInPhase = getPendingTasks(outcomeId).filter(t => !phase || t.phase === phase);
+      if (pendingInPhase.length > 0) {
+        appendLog(`No claimable tasks for phase ${phase || 'any'} yet (${pendingInPhase.length} pending). Reason: ${claimResult.reason || 'unknown'}. Retrying...`);
+        await sleepMs(1500);
+        continue;
+      }
+
       appendLog(`No more tasks available for phase: ${phase || 'any'}`);
       break;
     }
@@ -2937,7 +3002,9 @@ export async function runWorkerLoop(
       if (!safetyResult.safe) {
         appendLog(`[Safety] BLOCKED: ${safetyResult.summary} (severity: ${safetyResult.severity})`);
 
-        releaseTask(task.id);
+        if (!releaseTask(task.id)) {
+          appendLog(`[Safety] Failed to release blocked task ${task.id}`);
+        }
 
         const safetySignal = buildSafetyEscalationSignal(task, safetyResult);
         try {
@@ -2967,7 +3034,9 @@ export async function runWorkerLoop(
       // Only case where we don't proceed: task is mid-decomposition
       if (!complexityResult.shouldProceed) {
         appendLog(`[Complexity] Skipping decomposed task: ${complexityResult.reason}`);
-        releaseTask(task.id);
+        if (!releaseTask(task.id)) {
+          appendLog(`[Complexity] Failed to release decomposed task ${task.id}`);
+        }
         continue;
       }
 
@@ -2981,7 +3050,14 @@ export async function runWorkerLoop(
     }
 
     // Mark task as running
-    startTask(task.id);
+    const startedTask = startTask(task.id);
+    if (!startedTask) {
+      appendLog(`Failed to transition task to running: ${task.id}`);
+      if (!releaseTask(task.id)) {
+        appendLog(`Failed to release unstarted task: ${task.id}`);
+      }
+      continue;
+    }
 
     // Create task workspace
     const taskWorkspace = join(outcomeWorkspace, task.id);
@@ -3001,7 +3077,8 @@ export async function runWorkerLoop(
         outcomeId,
         gitConfig,
         outcome.isolation_mode || 'workspace',
-        outcomeWorkspace
+        outcomeWorkspace,
+        outcome.granted_integrations
       )
     );
 
@@ -3098,11 +3175,15 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
 
       if (exhaustionAttempts >= MAX_EXHAUSTION_RETRIES) {
         appendLog(`[Turn Exhaustion] Task has exhausted ${MAX_EXHAUSTION_RETRIES} retries. Failing task.`);
-        failTask(task.id);
+        if (!failTask(task.id)) {
+          appendLog(`[Turn Exhaustion] Failed to transition task to failed state: ${task.id}`);
+        }
         logTaskFailed(outcomeId, outcome.name, task.title, `Turn exhaustion after ${MAX_EXHAUSTION_RETRIES} attempts`);
       } else {
         appendLog(`[Turn Exhaustion] Releasing back to pending (attempt ${exhaustionAttempts + 1}/${MAX_EXHAUSTION_RETRIES}).`);
-        releaseTask(task.id);
+        if (!releaseTask(task.id)) {
+          appendLog(`[Turn Exhaustion] Failed to release task ${task.id}`);
+        }
         try {
           recordAttempt({
             taskId: task.id,
@@ -3128,7 +3209,13 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
     }
 
     if (taskResult.success) {
-      completeTask(task.id);
+      if (!completeTask(task.id)) {
+        appendLog(`Failed to mark task completed in DB: ${task.id}`);
+        if (!failTask(task.id)) {
+          appendLog(`Failed to mark task failed after completion transition error: ${task.id}`);
+        }
+        continue;
+      }
       appendLog(`Task completed: ${task.title}`);
       logTaskCompleted(outcomeId, outcome.name, task.title, workerId);
       getEventBus().emit({ type: 'task.completed', outcomeId, workerId, taskId: task.id, timestamp: new Date().toISOString() });
@@ -3173,7 +3260,9 @@ Complete the task, updating progress.txt as you go. When done, write DONE to pro
         }
       }
     } else {
-      failTask(task.id);
+      if (!failTask(task.id)) {
+        appendLog(`Failed to transition task to failed state: ${task.id}`);
+      }
       appendLog(`Task failed: ${task.title} - ${taskResult.error}`);
       logTaskFailed(outcomeId, outcome.name, task.title, taskResult.error);
       getEventBus().emit({ type: 'task.failed', outcomeId, taskId: task.id, data: { reason: taskResult.error }, timestamp: new Date().toISOString() });

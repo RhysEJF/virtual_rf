@@ -188,7 +188,7 @@ export function getEffectiveRepository(outcomeId: string): Repository | null {
  */
 export function getEffectiveTarget(
   outcomeId: string,
-  targetType: 'output_target' | 'skill_target' | 'tool_target' | 'file_target'
+  targetType: 'output_target' | 'skill_target' | 'tool_target' | 'file_target' | 'eval_target'
 ): 'local' | 'repo' {
   const db = getDb();
 
@@ -246,6 +246,7 @@ export function getEffectiveRepoSettings(outcomeId: string): {
   skill_target: 'local' | 'repo';
   tool_target: 'local' | 'repo';
   file_target: 'local' | 'repo';
+  eval_target: 'local' | 'repo';
   auto_save: boolean;
 } {
   return {
@@ -254,6 +255,7 @@ export function getEffectiveRepoSettings(outcomeId: string): {
     skill_target: getEffectiveTarget(outcomeId, 'skill_target'),
     tool_target: getEffectiveTarget(outcomeId, 'tool_target'),
     file_target: getEffectiveTarget(outcomeId, 'file_target'),
+    eval_target: getEffectiveTarget(outcomeId, 'eval_target'),
     auto_save: getEffectiveAutoSave(outcomeId),
   };
 }
@@ -507,7 +509,7 @@ export function getEffectiveSaveTarget(
     tool: 'tool_target',
     file: 'file_target',
     eval: 'eval_target',
-  }[item.item_type] as 'output_target' | 'skill_target' | 'tool_target' | 'file_target';
+  }[item.item_type] as 'output_target' | 'skill_target' | 'tool_target' | 'file_target' | 'eval_target';
 
   return getEffectiveTarget(outcomeId, targetType);
 }

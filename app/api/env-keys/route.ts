@@ -116,7 +116,7 @@ export async function GET(): Promise<NextResponse> {
     // Also include any custom keys not in our known list
     const knownNames = new Set(KNOWN_API_KEYS.map(k => k.name));
     const customKeys = Array.from(env.keys())
-      .filter(k => !knownNames.has(k) && k.includes('API') || k.includes('KEY'))
+      .filter(k => !knownNames.has(k) && (k.includes('API') || k.includes('KEY')))
       .map(name => ({
         name,
         label: name.replace(/_/g, ' ').replace(/API KEY/gi, 'API Key'),

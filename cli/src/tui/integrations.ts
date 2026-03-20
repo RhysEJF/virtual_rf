@@ -144,12 +144,17 @@ export function scanIntegrations(): Integration[] {
 // ============================================================================
 
 /**
- * Ensure the default flow-cli integration exists.
- * Copies from ~/flow-data/skills/flow-cli.md on first run.
+ * Ensure default integrations exist.
+ * Only creates each integration on first run — never overwrites.
  */
 export function bootstrapDefaultIntegrations(): void {
   mkdirSync(INTEGRATIONS_DIR, { recursive: true });
 
+  bootstrapFlowCli();
+  bootstrapFlowTools();
+}
+
+function bootstrapFlowCli(): void {
   const flowCliDir = join(INTEGRATIONS_DIR, 'flow-cli');
   if (existsSync(flowCliDir)) return;
 
@@ -161,7 +166,6 @@ export function bootstrapDefaultIntegrations(): void {
 
   if (existsSync(existingSkill)) {
     const raw = readFileSync(existingSkill, 'utf-8');
-    // Add frontmatter if not present
     if (raw.startsWith('---')) {
       skillContent = raw;
     } else {
@@ -182,28 +186,86 @@ Run \`flow --help\` for available commands.
 
   writeFileSync(join(flowCliDir, 'skill.md'), skillContent, 'utf-8');
 
-  // Default permissions for flow-cli
-  const permissions = [
-    'Bash(flow *)',
-    'Bash(curl -s http://localhost*)',
-    'Bash(curl http://localhost*)',
-    'Bash(cat *)',
-    'Bash(ls *)',
-    'Bash(head *)',
-    'Bash(tail *)',
-    'Bash(wc *)',
-    'Bash(npm run dev*)',
-    'Bash(npm run build*)',
-    'Read',
-    'Grep',
-    'Glob',
-  ];
-
   writeFileSync(
     join(flowCliDir, 'permissions.json'),
-    JSON.stringify(permissions, null, 2) + '\n',
+    JSON.stringify([
+      'Bash(flow *)',
+      'Bash(curl -s http://localhost*)',
+      'Bash(curl http://localhost*)',
+      'Bash(cat *)',
+      'Bash(ls *)',
+      'Bash(head *)',
+      'Bash(tail *)',
+      'Bash(wc *)',
+      'Bash(npm run dev*)',
+      'Bash(npm run build*)',
+      'Read',
+      'Grep',
+      'Glob',
+    ], null, 2) + '\n',
     'utf-8'
   );
+}
+
+function bootstrapFlowTools(): void {
+  const flowToolsDir = join(INTEGRATIONS_DIR, 'flow-tools');
+  if (existsSync(flowToolsDir)) return;
+
+  mkdirSync(flowToolsDir, { recursive: true });
+
+  // Check if the skill was already created manually (e.g., by setup.sh or user)
+  // If so, the skill.md already exists and we skip
+  const skillPath = join(flowToolsDir, 'skill.md');
+  if (!existsSync(skillPath)) {
+    writeFileSync(skillPath, `---
+name: Flow Tools
+description: Meta-skills for building and auditing Flow integrations
+---
+
+# Flow Tools — Integration Builder & Auditor
+
+Use these skills when asked to create or evaluate a Flow integration.
+
+## Integration Builder
+
+When asked to create a Flow integration from a repo, docs, or tool:
+
+1. Clone/read the repo or docs
+2. Identify CLI commands and APIs
+3. Create files in ~/flow-data/integrations/<name>/:
+   - skill.md — frontmatter (name, description) + commands + patterns + notes
+   - permissions.json — array of permission patterns like "Bash(<cmd> *)"
+   - mcp.json (optional) — MCP server config if the tool has an API server
+4. Verify the integration loads
+
+## Integration Auditor
+
+When asked to audit a repo for potential integration (without creating files):
+
+1. Clone/read the repo
+2. List available commands and APIs
+3. Recommend approach: CLI skill vs MCP vs hybrid
+4. Identify permission needs and command conflicts with existing integrations
+5. Assess complexity (simple/medium/complex) and any risks
+6. Produce a structured report with a clear recommendation
+`, 'utf-8');
+  }
+
+  const permPath = join(flowToolsDir, 'permissions.json');
+  if (!existsSync(permPath)) {
+    writeFileSync(
+      permPath,
+      JSON.stringify([
+        'Bash(git clone *)',
+        'Bash(git pull *)',
+        'Bash(mkdir *)',
+        'Bash(cp *)',
+        'Write',
+        'Edit',
+      ], null, 2) + '\n',
+      'utf-8'
+    );
+  }
 }
 
 // ============================================================================

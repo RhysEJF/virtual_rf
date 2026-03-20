@@ -53,7 +53,30 @@ interface TUIState {
     pattern: string;
     originalMessage: string;
   } | null;
+  /** Autocomplete state */
+  autocompleteIndex: number;
+  autocompleteMatches: string[];
 }
+
+// ============================================================================
+// Slash Commands (for autocomplete)
+// ============================================================================
+
+const SLASH_COMMANDS = [
+  { cmd: '/clear', desc: 'Clear the chat' },
+  { cmd: '/clear new', desc: 'Clear and start new session' },
+  { cmd: '/context', desc: 'Show session context' },
+  { cmd: '/copy', desc: 'Copy last response to clipboard' },
+  { cmd: '/settings', desc: 'View permissions' },
+  { cmd: '/allow', desc: 'Add a permission' },
+  { cmd: '/deny', desc: 'Block a pattern' },
+  { cmd: '/integrations', desc: 'List loaded integrations' },
+  { cmd: '/integrate', desc: 'Add a new integration' },
+  { cmd: '/disable', desc: 'Disable an integration' },
+  { cmd: '/enable', desc: 'Re-enable an integration' },
+  { cmd: '/help', desc: 'Show this help' },
+  { cmd: '/exit', desc: 'Exit' },
+];
 
 // ============================================================================
 // Fun verbs (Claude-style)
@@ -155,6 +178,8 @@ export class FlowTUI {
     activityLogVisible: false,
     activityEntries: [],
     permissionPrompt: null,
+    autocompleteIndex: -1,
+    autocompleteMatches: [],
   };
   private spinnerInterval: ReturnType<typeof setInterval> | null = null;
   private spinnerFrame = 0;
@@ -364,10 +389,33 @@ export class FlowTUI {
       return false;
     });
 
-    // Toggle activity log
+    // Tab: autocomplete slash commands OR toggle activity log
     this.screen.key(['tab'], () => {
-      if (!this.state.isLoading) return;
-      this.toggleActivityLog();
+      // If loading, toggle activity log
+      if (this.state.isLoading) {
+        this.toggleActivityLog();
+        return;
+      }
+
+      // If input starts with /, do autocomplete
+      const value = this.inputBox.getValue().replace(/[\r\n]+$/, '');
+      if (value.startsWith('/')) {
+        this.cycleAutocomplete(value);
+        return;
+      }
+    });
+
+    // Show autocomplete hints on keypress in input
+    this.inputBox.on('keypress', () => {
+      // Defer to next tick so getValue() reflects the latest keystroke
+      setTimeout(() => {
+        const value = this.inputBox.getValue().replace(/[\r\n]+$/, '');
+        if (value.startsWith('/') && !this.state.isLoading) {
+          this.showAutocompleteHints(value);
+        } else {
+          this.clearAutocompleteHints();
+        }
+      }, 0);
     });
 
     // Permission prompt keys — [a] Allow & Retry, [s] Skip
@@ -494,6 +542,57 @@ export class FlowTUI {
       }
     }
     this.screen.render();
+  }
+
+  // --------------------------------------------------------------------------
+  // Slash Command Autocomplete
+  // --------------------------------------------------------------------------
+
+  private cycleAutocomplete(currentInput: string): void {
+    const prefix = currentInput.toLowerCase();
+    const matches = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+
+    if (matches.length === 0) return;
+
+    // Cycle through matches
+    this.state.autocompleteIndex = (this.state.autocompleteIndex + 1) % matches.length;
+    this.state.autocompleteMatches = matches.map(m => m.cmd);
+
+    const selected = matches[this.state.autocompleteIndex];
+    this.inputBox.setValue(selected.cmd);
+    this.showAutocompleteHints(selected.cmd);
+    this.screen.render();
+  }
+
+  private showAutocompleteHints(input: string): void {
+    if (this.state.isLoading || this.state.permissionPrompt) return;
+
+    const prefix = input.toLowerCase();
+    const matches = SLASH_COMMANDS.filter(c => c.cmd.startsWith(prefix));
+
+    if (matches.length === 0) {
+      this.clearAutocompleteHints();
+      return;
+    }
+
+    const hints = matches.map(m => {
+      const highlight = m.cmd === input
+        ? `{#8fbc8f-fg}${m.cmd}{/}`
+        : `{#6b6b6b-fg}${m.cmd}{/}`;
+      return `${highlight} {#404040-fg}${m.desc}{/}`;
+    }).join('  {#2a2a2a-fg}\u2502{/}  ');
+
+    this.statusBox.setContent(hints);
+    this.screen.render();
+  }
+
+  private clearAutocompleteHints(): void {
+    if (!this.state.isLoading && !this.state.permissionPrompt) {
+      this.state.autocompleteIndex = -1;
+      this.state.autocompleteMatches = [];
+      this.statusBox.setContent('');
+      this.screen.render();
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -973,7 +1072,7 @@ export class FlowTUI {
     this.chatLog.log('');
     this.chatLog.log('  {bold}Navigation{/bold}');
     this.chatLog.log('');
-    this.chatLog.log('  {#6b6b6b-fg}Tab{/}              Toggle activity log (while loading)');
+    this.chatLog.log('  {#6b6b6b-fg}Tab{/}              Autocomplete /commands (or toggle activity log)');
     this.chatLog.log('  {#6b6b6b-fg}PgUp/PgDn{/}        Scroll chat');
     this.chatLog.log('  {#6b6b6b-fg}Up/Down{/}          Input history');
     this.chatLog.log('  {#6b6b6b-fg}Enter{/}            Send message');

@@ -230,8 +230,12 @@ IMPORTANT rules for the JSON:
   // Parse the JSON response
   let plan: AnalysisPlan;
   try {
-    // Strip markdown fences if present
-    const cleaned = analysisJson
+    // Extract JSON object from response — Claude may include preamble text
+    const jsonMatch = analysisJson.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON object found in response');
+    }
+    const cleaned = jsonMatch[0]
       .replace(/^```json\s*\n?/, '')
       .replace(/\n?```\s*$/, '')
       .trim();

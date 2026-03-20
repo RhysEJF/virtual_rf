@@ -5,7 +5,7 @@
  * that replace the old "projects" concept.
  */
 
-import { getDb, now } from './index';
+import { getDb, now, transaction } from './index';
 import { generateId } from '../utils/id';
 import type {
   Outcome,
@@ -284,10 +284,12 @@ export interface UpdateOutcomeInput {
   auto_commit?: boolean;
   create_pr_on_complete?: boolean;
   // Save targets
+  repository_id?: string | null;
   output_target?: SaveTarget;
   skill_target?: SaveTarget;
   tool_target?: SaveTarget;
   file_target?: SaveTarget;
+  eval_target?: SaveTarget;
   auto_save?: boolean;
   // Auto-resolve settings
   auto_resolve_mode?: 'manual' | 'semi-auto' | 'full-auto';
@@ -372,6 +374,10 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
     values.push(input.create_pr_on_complete ? 1 : 0);
   }
   // Save target fields
+  if (input.repository_id !== undefined) {
+    updates.push('repository_id = ?');
+    values.push(input.repository_id);
+  }
   if (input.output_target !== undefined) {
     updates.push('output_target = ?');
     values.push(input.output_target);
@@ -387,6 +393,10 @@ export function updateOutcome(id: string, input: UpdateOutcomeInput): Outcome | 
   if (input.file_target !== undefined) {
     updates.push('file_target = ?');
     values.push(input.file_target);
+  }
+  if (input.eval_target !== undefined) {
+    updates.push('eval_target = ?');
+    values.push(input.eval_target);
   }
   if (input.auto_save !== undefined) {
     updates.push('auto_save = ?');
@@ -450,8 +460,25 @@ export function touchOutcome(id: string): void {
 
 export function deleteOutcome(id: string): boolean {
   const db = getDb();
-  const result = db.prepare('DELETE FROM outcomes WHERE id = ?').run(id);
-  return result.changes > 0;
+  return transaction(() => {
+    // These tables currently do not have FK cascades on task_id.
+    // Clean them up explicitly before deleting the outcome.
+    db.prepare(`
+      DELETE FROM task_attempts
+      WHERE task_id IN (SELECT id FROM tasks WHERE outcome_id = ?)
+    `).run(id);
+    db.prepare(`
+      DELETE FROM task_checkpoints
+      WHERE task_id IN (SELECT id FROM tasks WHERE outcome_id = ?)
+    `).run(id);
+    db.prepare(`
+      DELETE FROM experiments
+      WHERE task_id IN (SELECT id FROM tasks WHERE outcome_id = ?)
+    `).run(id);
+
+    const result = db.prepare('DELETE FROM outcomes WHERE id = ?').run(id);
+    return result.changes > 0;
+  });
 }
 
 // ============================================================================

@@ -873,7 +873,7 @@ export function claimNextTask(
       return {
         success: false,
         task: null,
-        reason: `Task ${task.id} is being decomposed (status: ${freshTask.decomposition_status})`,
+        reason: `Retry claim: task ${task.id} changed decomposition_status to '${freshTask.decomposition_status}'`,
       };
     }
 

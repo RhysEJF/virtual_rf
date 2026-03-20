@@ -643,6 +643,109 @@ Derby's differentiator: many agents propose simultaneously, evaluator processes 
 
 ---
 
+### 19. Local-Only API Safety Mode (Pre-Hosted Guardrails)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-20 |
+| **Source** | Security audit follow-up for open-source readiness |
+| **Category** | Security hardening |
+
+**Problem:**
+Flow's internal HTTP routes are intentionally unauthenticated for localhost use. If users accidentally expose the app to LAN/internet, those same routes become remote-control surfaces.
+
+**Proposed Solution:**
+Add a "local safety mode" guardrail package:
+- Explicit docs that Flow APIs are local control-plane APIs.
+- Optional startup guard/warning when binding beyond localhost.
+- Optional lightweight access token mode for users who intentionally expose Flow.
+
+**Value:** Keeps local-first simplicity while reducing accidental insecure deployments.
+
+**Effort:** Small-Medium
+
+**References:** `app/api/**`, `docs/vision/DEPLOYMENT.md`, `CLAUDE.md`
+
+---
+
+### 20. Unified Command Execution Hardening (Verify + Evolve)
+
+| Field | Value |
+|-------|-------|
+| **Status** | `researching` |
+| **Added** | 2026-03-20 |
+| **Source** | Security audit follow-up + upcoming 24/7 operator experiment |
+| **Category** | Security hardening |
+
+**Problem:**
+`verify_command` is now hardened, but evolve `metric_command` still executes shell command strings. Execution policy is inconsistent across command surfaces.
+
+**Proposed Solution:**
+Create one shared execution policy for all task-supplied commands:
+- argv-based execution where possible (no shell by default)
+- explicit allow/deny rules for command forms
+- clear user feedback when a command is blocked or unsupported
+
+**Value:** Reduces command-injection risk and keeps behavior predictable as Flow scales to semi-remote operation.
+
+**Effort:** Medium
+
+**References:** `lib/ralph/verification.ts`, `lib/ralph/evolve-loop.ts`
+
+---
+
+### 21. Output File Serving Realpath Boundary
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-20 |
+| **Source** | Security audit follow-up |
+| **Category** | Security hardening |
+
+**Problem:**
+Output file serving validates normalized paths, but symlink resolution can still create edge cases where a path appears inside workspace while pointing outside.
+
+**Proposed Solution:**
+Resolve and validate canonical real paths before read operations:
+- compare `realpath(workspace)` vs `realpath(target)`
+- reject reads outside workspace boundary
+- add tests for symlink escape attempts
+
+**Value:** Stronger file-boundary guarantees for future non-local deployments.
+
+**Effort:** Small
+
+**References:** `app/api/outcomes/[id]/outputs/[...path]/route.ts`
+
+---
+
+### 22. Worker Claim/Completion Race Hardening
+
+| Field | Value |
+|-------|-------|
+| **Status** | `planned` |
+| **Added** | 2026-03-20 |
+| **Source** | Reliability audit follow-up |
+| **Category** | Reliability |
+
+**Problem:**
+Under rare timing races, workers can stop early and report "all tasks complete" when claimable work still exists.
+
+**Proposed Solution:**
+- Retry/continue claim flow on transient race states
+- avoid treating claim failure as completion without confirming empty work queues
+- align worker loops so verification/completion behavior is consistent
+
+**Value:** Improves reliability in long-running autonomous sessions and reduces false "done" states.
+
+**Effort:** Medium
+
+**References:** `lib/db/tasks.ts`, `lib/ralph/worker.ts`, `lib/ralph/orchestrator.ts`
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

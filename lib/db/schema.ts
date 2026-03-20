@@ -126,6 +126,7 @@ export interface Outcome {
   skill_target: SaveTarget;
   tool_target: SaveTarget;
   file_target: SaveTarget;
+  eval_target: SaveTarget;
   auto_save: boolean | 'inherit';   // Auto-save as workers build (or inherit from parent)
   // HOMЯ Auto-resolve settings
   auto_resolve_mode: 'manual' | 'semi-auto' | 'full-auto';  // How to handle escalations

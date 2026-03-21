@@ -588,6 +588,97 @@ Possible approaches (not yet decided):
 
 ---
 
+### 18. Model-Agnostic Worker Execution Layer
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-21 |
+| **Source** | User request — exploring local models (Kimi) and cost reduction |
+| **Category** | Major re-architecture |
+| **Related** | Extends Idea #9 (Oracle Network) from consultation to full execution |
+
+**Problem:**
+Everything in Flow is hardcoded to `spawn('claude', ...)` via `lib/claude/client.ts`. The entire worker execution model, HOMЯ intelligence layer, and ~20 supporting agents are all coupled to Claude CLI. This means: (1) no cost flexibility — every task burns Claude Max subscription turns, (2) no model diversity — Claude judging Claude, (3) can't run locally/offline, (4) can't use emerging open-source models that may be better for specific task types (e.g. coding vs writing vs analysis).
+
+**Proposed Solution:**
+Abstract `lib/claude/client.ts` into a provider interface and support multiple execution backends:
+
+1. **Provider interface** — `spawn()`, `complete()`, `parseOutput()` methods. Each provider implements the contract.
+2. **ClaudeProvider** — Current behaviour, wraps Claude CLI.
+3. **GooseProvider** — [Goose](https://github.com/block/goose) by Block. Open-source, Apache 2.0, supports 25+ LLM providers including local via Ollama. Closest match to Claude Code's execution model (autonomous file access, shell commands, multi-step workflows, MCP support).
+4. **OpenCodeProvider** — [OpenCode](https://github.com/opencode-ai/opencode). Go-based, 75+ providers, CLI mode with agents and tool access.
+5. **Config-driven selection** — Pick provider globally, per-outcome, or per-task. Route cheap analysis tasks to local models, keep complex coding tasks on Claude.
+
+**Three integration layers (different difficulty):**
+
+| Layer | Current | Swap Difficulty | Notes |
+|-------|---------|----------------|-------|
+| Worker execution (Ralph) | `spawn('claude')` | 🔴 Hard | Needs agentic CLI with file/shell access. Goose is best candidate. |
+| HOMЯ intelligence | `complete()` calls | 🟡 Medium | Single-turn structured JSON. Any good API works. |
+| Supporting agents (~20) | `complete()` calls | 🟢 Easy | Simple prompt→completion. Trivial API swap. |
+
+**Fastest path (hybrid):**
+Keep Claude for worker execution, route HOMЯ + agent `complete()` calls to local/cheaper models via a modified `client.ts`. Gets ~60-70% of cost savings with ~20% of the work. Then gradually swap worker execution as open-source agentic CLIs mature.
+
+**Key candidates researched:**
+- **Goose** (Block) — best fit for worker layer. Autonomous, file access, shell access, MCP, 25+ providers, Apache 2.0.
+- **OpenCode** — best fit for flexibility. 75+ providers, CLI mode, agents with custom prompts.
+- **Aider** — code-focused only, less suitable for non-coding tasks (copy writing, simulations).
+
+**Open questions:**
+- Do Goose/OpenCode support the same output format (JSON with cost/token tracking) that Flow's worker monitoring expects?
+- Can Goose handle the `progress.txt` polling pattern, or does the worker monitor need rewriting?
+- What's the quality drop-off for HOMЯ observations when using a local model vs Claude?
+- Should provider selection be static config or dynamic (HOMЯ routes based on task complexity)?
+
+**Value:** Cost flexibility. Model diversity breaks Claude-judging-Claude loop. Local/offline capability. Future-proofs Flow against model landscape changes. Enables running Flow on own hardware (ties into long-term basement server vision from Idea #9).
+
+**Effort:** High (full provider abstraction + worker rewrite) or Low-Medium (hybrid approach — just route `complete()` calls)
+
+**References:** [Goose GitHub](https://github.com/block/goose), [OpenCode GitHub](https://github.com/opencode-ai/opencode), Idea #9 (Oracle Network)
+
+---
+
+### 19. Redesign Task Verification System
+
+| Field | Value |
+|-------|-------|
+| **Status** | `proposed` |
+| **Added** | 2026-03-21 |
+| **Source** | GPP Marketing Website outcome (`out_sZu8uLyJQTC0`) — repeated blocking failures |
+| **Category** | Bug fix / redesign |
+
+**Problem:**
+The `verify_command` field on tasks is meant to provide deterministic post-completion checks (e.g. "does the output file exist?"). In practice, it's causing repeated outcome-wide stalls:
+
+1. **The refiner auto-generates verify commands with shell operators** (`&&`, `|`, `awk`) on every task during `flow refine`. Flow's security guard then blocks these as "shell operators are not allowed." The task completes its work successfully but fails verification — and the worker pauses.
+2. **This affects every task in the outcome**, not just the one being worked on. Workers cycle through tasks, hit the same verification wall on each, and eventually all pause. The outcome grinds to a halt.
+3. **The failure is silent and repetitive** — workers retry the same task 3+ times, burn turns, and pause without surfacing a clear error to the user. The GPP website outcome stalled for hours across multiple worker restarts before the root cause was identified.
+4. **Manual fix required clearing verify_command via direct API calls** (`curl -X PATCH`) on every task — the CLI has no `--verify-command` flag.
+
+**Root causes:**
+- The refine prompt tells workers to set verify commands, but doesn't constrain them to safe patterns
+- The guard blocks shell operators but doesn't fail gracefully — it just rejects and the worker retries
+- No CLI support for managing verify_command (`flow task update` has no `--verify-command` flag)
+- The refiner shouldn't be generating verify commands at all for non-code tasks (writing, analysis, simulations)
+
+**Proposed Solutions (pick one or combine):**
+
+1. **Remove verify_command from the refine prompt entirely** — the refiner shouldn't guess at verification. Let task creators set it intentionally.
+2. **Validate verify_command at write time** — reject commands with shell operators when they're set, not when they're run. Fail loudly at `flow refine` time, not silently at worker execution time.
+3. **Add `--verify-command` to CLI** — `flow task update <id> --verify-command "..."` and `--no-verify` to clear it.
+4. **Allowlist safe patterns** — only permit simple commands like `test -f <path>`, `wc`, `grep -q`. Block everything else.
+5. **Graceful failure** — if verify_command is invalid, skip verification and log a warning instead of blocking the task forever.
+
+**Value:** Prevents entire outcomes from stalling due to auto-generated bad verify commands. Reduces manual intervention needed.
+
+**Effort:** Low (option 1 or 5) to Medium (full redesign)
+
+**References:** GPP Marketing Website outcome (`out_sZu8uLyJQTC0`), `app/api/outcomes/[id]/refine/route.ts` line 79
+
+---
+
 ## Implemented Ideas
 
 *Move ideas here when they ship, with links to the feature doc or PR.*

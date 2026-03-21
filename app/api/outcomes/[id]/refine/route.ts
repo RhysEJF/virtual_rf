@@ -76,7 +76,7 @@ export async function POST(
       `   - \`--intent\`: What this task specifically achieves`,
       `   - \`--approach\`: How a worker should execute (steps, files, constraints)`,
       `   - \`--complexity\`: Complexity score 1-10`,
-      `   - \`--turns\`: Estimated turns to complete`,
+      `   - \`--turns\`: Estimated turns to complete (ONLY if the task currently has no turn budget or has the default value — do NOT reduce existing turn budgets that were set manually)`,
       `4. Set \`--depends-on\` where tasks have ordering requirements`,
       `5. If any task has complexity ≥ 6 or estimated turns > 30, decompose it into subtasks`,
       `6. Run \`flow tasks\` at the end to verify all tasks are enriched`,
